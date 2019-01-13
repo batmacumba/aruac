@@ -4,17 +4,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-      
+
     <link rel="stylesheet" href="css/bootstrap.min.css" >
     <link rel="stylesheet" type="text/css" href="./css/aruac.css">
     <link rel="stylesheet" type="text/css" href="./css/toggle-switch.css">
     <link rel="stylesheet" href="./css/languages.min.css">
-    <link href="font-awesome/css/font-awesome.min.css" rel="stylesheet" type="./text/css">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.1.1/css/all.css" integrity="sha384-O8whS3fhG2OnA5Kas0Y9l3cfpmYjapjI0E4theH4iuMD+pLhbf6JI0jIMfYcK3yZ" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css?family=Quicksand:300" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Dosis|Open+Sans" rel="stylesheet">
     <link rel="stylesheet" href="./css/footer-distributed-with-address-and-phones.css">
-    <link type="text/css" rel="stylesheet" href="./css/lightslider.css" />
-    
+    <link rel="stylesheet" href="../node_modules/react-image-gallery/styles/css/image-gallery.css">
+
+
     <link rel="stylesheet" href="./css/App.css"></link>
 
 
@@ -22,7 +23,7 @@
   </head>
 
   <body>
-    <div class="main">
+
       <!------------------------------------------------------------------
                                    NAVBAR
        ------------------------------------------------------------------->
@@ -32,71 +33,38 @@
           <div class="container-fluid">
             <ul class="nav navbar-nav">
               <li id="filmes_bt"><a href="#portifolio">ARUAC</a></li>
-              <li><a href="info.html">PRODUTORA</a></li>
-              <li><a href="diretores.html">DIRETORES</a></li>
-              <li><a href="noticias.html">NOTÍCIAS</a></li>
-              <li><a href="contato.html">CONTATO</a></li>
+              <li><a href="/produtora">PRODUTORA</a></li>
+              <li><a href="/diretores">DIRETORES</a></li>
+              <li><a href="/contato">CONTATO</a></li>
               <!--<li><span class="lang-sm" lang="en"></span></li>-->
             </ul>
           </div>
         </nav>
       </div>
 
-      <div class="grid-box" id="portifolio">
-        <div class="container-fluid filter-menu">
-          <div class="row">
-            <div class="col-md-4"></div>
-            <div class="switch-toggle switch-candy-white col-md-4" id="filter">
-              <fieldset>
-                <input id="week" name="view" type="radio" checked>
-                  <label for="week" onclick="tudo()">tudo</label>
-                  <input id="month" name="view" type="radio">
-                  <label for="month" onclick="cinema()">cinema</label>
-                  <input id="day" name="view" type="radio">
-                  <label for="day" onclick="tv()">tv</label>
-                  <input id="hour" name="view" type="radio">
-                  <label for="hour" onclick="espetaculos()">teatro</label>
-                  <a></a>
-              </fieldset>
+      <div id="root"></div>
+
+      <footer class="footer-distributed">
+        <div class="footer-left">
+          <div class="footer-links text-footer">
+            <a href="index.html">ARUAC</a>
+            <a href="info.html">PRODUTORA</a>
+            <a href="diretores.html">DIRETORES</a>
+            <a href="contato.html">CONTATO</a>
+            <!--<span class="lang-sm" lang="en"></span>-->
+            <br><hr>
+            <div class="footer-icons">
+              <a href="https://www.facebook.com/aruacfilmes/"><i class="fa fa-facebook"></i>@aruacfilmes</a>
+              <a><i class="fa fa-phone"></i>+55-21-99279-5004</a>
+              <a href="mailto:aruacfilmes@gmail.com?Subject=Contato%20Aruac"><i class="fa fa-envelope"></i>aruacfilmes@gmail.com</a>
             </div>
-            <div class="col-md-4"></div>
           </div>
         </div>
+      </footer>
 
-        <div class="grid" id="root">
-        </div>
-
-    </div>
-  </div>
-  
-  <footer class="footer-distributed">
-    <div class="footer-left">
-      <div class="footer-links text-footer">
-        <a href="index.html">ARUAC</a>
-        <a href="info.html">PRODUTORA</a>
-        <a href="diretores.html">DIRETORES</a>
-        <a href="noticias.html">NOTÍCIAS</a>
-        <a href="contato.html">CONTATO</a>
-        <!--<span class="lang-sm" lang="en"></span>-->
-        <br><hr>
-        <div class="footer-icons">
-          <a href="https://www.facebook.com/aruacfilmes/"><i class="fa fa-facebook"></i>@aruacfilmes</a>
-          <a><i class="fa fa-phone"></i>+55-21-99279-5004</a>
-          <a href="mailto:aruacfilmes@gmail.com?Subject=Contato%20Aruac"><i class="fa fa-envelope"></i>aruacfilmes@gmail.com</a>
-        </div>
-      </div>
-    </div>
-  </footer>
-  
   </body>
   <script src="bundle.js"></script>
-  
   <script src="./js/jquery-3.2.1.min.js"></script>
-  <script src="./js/masonry.pkgd.min.js"></script>
-  <script src="./js/imagesloaded.pkgd.min.js"></script>
   <script src="./js/bootstrap.min.js"></script>
-  <script src="./js/isotope.pkgd.min.js"></script>
   <script src="./js/aruac.js"></script>
-  <script src="./js/lightslider.js"></script>
-  <script src="https://f.vimeocdn.com/js/froogaloop2.min.js"></script>
 </html>

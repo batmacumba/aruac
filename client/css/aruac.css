@@ -1,9 +1,9 @@
 * { box-sizing: border-box; }
-body { background-color: #F2F2F2; }
+body { background-color: #F6F6F6; }
 /************************************************
                     BUTTON
 ************************************************/
-.btn-menu {  position: fixed;  display: block; width: 50px; height:50px; margin-right: 18px; top: 0; width: 100%; z-index: 3; background-color: #F2F2F2;  }
+.btn-menu {  position: fixed;  display: block; width: 50px; height:50px; margin-right: 18px; top: 0; width: 100%; z-index: 3; background-color: #F6F6F6;  }
 .btn-menu span {  margin: 0 auto;  position: relative;  top: 22px;}
 .btn-menu span:before, .btn-menu span:after {  position: absolute;  content: '';}
 .btn-menu span, .btn-menu span:before, .btn-menu span:after {  width: 20px;  height: 3px;  background-color: #000000;  display: block;  border-radius: 1px;}
@@ -25,7 +25,7 @@ body { background-color: #F2F2F2; }
                     NAVBAR
 ************************************************/
 .hidden-nav {
-    background:#F2F2F2;
+    background:#F6F6F6;
     position: fixed;
     top: 0px;
     width: 100%;
@@ -46,22 +46,22 @@ body { background-color: #F2F2F2; }
 }
 
 .navbar {
-    background-color: #F2F2F2;
-    font-family: 'Quicksand', sans-serif; 
+    background-color: #F6F6F6;
+    font-family: 'Quicksand', sans-serif;
     float: none;
     font-size: 16px;
     margin: 0 auto;
 }
 
 .navbar .nav li {
-    background-color: #F2F2F2;
+    background-color: #F6F6F6;
 }
 
 .navbar .nav li:hover a {
     color: red;
 }
 /*
-@media (min-width:768px) { 
+@media (min-width:768px) {
     #nav_center {
         width: 100%;
         text-align: center;
@@ -105,73 +105,16 @@ body { background-color: #F2F2F2; }
 }
 
 /************************************************
-                    OUTLINE
-************************************************/
-input {
- outline: none !important;
-}
-
-label {
- outline: none !important;
-}
-
-/************************************************
-                    GRID
+                    MASONRY
 ************************************************/
 
-.grid-box {
-    padding-bottom: 50px;
-}
-
-.grid {
-    padding-top: 10px;
+.masonry {
+    padding-top: 70px;
     width: 80%;
     margin: 0 auto;
-    min-height: 700px;
 }
 
-/* clear fix */
-.grid:after {
-    content: '';
-    display: block;
-    clear: both;
-}
-
-/* ---- .grid-item ---- */
-
-.grid-sizer,
-.grid-item {
-    position: relative;
-    width: 33.333333%;
-    border: 6px solid #F2F2F2;
-}
-
-.grid-item {
-    float: left;
-}
-
-.grid-item img {
-    display: block;
-    max-width: 100%;
-}
-
-.grid-item:hover .cinema-overlay-bg {
-    opacity: 0.5;
-}
-
-.grid-item:hover .tv-overlay-bg {
-    opacity: 0.5;
-}
-
-.grid-item:hover .teatro-overlay-bg {
-    opacity: 0.6;
-}
-
-.grid-item:hover .overlay-text {
-    opacity: 1.0;
-}
-
-.cinema-overlay-bg {
+.overlay-bg {
     cursor: pointer;
     position: absolute;
     top: 0;
@@ -182,47 +125,42 @@ label {
     width: 100%;
     opacity: 0;
     transition: .5s ease;
-    background-color: #a80002;
-}
-
-.tv-overlay-bg {
-    cursor: pointer;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 100%;
-    width: 100%;
-    opacity: 0;
-    transition: .5s ease;
-    background-color: #005aa8;
-}
-
-.teatro-overlay-bg {
-    cursor: pointer;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 100%;
-    width: 100%;
-    opacity: 0;
-    transition: .5s ease;
-    background-color: #4a4a00;
+    background-color: #000000;
 }
 
 .overlay-text {
     cursor: pointer;
-    color: white;
     position: absolute;
-    font-size: 14px;
     top: 10%;
     left: 5%;
+    bottom: 10%;
+    right: 5%;
+    height: 100%;
+    width: 100%;
+    color: white;
+    font-size: 14px;
     font-family: 'Quicksand', sans-serif;
     opacity: 0;
     transition: .5s ease;
+}
+
+.overlay-text hr {
+    margin-right: 50px;
+}
+
+/* mobile will show overlay text always */
+@media only screen and (max-width: 600px) {
+  .overlay-text {
+      opacity: 1;
+  }
+}
+
+.icone:hover .overlay-text{
+  opacity: 1;
+}
+
+.icone:hover .overlay-bg{
+  opacity: 0.4;
 }
 
 /* logo */
@@ -233,8 +171,17 @@ label {
     width: auto\9; /* ie8 */
 }
 
-.modal div {
-    background-color: #fafafa;
+.lightbox {
+  border-radius: 10px;
+  background-color: rgba(0, 0, 0, 1);
+  padding-top: 10px;
+  padding-bottom: 10px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
+.lightbox div {
+  background-color: rgba(0, 0, 0, 1);
 }
 /************************************************
                     TEXTO
@@ -247,10 +194,12 @@ label {
  outline: none !important;
 }
 
-.modal hr {
+.Modal hr {
     height: 1px;
     background-color: black;
     opacity: 0.15;
+    margin-top: 15px;
+    margin-bottom: 15px;
 }
 
 .diretores hr {
@@ -280,13 +229,27 @@ p {
 }
 
 .text-cred {
+    text-align: left;
     font-size: 14px;
 }
 
 .text-modal-title {
     text-align: center;
     font-family: 'Quicksand', sans-serif;
+    font-size: 24px;
+}
+
+.text-modal-subtitle {
+    text-align: left;
+    font-family: 'Quicksand', sans-serif;
     font-size: 20px;
+    font-style: italic;
+    font-weight: bold;
+}
+
+.text-modal-subtitle hr {
+  border: 0;
+  height: 1px;
 }
 
 .text-title {
@@ -305,7 +268,7 @@ p {
 
 .text-footer {
     font-family: 'Quicksand', sans-serif;
-} 
+}
 
 .cartazes {
     display: inline-block;
@@ -318,7 +281,7 @@ p {
 }
 
 .premio {
-    padding-left: 0px;  
+    padding-left: 0px;
     padding-right: 0px;
     text-align: center;
 }

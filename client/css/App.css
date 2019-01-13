@@ -22,18 +22,49 @@ table {
 .button-center {
     text-align: center;
 }
+
+.frame {
+    overflow-y: auto;
+    height: 600px;
+}
+
+.image-gallery {
+    width: 75%;
+    margin: 0 auto;
+    text-align: center;
+    background-color: rgba(0, 0, 0, 0.95);
+}
+
+.Modal .fa-pen {
+  font-size: 16px;
+  color: #999900;
+  text-align: right;
+}
+
+.Modal .fa-trash {
+  font-size: 16px;
+  color: #990000;
+  text-align: right;
+}
 .Modal {
     position: relative;
-    top: 250px;
-    left: 400px;
-    right: 20px;
-    bottom: 20px;
-    background-color: #F5F5F5;
-    width:500px;
-    border: 1px solid #000;
+    top: 60px;
+    margin: 0 auto;
+    background-color: #F6F6F6;
+    width: 70%;
+    border: 1px solid #F6F6F6;
     border-radius: 4px;
     padding: 20px;
+    z-index: 5;
 }
+
+
+.Modal:focus { outline:0; }
+
+.Update {
+    z-index: 99;
+}
+
 .Overlay {
     position: fixed;
     top: 0;
@@ -43,19 +74,6 @@ table {
     background-color: rebeccapurple;
 }
 .button-center {
+    padding-top: 20px;
     text-align: center;
 }
-label{
-    display:inline-block;
-    width:200px;
-    margin-right:30px;
-    text-align:right;
-}
-fieldset{
-    border:none;
-    margin:0px auto;
-}
-.closebtn{
-    float:right;
-}
-

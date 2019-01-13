@@ -6,6 +6,6 @@ import Routes from './routes'
 
 ReactDOM.render(
                 <HashRouter>
-                <Routes />
+                    <Routes />
                 </HashRouter>, document.getElementById('root')
                 );
