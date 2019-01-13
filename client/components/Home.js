@@ -46,24 +46,3 @@ export default class Home extends React.Component {
                 );
     }
 }
-
-// <div className="grid-box" id="portifolio">
-//   <div className="container-fluid filter-menu">
-//     <div className="row">
-//       <div className="col-md-4"></div>
-//       <div className="switch-toggle switch-candy-white col-md-4" id="filter">
-//         <fieldset>
-//           <input id="week" name="view" type="radio" checked />
-//             <label htmlFor="week">tudo</label>
-//             <input id="month" name="view" type="radio" />
-//             <label htmlFor="month">cinema</label>
-//             <input id="day" name="view" type="radio" />
-//             <label htmlFor="day">tv</label>
-//             <input id="hour" name="view" type="radio" />
-//             <label htmlFor="hour">teatro</label>
-//             <a></a>
-//         </fieldset>
-//       </div>
-//       <div className="col-md-4"></div>
-//     </div>
-//   </div>

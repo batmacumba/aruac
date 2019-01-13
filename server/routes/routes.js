@@ -8,14 +8,6 @@ var crypto = require('crypto');
 var mv = require('mv');
 var rimraf = require('rimraf');
 
-router.get('/', function(req, res){
-           res.render('index')
-           });
-
-router.get('/produtora', function(req, res){
-          res.render('produtora')
-        });
-
 router.route('/insert')
 .post(function(req, res) {
       var project = new Project();
