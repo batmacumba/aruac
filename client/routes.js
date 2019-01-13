@@ -2,6 +2,7 @@
 import React from 'react';
 import { Route, Switch } from 'react-router-dom';
 import Home from './components/home';
+import Produtora from './components/produtora';
 // import Diretores from './components/diretores';
 // import Contato from './components/contato';
 // <Route path='/produtora' component={Produtora} />
@@ -11,6 +12,7 @@ import Home from './components/home';
 export const Routes = () => (
                              <Switch>
                                  <Route path='/' component={Home} />
+                                 <Route path='/produtora' component={Produtora} />
                              </Switch>
                              );
 export default Routes;

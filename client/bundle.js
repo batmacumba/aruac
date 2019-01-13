@@ -40290,6 +40290,10 @@ var _home = __webpack_require__(269);
 
 var _home2 = _interopRequireDefault(_home);
 
+var _produtora = __webpack_require__(569);
+
+var _produtora2 = _interopRequireDefault(_produtora);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 // import Diretores from './components/diretores';
@@ -40298,13 +40302,15 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 // <Route path='/diretores' component={Diretores} />
 // <Route path='/contato' component={Contato} />
 
+//client/routes.js
 var Routes = exports.Routes = function Routes() {
     return _react2.default.createElement(
         _reactRouterDom.Switch,
         null,
-        _react2.default.createElement(_reactRouterDom.Route, { path: '/', component: _home2.default })
+        _react2.default.createElement(_reactRouterDom.Route, { path: '/', component: _home2.default }),
+        _react2.default.createElement(_reactRouterDom.Route, { path: '/produtora', component: _produtora2.default })
     );
-}; //client/routes.js
+};
 exports.default = Routes;
 
 /***/ }),
@@ -75333,6 +75339,85 @@ function factory(ReactComponent, isValidElement, ReactNoopUpdateQueue) {
 module.exports = factory;
 
 /* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(9)))
+
+/***/ }),
+/* 569 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+    value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _react = __webpack_require__(0);
+
+var _react2 = _interopRequireDefault(_react);
+
+var _reactDom = __webpack_require__(13);
+
+var _reactDom2 = _interopRequireDefault(_reactDom);
+
+var _axios = __webpack_require__(60);
+
+var _axios2 = _interopRequireDefault(_axios);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var Produtora = function (_React$Component) {
+    _inherits(Produtora, _React$Component);
+
+    function Produtora() {
+        _classCallCheck(this, Produtora);
+
+        var _this = _possibleConstructorReturn(this, (Produtora.__proto__ || Object.getPrototypeOf(Produtora)).call(this));
+
+        _this.state = { data: [] };
+        _this.getData = _this.getData.bind(_this);
+        return _this;
+    }
+
+    _createClass(Produtora, [{
+        key: 'componentDidMount',
+        value: function componentDidMount() {
+            this.getData(this);
+        }
+    }, {
+        key: 'componentWillReceiveProps',
+        value: function componentWillReceiveProps(nextProps) {
+            this.getData(this);
+        }
+    }, {
+        key: 'getData',
+        value: function getData(ev) {
+            _axios2.default.get('/getAll').then(function (response) {
+                ev.setState({ data: response.data });
+            });
+        }
+    }, {
+        key: 'render',
+        value: function render() {
+            return _react2.default.createElement(
+                'div',
+                null,
+                'BLZ'
+            );
+        }
+    }]);
+
+    return Produtora;
+}(_react2.default.Component);
+
+exports.default = Produtora;
 
 /***/ })
 /******/ ]);

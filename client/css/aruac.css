@@ -80,20 +80,6 @@ body { background-color: #F6F6F6; }
   float: none;
   display: inline-block;
 }
-/************************************************
-                FILTER MENU
-************************************************/
-
-.filter-menu {
-    padding-top: 70px;
-    font-family: 'Quicksand', sans-serif;
-    font-size: 18px;
-    padding-bottom: 20px;
-}
-
-.filter-menu label {
-    cursor: pointer;
-}
 
 /************************************************
                     LOGO
