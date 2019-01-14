@@ -123,6 +123,15 @@ router.get('/getAll',function(req, res) {
                         res.json(projects);
                         });
            });
+
+router.get('/getInfo',function(req, res) {
+          Project.find(function(err, projects) {
+                       if (err)
+                           res.send(err);
+                       res.json(projects);
+                       });
+          });
+
 router.route('/upload')
 .post(function(req, res) {
     var path = './server/public/images/tmp/' + req.files.filepond.name;
