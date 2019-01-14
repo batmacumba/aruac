@@ -66,15 +66,15 @@ class Detail extends React.Component {
     * @i: index of the wanted member
     */
     displayCrew(str, i) {
-      if (str == '') return;
-      var strArray = str.split('*!');
-      var nameFormatted = strArray[1].toUpperCase();
-      var strFormatted = strArray[0] + ' ' + nameFormatted;
-      return (
-        <div key={strFormatted + i}>
-          {strFormatted} <br/>
-        </div>
-      );
+        if (str == '' || str == 'Função*!Nome') return;
+        var strArray = str.split('*!');
+        var nameFormatted = strArray[1].toUpperCase();
+        var strFormatted = strArray[0] + ' ' + nameFormatted;
+        return (
+            <div key={strFormatted + i}>
+                {strFormatted} <br/>
+            </div>
+        );
     }
 
     /**
@@ -225,10 +225,14 @@ class Detail extends React.Component {
                 {/* CRÉDITOS */}
                 <div className="row text-modal">
                   <div className="col-md-3 text-cred">
-                    {this.props.project.genre + ' | '}
-                    {this.props.project.duration + ' | '}
-                    {this.props.project.country[0].toUpperCase() + ' | '}
-                    {this.props.project.year} <br/><br/>
+                    {this.props.project.genre &&
+                        this.props.project.genre + ' | '}
+                    {this.props.project.duration &&
+                        this.props.project.duration + ' | '}
+                    {this.props.project.country[0].length > 0 &&
+                        this.props.project.country[0].toUpperCase() + ' | '}
+                    {this.props.project.year &&
+                        this.props.project.year} <br/><br/>
 
                     {/* EQUIPE */}
                     { this.props.project.crew[0].split('*!&').reverse().map((str, i) => {
@@ -247,20 +251,24 @@ class Detail extends React.Component {
                    <br/>
                   </div>
 
-                  {/* SINOPSE */}
                   <div className="col-md-9">
-                    <div className="text-modal-subtitle">
-                      Sinopse
-                      <hr/>
-                    </div>
-                    {this.props.project.storyline.split('\n').map(function(line, i) {
-                      return (
-                        <div key={line + i}>
-                          {line}
-                          <br/>
+                  {/* SINOPSE */}
+                  {this.props.project.storyline &&
+                      <div>
+                        <div className="text-modal-subtitle">
+                          Sinopse
+                          <hr/>
                         </div>
-                      )
-                      })}
+                        {this.props.project.storyline.split('\n').map(function(line, i) {
+                          return (
+                            <div key={line + i}>
+                              {line}
+                              <br/>
+                            </div>
+                          )
+                          })}
+                      </div>
+                  }
 
                     {/* PRÊMIOS */}
                     {this.props.project.awards[0].length > 0 &&

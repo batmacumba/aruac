@@ -30,7 +30,7 @@ class Produtora extends React.Component {
 
                                 A ARUAC também recebeu inúmeros prêmios no Brasil e no exterior, sendo o último o prêmio L'Oeil d'Or de melhor documentário no Festival de Cannes de 2016 com o filme “CINEMA NOVO”, direção de Eryk Rocha. Atualmente, prepara o longa de ficção “BREVES MIRAGENS DE SOL”, que será filmado no segundo semestre de 2017, e ainda "XINGU", primeira etapa da trilogia teatral “MARGENS - sobre rios, crocodilos e vaga-lumes”.
                             </div>
-                            <div className="col-md-6 text-menu">
+                            <div className="col-md-6">
                                 <img className="img-responsive cartazes" src="img/cartazes/campo_de_jogo.jpg"/>
                                 <img className="img-responsive cartazes" src="img/cartazes/cinema_novo.jpg"/><br/>
                                 <img className="img-responsive cartazes" src="img/cartazes/exilados.jpg"/>
