@@ -2,10 +2,15 @@ var express = require('express');
 var router = express.Router();
 var bodyParser = require('body-parser');
 var Project = require('../../models/Project');
+var Info = require('../../models/Info');
 var fs = require('fs');
 var crypto = require('crypto');
 var mv = require('mv');
 var rimraf = require('rimraf');
+
+/*******************************************************************************
+                                  PROJECTS
+*******************************************************************************/
 
 router.route('/insert')
 .post(function(req, res) {
@@ -124,11 +129,45 @@ router.get('/getAll',function(req, res) {
                         });
            });
 
+/*******************************************************************************
+                                   INFO
+*******************************************************************************/
+
+router.route('/updateInfo')
+.post(function(req, res) {
+     var info = new Info();
+     info.phone = req.body.phone;
+     info.facebook = req.body.facebook;
+     info.instagram = req.body.instagram;
+     info.youtube = req.body.youtube;
+     info.email = req.body.email;
+     info.story = req.body.story;
+
+     Info.find(function (err, previous) {
+         /* existing document */
+         if (previous[0]) {
+             info._id = previous[0]._id;
+             Info.update({_id: info._id}, info, function(err, result) {
+               if (err) res.send(err);
+               else res.send('Info successfully updated!');
+             });
+         }
+         /* new document */
+         else {
+             info._id = null;
+             info.save(function(err) {
+               if (err) res.send(err);
+               else res.send('Info successfully saved!');
+               console.log(err);
+             });
+         }
+     });
+});
+
 router.get('/getInfo',function(req, res) {
-          Project.find(function(err, projects) {
-                       if (err)
-                           res.send(err);
-                       res.json(projects);
+          Info.find(function(err, infos) {
+                       if (err) res.send(err);
+                       res.json(infos[0]);
                        });
           });
 

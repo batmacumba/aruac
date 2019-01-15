@@ -281,13 +281,19 @@ p {
     font-family: 'Quicksand', sans-serif;
     font-size: 16px;
 }
-.first-box{padding:10px;background:#9C0; height: 150px;}
-.second-box{padding:10px; background:#39F; height: 150px;}
-.third-box{padding:10px;background:#F66; height: 150px;}
-.fourth-box{padding:10px;background:#cd486b; height: 150px;}
+.whatsapp-box{padding:20px;background:#128c7e; height: 150px;}
+.facebook-box{padding:30px; background:#3b5998; height: 150px;}
+.email-box{padding:20px;background:#222222; color: #E5E5E5!important;height: 150px;}
+.youtube-box{padding:30px;background:#b31217; height: 150px;}
+.instagram-box{padding:30px;background:#8a3ab9; height: 150px;}
 
-.contato div{
-    color: #262626;
+
+.contato div {
+    color: #F6F6F6;
+}
+
+.contato i {
+    color: #F6F6F6;
 }
 
 iframe {
@@ -303,6 +309,10 @@ iframe {
 }
 
 /*client/css/App.css*/
+.nopadding {
+   padding: 0 !important;
+   margin: 0 !important;
+}
 
 .button-col {
     width:100px;

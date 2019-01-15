@@ -1,9 +1,10 @@
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
-var projectSchema = new Schema({
+var infoSchema = new Schema({
       phone: String,
       facebook: String,
       instagram: String,
+      youtube: String,
       email: String,
       story: String,
   });

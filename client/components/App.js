@@ -1,9 +1,27 @@
 import React from 'react';
 import { Link, IndexLink } from 'react-router-dom';
+import axios from 'axios';
 
 class App extends React.Component {
+    constructor() {
+        super();
+        this.state = {info: []};
+        this.getInfo = this.getInfo.bind(this);
+    }
+    componentDidMount() {
+        this.getInfo(this);
+    }
+
+    getInfo(ev){
+        axios.get('/getInfo')
+        .then(function(response) {
+            ev.setState({info: response.data});
+        });
+    }
 
     render() {
+        console.log("app");
+        console.log(this.state.info);
         return (
             <div>
                 {/* NAVBAR */}
@@ -36,9 +54,15 @@ class App extends React.Component {
                       {/*<span className="lang-sm" lang="en"></span>*/}
                       <br/><hr/>
                       <div className="footer-icons">
-                        <a href="https://www.facebook.com/aruacfilmes/"><i className="fa fa-facebook"></i>@aruacfilmes</a>
-                        <a><i className="fa fa-phone"></i>+55-21-99279-5004</a>
-                        <a href="mailto:aruacfilmes@gmail.com?Subject=Contato%20Aruac"><i className="fa fa-envelope"></i>aruacfilmes@gmail.com</a>
+
+                          <a target="_blank" href={this.state.info.youtube}><i className="fab fa-youtube"></i></a>
+                          <a target="_blank" href={this.state.info.instagram}><i className="fab fa-instagram"></i></a>
+                          <a target="_blank" href={this.state.info.facebook}><i className="fab fa-facebook-f"></i></a>
+                          {this.state.info.phone &&
+                          <a target="_blank" href={"https://api.whatsapp.com/send?phone=" + this.state.info.phone.replace(/[+-]/g, '')}><i className="fab fa-whatsapp"></i></a>
+                          }
+                          <a target="_blank" href={"mailto:" + this.state.info.email + "?Subject=Contato%20Aruac"}><i className="fa fa-envelope"></i></a>
+
                       </div>
                     </div>
                   </div>

@@ -11,10 +11,10 @@ class Info extends React.Component {
     constructor() {
         super();
         this.state = {
-            id: '',
             phone: '',
             facebook: '',
             instagram: '',
+            youtube: '',
             email: '',
             story: '',
             messageFromServer: '',
@@ -26,19 +26,21 @@ class Info extends React.Component {
         this.handleTextChange = this.handleTextChange.bind(this);
         this.openModal = this.openModal.bind(this);
         this.closeModal = this.closeModal.bind(this);
-        this.displayFields = this.displayFields.bind(this);
     }
 
     componentDidMount() {
-      // this.setState({
-      //   id: this.props.info._id,
-      //   phone: this.props.info.phone,
-      //   facebook: this.props.info.facebook,
-      //   instagram: this.props.info.instagram,
-      //   email: this.props.info.email,
-      //   story: this.props.info.story,
-      //   });
-      ;
+        ;
+    }
+
+    componentWillReceiveProps(nextProps) {
+        this.setState({
+            phone: nextProps.info.phone,
+            facebook: nextProps.info.facebook,
+            instagram: nextProps.info.instagram,
+            youtube: nextProps.info.youtube,
+            email: nextProps.info.email,
+            story: nextProps.info.story,
+        });
     }
 
     openModal() {
@@ -59,71 +61,8 @@ class Info extends React.Component {
     * @e: react event
     */
     handleTextChange(e) {
-      newState[i] = e.target.value;
+      var newState = e.target.value;
       this.setState({ [e.target.name]: newState });
-    }
-
-    /**
-    * displayFields - fills the modal fields with existing info
-    * @fieldName: name of the state we wish to display
-    */
-    displayFields(fieldName, i) {
-      /* returns 1D string array fields */
-      if (fieldName != "crew") {
-          if (i == 0)
-            return (
-              <div className="row form-group" key={fieldName + i}>
-                <div className="col-sm-11">
-                  <input type="text" className="form-control" id={fieldName + " " + i} name={fieldName} onChange={this.handleTextChange} placeholder={this.state[fieldName][i]}></input>
-                </div>
-                <div className="col-sm-1">
-                  <a href="javascript:void(0);" onClick={this.prepend.bind(this, fieldName)}><i className="fa fa-2x fa-plus"></i></a>
-                </div>
-              </div>
-              );
-          else
-            return (
-              <div className="row form-group" key={fieldName + i}>
-                <div className="col-sm-11">
-                  <input type="text" className="form-control" id={fieldName + " " + i} name={fieldName} onChange={this.handleTextChange} placeholder={this.state[fieldName][i]}></input>
-                </div>
-                <div className="col-sm-1">
-                  <a href="javascript:void(0);" onClick={this.remove.bind(this, fieldName, i)}><i className="fa fa-2x fa-minus"></i></a>
-                </div>
-              </div>
-            );
-      }
-      /* returns 2D string array fields */
-      else {
-        if (i == 0)
-            return (
-              <div className="row form-group" key={fieldName + i}>
-                <div className="col-sm-5">
-                  <input type="text" className="form-control" id={fieldName + " role " + i} name={fieldName} onChange={this.handleTextChange} placeholder={this.state[fieldName][i].role}></input>
-                </div>
-                <div className="col-sm-6">
-                  <input type="text" className="form-control" id={fieldName + " name " + i} name={fieldName} onChange={this.handleTextChange} placeholder={this.state[fieldName][i].name}></input>
-                </div>
-                <div className="col-sm-1">
-                  <a href="javascript:void(0);" onClick={this.prepend.bind(this, fieldName)}><i className="fa fa-2x fa-plus"></i></a>
-                </div>
-              </div>
-            );
-          else
-            return (
-              <div className="row form-group" key={fieldName + i}>
-                <div className="col-sm-5">
-                  <input type="text" className="form-control" id={fieldName + " role " + i} name={fieldName} onChange={this.handleTextChange} placeholder={this.state[fieldName][i].role}></input>
-                </div>
-                <div className="col-sm-6">
-                  <input type="text" className="form-control" id={fieldName + " name " + i} name={fieldName} onChange={this.handleTextChange} placeholder={this.state[fieldName][i].name}></input>
-                </div>
-                <div className="col-sm-1">
-                  <a href="javascript:void(0);" onClick={this.remove.bind(this, fieldName, i)}><i className="fa fa-2x fa-minus"></i></a>
-                </div>
-              </div>
-            );
-      }
     }
 
     onClick(e) {
@@ -138,22 +77,10 @@ class Info extends React.Component {
       const data = new FormData();
       data.append('_id', e.state.id);
       Object.keys(e.state).map( name => {
-        if (name == "crew") {
-          var equipe = '';
-          for (var i = 0; i < e.state[name].length; i++)
-            equipe = equipe + e.state[name][i].role + '*!' + e.state[name][i].name + '*!&';
-          data.append(name, equipe);
-        }
-        else if (name == "stills" || name == "thumbnail") ;
-        else data.append(name, e.state[name]);
+        data.append(name, e.state[name]);
       });
 
-      data.append('thumbnail', e.state.thumbnail[0].name);
-      for (var i = 0; i < e.state.stills.length; i++)
-        data.append('stills', e.state.stills[i].name);
-
-
-      axios.post('/update', data)
+      axios.post('/updateInfo', data)
         .then(function(response) {
           e.setState({
             messageFromServer: response.data
@@ -213,6 +140,15 @@ class Info extends React.Component {
                                 </div>
 
                                 <div className="form-group">
+                                  <label htmlFor="youtube">Youtube</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <input type="text" className="form-control" id="youtube" name="youtube" value={this.state.youtube} onChange={this.handleTextChange}></input>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="form-group">
                                   <label htmlFor="email">Email</label>
                                   <div className="row">
                                     <div className="col-sm-11">
@@ -225,7 +161,7 @@ class Info extends React.Component {
                                   <label htmlFor="story">Resumo</label>
                                   <div className="row">
                                     <div className="col-sm-11">
-                                      <input type="textarea" className="form-control" id="story" name="story" value={this.state.story} onChange={this.handleTextChange}></input>
+                                      <textarea rows="5" type="text" className="form-control" id="story" name="story" value={this.state.story} onChange={this.handleTextChange}></textarea>
                                     </div>
                                   </div>
                                 </div>

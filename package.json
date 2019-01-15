@@ -22,6 +22,7 @@
     "react": "^16.4.1",
     "react-bootstrap": "^0.32.1",
     "react-burger-menu": "^2.6.1",
+    "react-contact-information": "^1.2.0",
     "react-dock": "^0.2.4",
     "react-dom": "^16.4.1",
     "react-filepond": "^5.0.0",

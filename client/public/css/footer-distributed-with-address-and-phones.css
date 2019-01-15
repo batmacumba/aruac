@@ -39,7 +39,7 @@
     display: inline-block;
 	background-color:  #33383b;
 	color: #d4d4d4;
-	font-size: 25px;
+	font-size: 20px;
 	width: 38px;
 	height: 38px;
 	border-radius: 50%;
@@ -50,16 +50,32 @@
 }
 
 .footer-distributed .footer-icons a{
-	width: 35px;
-	height: 35px;
+	width: 30px;
+	height: 30px;
 	cursor: pointer;
 
 	color: #d4d4d4;
 	text-align: center;
-	line-height: 35px;
+	line-height: 30px;
 
 	margin-right: 3px;
-	margin-bottom: 5px;
+	margin-bottom: 3px;
+}
+
+.footer-icons .fa-youtube {
+	background-color: #b31217!important;
+}
+
+.footer-icons .fa-facebook-f {
+	background-color: #3b5998!important;
+}
+
+.footer-icons .fa-instagram {
+	background-color: #8a3ab9!important;
+}
+
+.footer-icons .fa-whatsapp {
+	background-color: #128c7e!important;
 }
 
 
