@@ -29,7 +29,7 @@ class Info extends React.Component {
     }
 
     componentDidMount() {
-        ;
+        console.log(this.props.prev);
     }
 
     componentWillReceiveProps(nextProps) {
@@ -97,7 +97,7 @@ class Info extends React.Component {
           return (
                 <div>
                      {/* BOTAO */}
-                     <a href="javascript:void(0);" onClick={this.openModal}><i className="fa fa-2x fa-pen">&nbsp;Editar Informações</i></a>
+                     <a href="javascript:void(0);" onClick={this.openModal}><i className="fa fa-2x fa-pen botao"></i></a>
 
                       <Modal isOpen={this.state.modalIsOpen}
                       onRequestClose={this.closeModal}
@@ -112,59 +112,67 @@ class Info extends React.Component {
                             <div className="text-modal">
                               <form>
 
-                                <div className="form-group">
-                                  <label htmlFor="phone">Telefone</label>
-                                  <div className="row">
-                                    <div className="col-sm-11">
-                                      <input type="text" className="form-control" id="phone" name="phone" value={this.state.phone} onChange={this.handleTextChange}></input>
-                                    </div>
-                                  </div>
-                                </div>
+                                {/* CONTATO */}
+                                {this.props.prev == "con" &&
+                                    <div key={this.props.prev}>
+                                        <div className="form-group">
+                                          <label htmlFor="phone">Telefone</label>
+                                          <div className="row">
+                                            <div className="col-sm-11">
+                                              <input type="text" className="form-control" id="phone" name="phone" value={this.state.phone} onChange={this.handleTextChange}></input>
+                                            </div>
+                                          </div>
+                                        </div>
 
-                                <div className="form-group">
-                                  <label htmlFor="facebook">Facebook</label>
-                                  <div className="row">
-                                    <div className="col-sm-11">
-                                      <input type="text" className="form-control" id="facebook" name="facebook" value={this.state.facebook} onChange={this.handleTextChange}></input>
-                                    </div>
-                                  </div>
-                                </div>
+                                        <div className="form-group">
+                                          <label htmlFor="facebook">Facebook</label>
+                                          <div className="row">
+                                            <div className="col-sm-11">
+                                              <input type="text" className="form-control" id="facebook" name="facebook" value={this.state.facebook} onChange={this.handleTextChange}></input>
+                                            </div>
+                                          </div>
+                                        </div>
 
-                                <div className="form-group">
-                                  <label htmlFor="instagram">Instagram</label>
-                                  <div className="row">
-                                    <div className="col-sm-11">
-                                      <input type="text" className="form-control" id="instagram" name="instagram" value={this.state.instagram} onChange={this.handleTextChange}></input>
-                                    </div>
-                                  </div>
-                                </div>
+                                        <div className="form-group">
+                                          <label htmlFor="instagram">Instagram</label>
+                                          <div className="row">
+                                            <div className="col-sm-11">
+                                              <input type="text" className="form-control" id="instagram" name="instagram" value={this.state.instagram} onChange={this.handleTextChange}></input>
+                                            </div>
+                                          </div>
+                                        </div>
 
-                                <div className="form-group">
-                                  <label htmlFor="youtube">Youtube</label>
-                                  <div className="row">
-                                    <div className="col-sm-11">
-                                      <input type="text" className="form-control" id="youtube" name="youtube" value={this.state.youtube} onChange={this.handleTextChange}></input>
-                                    </div>
-                                  </div>
-                                </div>
+                                        <div className="form-group">
+                                          <label htmlFor="youtube">Youtube</label>
+                                          <div className="row">
+                                            <div className="col-sm-11">
+                                              <input type="text" className="form-control" id="youtube" name="youtube" value={this.state.youtube} onChange={this.handleTextChange}></input>
+                                            </div>
+                                          </div>
+                                        </div>
 
-                                <div className="form-group">
-                                  <label htmlFor="email">Email</label>
-                                  <div className="row">
-                                    <div className="col-sm-11">
-                                      <input type="text" className="form-control" id="email" name="email" value={this.state.email} onChange={this.handleTextChange}></input>
+                                        <div className="form-group">
+                                          <label htmlFor="email">Email</label>
+                                          <div className="row">
+                                            <div className="col-sm-11">
+                                              <input type="text" className="form-control" id="email" name="email" value={this.state.email} onChange={this.handleTextChange}></input>
+                                            </div>
+                                          </div>
+                                        </div>
                                     </div>
-                                  </div>
-                                </div>
+                                }
 
-                                <div className="form-group">
-                                  <label htmlFor="story">Resumo</label>
-                                  <div className="row">
-                                    <div className="col-sm-11">
-                                      <textarea rows="5" type="text" className="form-control" id="story" name="story" value={this.state.story} onChange={this.handleTextChange}></textarea>
+                                {/* PRODUTORA */}
+                                {this.props.prev == "prod" &&
+                                    <div className="form-group">
+                                      <label htmlFor="story">Resumo</label>
+                                      <div className="row">
+                                        <div className="col-sm-11">
+                                          <textarea rows="20" type="text" className="form-control" id="story" name="story" value={this.state.story} onChange={this.handleTextChange}></textarea>
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                </div>
+                                }
 
                               </form>
                             </div>

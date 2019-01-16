@@ -1,9 +1,8 @@
-//models/Director.js
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
-var projectSchema = new Schema({
+var directorSchema = new Schema({
   name: String,
-  photos: [String],
+  photo: String,
   story: String,
   });
 

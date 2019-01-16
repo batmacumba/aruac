@@ -66,6 +66,9 @@ class Contato extends React.Component {
                         </div>
                         <br/>
                     </div>
+                    <div className="button-center">
+                        <Info info={this.state.info} prev="con" />
+                    </div>
                 </div>
                 );
     }

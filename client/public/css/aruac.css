@@ -256,9 +256,13 @@ p {
 }
 
 .cartazes {
-    display: inline-block;
+    display: inline-block!important;
     padding: 5px;
     max-width: 45%;
+}
+
+.diretores {
+    padding: 15px;
 }
 
 .well {
@@ -308,10 +312,12 @@ iframe {
   text-align: center;
 }
 
-/*client/css/App.css*/
-.nopadding {
-   padding: 0 !important;
-   margin: 0 !important;
+.botao {
+    color: black!important;
+}
+
+.cantinho {
+    margin-right: 0;
 }
 
 .button-col {

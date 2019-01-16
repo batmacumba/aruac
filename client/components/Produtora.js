@@ -44,7 +44,7 @@ class Produtora extends React.Component {
                         </div>
                     </div>
                     <div className="button-center">
-                        <Info info={this.state.info} />
+                        <Info info={this.state.info} prev="prod" />
                     </div>
                 </div>
                 );

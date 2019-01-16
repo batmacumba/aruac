@@ -266,7 +266,7 @@ class Add extends React.Component {
           return (
                   <div>
                       <div className="button-center">
-                      <a href="javascript:void(0);" onClick={this.openModal}><i className="fa fa-4x fa-plus-circle"></i></a>
+                      <a href="javascript:void(0);" onClick={this.openModal}><i className="fas fa-2x fa-plus botao"></i></a>
                       </div>
                       <Modal isOpen={this.state.modalIsOpen}
                       onRequestClose={this.closeModal}

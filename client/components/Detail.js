@@ -52,6 +52,7 @@ class Detail extends React.Component {
     deleteProject(e) {
       const data = new FormData();
       data.append('_id', this.props.project._id)
+      data.append('title', this.props.project.title)
       axios.post('/delete', data)
         .then(function(response) {
           e.setState({
