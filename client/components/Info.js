@@ -29,7 +29,7 @@ class Info extends React.Component {
     }
 
     componentDidMount() {
-        console.log(this.props.prev);
+        ;
     }
 
     componentWillReceiveProps(nextProps) {

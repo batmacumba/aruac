@@ -22,14 +22,12 @@ export default class Home extends React.Component {
     componentDidMount() {
         this.getData(this);
     }
-    componentWillReceiveProps(nextProps) {
-        this.getData(this);
-    }
+
     getData(ev){
         axios.get('/getAll')
         .then(function(response) {
               ev.setState({data: response.data});
-              });
+        });
     }
     render() {
         return (

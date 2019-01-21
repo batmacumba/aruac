@@ -60,6 +60,10 @@ body { background-color: #F6F6F6; }
 .navbar .nav li:hover a {
     color: red;
 }
+
+.active {
+    color: red;
+}
 /*
 @media (min-width:768px) {
     #nav_center {
@@ -79,6 +83,14 @@ body { background-color: #F6F6F6; }
 .navbar-nav > li {
   float: none;
   display: inline-block;
+}
+
+.lang {
+    height: 35px;
+    top: 6px;
+    position: absolute;
+    z-index: 99;
+    right: 30px;
 }
 
 /************************************************

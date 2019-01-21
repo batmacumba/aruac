@@ -84,7 +84,6 @@ class AddDirector extends React.Component {
   * render - manages the UI and calls the state update
   */
   render() {
-      console.log(this.state);
       if (this.state.messageFromServer == ''){
           return (
                   <div>
