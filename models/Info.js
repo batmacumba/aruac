@@ -7,6 +7,7 @@ var infoSchema = new Schema({
       youtube: String,
       email: String,
       story: String,
+      story_en: String
   });
 
 module.exports = mongoose.model('Info', infoSchema);

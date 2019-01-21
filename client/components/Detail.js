@@ -90,8 +90,10 @@ class Detail extends React.Component {
     displayDirector(name, i) {
       if (name == '')
         ;
-      else if (i == this.props.project.director.length - 2)
-        return (name + ' e ');
+      else if (i == this.props.project.director.length - 2) {
+        if (this.props.lang == 'pt') return (name + ' e ');
+        else if (this.props.lang == 'en') return (name + ' and ');
+      }
       else if (i == this.props.project.director.length - 1)
         return (name);
       else
@@ -126,8 +128,10 @@ class Detail extends React.Component {
     displayCast(name, i) {
       if (name == '')
         ;
-      else if (i == this.props.project.cast.length - 2)
-        return (name + ' e ');
+      else if (i == this.props.project.cast.length - 2) {
+          if (this.props.lang == 'pt') return (name + ' e ');
+          else if (this.props.lang == 'en') return (name + ' and ');
+      }
       else if (i == this.props.project.cast.length - 1)
         return (name);
       else
@@ -163,7 +167,6 @@ class Detail extends React.Component {
     }
 
     render() {
-        console.log("detail -> lang", this.props.lang);
       if (this.state.messageFromServer == '') {
         /* parse das imagens */
         const images = [];
@@ -276,7 +279,8 @@ class Detail extends React.Component {
 
                   <div className="col-md-9">
                   {/* SINOPSE */}
-                  {this.props.project.storyline &&
+                  {this.props.lang == 'pt' &&
+                   this.props.project.storyline &&
                       <div>
                         <div className="text-modal-subtitle">
                           Sinopse
@@ -293,8 +297,27 @@ class Detail extends React.Component {
                       </div>
                   }
 
+                  {this.props.lang == 'en' &&
+                   this.props.project.storyline_en &&
+                      <div>
+                        <div className="text-modal-subtitle">
+                          Storyline
+                          <hr/>
+                        </div>
+                        {this.props.project.storyline_en.split('\n').map(function(line, i) {
+                          return (
+                            <div key={line + i}>
+                              {line}
+                              <br/>
+                            </div>
+                          )
+                          })}
+                      </div>
+                  }
+
                     {/* PRÊMIOS */}
-                    {this.props.project.awards[0].length > 0 &&
+                    {this.props.lang == 'pt' &&
+                     this.props.project.awards[0].length > 0 &&
                       <div>
                         <div className="text-modal-subtitle">
                           <hr/>
@@ -309,8 +332,25 @@ class Detail extends React.Component {
                       </div>
                     }
 
+                    {this.props.lang == 'en' &&
+                     this.props.project.awards_en[0].length > 0 &&
+                      <div>
+                        <div className="text-modal-subtitle">
+                          <hr/>
+                          Awards
+                          <hr/>
+                        </div>
+                        <ul>
+                        { this.props.project.awards_en.map((award) => {
+                          return (this.displayAwards(award));
+                        })}
+                        </ul>
+                      </div>
+                    }
+
                     {/* PARTICIPAÇÕES */}
-                    {this.props.project.festivals[0].length > 0 &&
+                    {this.props.lang == 'pt' &&
+                     this.props.project.festivals[0].length > 0 &&
                       <div>
                         <div className="text-modal-subtitle">
                           <hr/>
@@ -325,8 +365,25 @@ class Detail extends React.Component {
                       </div>
                     }
 
+                    {this.props.lang == 'en' &&
+                     this.props.project.festivals_en[0].length > 0 &&
+                      <div>
+                        <div className="text-modal-subtitle">
+                          <hr/>
+                          Appearances
+                          <hr/>
+                        </div>
+                        <ul>
+                        { this.props.project.festivals_en.map((festival) => {
+                          return (this.displayFestivals(festival));
+                        })}
+                        </ul>
+                      </div>
+                    }
+
                     {/* CRÍTICAS */}
-                    {this.props.project.reviews[0].length > 0 &&
+                    {this.props.lang == 'pt' &&
+                     this.props.project.reviews[0].length > 0 &&
                       <div>
                         <div className="text-modal-subtitle">
                           <hr/>
@@ -335,6 +392,22 @@ class Detail extends React.Component {
                         </div>
                         <ul>
                         { this.props.project.reviews.map((url) => {
+                          return (this.displayReviews(url));
+                        })}
+                        </ul>
+                      </div>
+                    }
+
+                    {this.props.lang == 'en' &&
+                     this.props.project.reviews_en[0].length > 0 &&
+                      <div>
+                        <div className="text-modal-subtitle">
+                          <hr/>
+                          Reviews
+                          <hr/>
+                        </div>
+                        <ul>
+                        { this.props.project.reviews_en.map((url) => {
                           return (this.displayReviews(url));
                         })}
                         </ul>

@@ -26,7 +26,9 @@ class Produtora extends React.Component {
                     <div className="container-fluid masonry">
                         <div className="row">
                             <div className="col-md-6 text-menu">
-                            {this.state.info.story && this.state.info.story.split('\n').map(function(line, i) {
+                            {this.state.info.story &&
+                             this.props.lang == 'pt' &&
+                             this.state.info.story.split('\n').map(function(line, i) {
                               return (
                                 <div key={line + i}>
                                   {line}
@@ -34,6 +36,16 @@ class Produtora extends React.Component {
                                 </div>
                               )
                               })}
+                            {this.state.info.story_en &&
+                             this.props.lang == 'en' &&
+                             this.state.info.story_en.split('\n').map(function(line, i) {
+                                return (
+                                  <div key={line + i}>
+                                    {line}
+                                    <br/>
+                                  </div>
+                                )
+                            })}
                             </div>
                             <div className="col-md-6">
                                 <img className="img-responsive cartazes" src="./img/cartazes/campo_de_jogo.jpg"/>

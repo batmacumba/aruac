@@ -37,12 +37,13 @@ class Diretores extends React.Component {
                                 }
                             </TabList>
 
-                            {this.state.directors.map(function (director) {
+                             {this.state.directors.map((director) => {
                               return (
                                   <TabPanel key={director._id}>
                                     <img src={director.photo} className="center-block diretores"/>
                                     <p>
-                                        {director.story.split('\n').map(function(line, i) {
+                                        {this.props.lang == 'pt' &&
+                                         director.story.split('\n').map(function(line, i) {
                                           return (
                                             <span key={line + i}>
                                               {line}
@@ -50,12 +51,22 @@ class Diretores extends React.Component {
                                             </span>
                                           )
                                           })}
+                                          {this.props.lang == 'en' &&
+                                           director.story_en.split('\n').map(function(line, i) {
+                                            return (
+                                              <span key={line + i}>
+                                                {line}
+                                                <br/>
+                                              </span>
+                                            )
+                                            })}
                                     </p>
                                     <EditDirector director={director}/>
                                     <DelDirector director={director}/>
                                   </TabPanel>
                               );})
                             }
+
                         </Tabs>
                     }
                     <hr/>

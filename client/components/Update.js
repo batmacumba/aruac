@@ -21,23 +21,35 @@ class Update extends React.Component {
         this.state = {
             id: '',
             title: '',
+            title_en: '',
             director: [''],
             year: '',
             trailer: '',
             stills: [],
             thumbnail: '',
             genre: '',
+            genre_en: '',
             duration: '',
             country: [''],
+            country_en: [''],
             crew: [{
-              role: 'Função',
-              name: 'Nome'
+              role: '',
+              name: ''
+            }],
+            crew_en: [{
+              role: '',
+              name: ''
             }],
             cast: [''],
             storyline: '',
+            storyline_en: '',
             awards: [''],
+            awards_en: [''],
             festivals: [''],
+            festivals_en: [''],
             reviews: [''],
+            reviews_en: [''],
+            category: '',
             messageFromServer: '',
             modalIsOpen: true
         }
@@ -53,24 +65,34 @@ class Update extends React.Component {
     }
 
     componentDidMount() {
-      this.setState({
-        id: this.props.project._id,
-        title: this.props.project.title,
-        director: this.props.project.director,
-        year: this.props.project.year,
-        trailer: this.props.project.trailer,
-        stills: this.props.project.stills,
-        thumbnail: this.props.project.thumbnail,
-        genre: this.props.project.genre,
-        duration: this.props.project.duration,
-        country: this.props.project.country,
-        crew: this.props.project.crew,
-        cast: this.props.project.cast,
-        storyline: this.props.project.storyline,
-        awards: this.props.project.awards,
-        festivals: this.props.project.festivals,
-        reviews: this.props.project.reviews,
-        category: this.props.project.category
+        this.props.project.crew.reverse();
+        this.props.project.crew_en.reverse();
+        this.setState({
+            id: this.props.project._id,
+            title: this.props.project.title,
+            title_en: this.props.project.title_en,
+            director: this.props.project.director,
+            year: this.props.project.year,
+            trailer: this.props.project.trailer,
+            stills: this.props.project.stills,
+            thumbnail: this.props.project.thumbnail,
+            genre: this.props.project.genre,
+            genre_en: this.props.project.genre_en,
+            duration: this.props.project.duration,
+            country: this.props.project.country,
+            country_en: this.props.project.country_en,
+            crew: this.props.project.crew,
+            crew_en: this.props.project.crew_en,
+            cast: this.props.project.cast,
+            storyline: this.props.project.storyline,
+            storyline_en: this.props.project.storyline_en,
+            awards: this.props.project.awards,
+            awards_en: this.props.project.awards_en,
+            festivals: this.props.project.festivals,
+            festivals_en: this.props.project.festivals_en,
+            reviews: this.props.project.reviews,
+            reviews_en: this.props.project.reviews_en,
+            category: this.props.project.category
         });
     }
 
@@ -100,7 +122,7 @@ class Update extends React.Component {
 
       var i;
       /* crew */
-      if (e.target.name == "crew") i = parseInt(e.target.id.split(" ")[2]);
+      if (e.target.name == "crew" || e.target.name == "crew_en") i = parseInt(e.target.id.split(" ")[2]);
       /* etc */
       else i = parseInt(e.target.id.split(" ")[1]);
       /* single element */
@@ -109,7 +131,7 @@ class Update extends React.Component {
       /* array */
       else {
         const newState = this.state[e.target.name].slice();
-        if (e.target.name == "crew") {
+        if (e.target.name == "crew" || e.target.name == "crew_en") {
           if (e.target.id.split(" ")[1] == "name") newState[i].name = e.target.value;
           else newState[i].role = e.target.value;
         }
@@ -125,23 +147,23 @@ class Update extends React.Component {
     prepend(fieldName) {
       const newState = this.state[fieldName].slice();
       newState.unshift(this.state[fieldName][0]);
-      if (fieldName == "crew") newState[0] = { role: '', name: '' };
+      if (fieldName == "crew" || fieldName == "crew_en") newState[0] = { role: '', name: '' };
       else newState[0] = '';
       this.setState({ [fieldName]: newState });
 
-      if (fieldName == "crew") {
+      if (fieldName == "crew" || fieldName == "crew_en") {
         document.getElementById(fieldName + " role 0").value = '';
         document.getElementById(fieldName + " name 0").value = '';
         document.getElementById(fieldName + " role 0").focus();
         /* bug workaround */
-        document.getElementById(fieldName + " role 1").value = newState[1].role;
-        document.getElementById(fieldName + " name 1").value = newState[1].name;
+        // document.getElementById(fieldName + " role 1").value = newState[1].role;
+        // document.getElementById(fieldName + " name 1").value = newState[1].name;
       }
       else {
         document.getElementById(fieldName + " 0").value = '';
         document.getElementById(fieldName + " 0").focus();
         /* bug workaround */
-        document.getElementById(fieldName + " " + 1).value = newState[1];
+        // document.getElementById(fieldName + " " + 1).value = newState[1];
       }
     }
 
@@ -155,11 +177,11 @@ class Update extends React.Component {
       newState.splice(i, 1);
       this.setState({ [fieldName]: newState });
       /* bug workaround */
-      if (fieldName == "crew") {
-        document.getElementById(fieldName + " role " + i).value = newState[i].role;
-        document.getElementById(fieldName + " name " + i).value = newState[i].name;
-      }
-      else document.getElementById(fieldName + " " + i).value = newState[i];
+      // if (fieldName == "crew" || fieldName == "crew_en") {
+      //   document.getElementById(fieldName + " role " + i).value = newState[i].role;
+      //   document.getElementById(fieldName + " name " + i).value = newState[i].name;
+      // }
+      // else document.getElementById(fieldName + " " + i).value = newState[i];
     }
 
     /**
@@ -169,7 +191,7 @@ class Update extends React.Component {
     */
     displayFields(fieldName, i) {
       /* returns 1D string array fields */
-      if (fieldName != "crew") {
+      if (fieldName != "crew" && fieldName != "crew_en") {
           if (i == 0)
             return (
               <div className="row form-group" key={fieldName + i}>
@@ -237,10 +259,10 @@ class Update extends React.Component {
     update(e) {
       const data = new FormData();
       data.append('_id', e.state.id);
-      
+
       Object.keys(e.state).map( name => {
         if (name == "stills" || name == "thumbnail") ;
-        else if (name == "crew") data.append(name, JSON.stringify(e.state[name]));
+        else if (name == "crew" || name == "crew_en") data.append(name, JSON.stringify(e.state[name]));
         else data.append(name, e.state[name]);
       });
 
@@ -298,6 +320,15 @@ class Update extends React.Component {
                                   <div className="row">
                                     <div className="col-sm-11">
                                       <input type="text" className="form-control" id="title" name="title" value={this.state.title} onChange={this.handleTextChange}></input>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="form-group">
+                                  <label htmlFor="title_en">Nome do projeto (Inglês)</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <input type="text" className="form-control" id="title_en" name="title_en" value={this.state.title_en} onChange={this.handleTextChange}></input>
                                     </div>
                                   </div>
                                 </div>
@@ -375,6 +406,15 @@ class Update extends React.Component {
                                 </div>
 
                                 <div className="form-group">
+                                  <label htmlFor="genre_en">Gênero (Inglês)</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <input type="text" className="form-control" id="genre_en" name="genre_en" value={this.state.genre_en} onChange={this.handleTextChange}></input>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="form-group">
                                   <label htmlFor="duration">Duração em minutos</label>
                                   <div className="row">
                                     <div className="col-sm-11">
@@ -391,9 +431,23 @@ class Update extends React.Component {
                                 </div>
 
                                 <div className="form-group">
+                                  <label>País (Inglês)</label>
+                                  { this.state.country_en.map((el, i) => {
+                                    return (this.displayFields("country_en", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
                                   <label>Equipe</label>
                                   { this.state.crew.map((el, i) => {
                                     return (this.displayFields("crew", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Equipe (Inglês)</label>
+                                  { this.state.crew_en.map((el, i) => {
+                                    return (this.displayFields("crew_en", i) );
                                   })}
                                 </div>
 
@@ -414,9 +468,25 @@ class Update extends React.Component {
                                 </div>
 
                                 <div className="form-group">
+                                  <label htmlFor="storyline_en">Sinopse (Inglês)</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <textarea rows="5" type="text" className="form-control" id="storyline_en" name="storyline_en" value={this.state.storyline_en} onChange={this.handleTextChange}></textarea>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="form-group">
                                   <label>Prêmios</label>
                                   { this.state.awards.map((el, i) => {
                                     return (this.displayFields("awards", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Prêmios (Inglês)</label>
+                                  { this.state.awards_en.map((el, i) => {
+                                    return (this.displayFields("awards_en", i) );
                                   })}
                                 </div>
 
@@ -428,9 +498,23 @@ class Update extends React.Component {
                                 </div>
 
                                 <div className="form-group">
-                                  <label>Críticas (URL)</label>
+                                  <label>Festivais (Inglês)</label>
+                                  { this.state.festivals_en.map((el, i) => {
+                                    return (this.displayFields("festivals_en", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Críticas URL</label>
                                   { this.state.reviews.map((el, i) => {
                                     return (this.displayFields("reviews", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Críticas URL (Inglês)</label>
+                                  { this.state.reviews_en.map((el, i) => {
+                                    return (this.displayFields("reviews_en", i) );
                                   })}
                                 </div>
 
@@ -449,21 +533,20 @@ class Update extends React.Component {
         else {
             return (
                     <div>
-                    <Button bsStyle="success" bsSize="small" onClick={this.openModal}><span className="glyphicon glyphicon-plus"></span></Button>
-                    <Modal
-                    isOpen={this.state.modalIsOpen}
-                    onAfterOpen={this.afterOpenModal}
-                    onRequestClose={this.closeModal}
-                    contentLabel="Add Project"
-                    className="Modal"
-                    style={ {overlay: {zIndex: 10}} }>
-                    <div className='button-center'>
-                    <h3>{this.state.messageFromServer}</h3>
-                    <Link to={{pathname: '/', search: '' }} style={{ textDecoration: 'none' }}>
-                    <Button bsStyle="success" bsSize="small" onClick={this.closeModal}>Fechar</Button>
-                    </Link>
-                    </div>
-                    </Modal>
+                        <Modal
+                        isOpen={this.state.modalIsOpen}
+                        onAfterOpen={this.afterOpenModal}
+                        onRequestClose={this.closeModal}
+                        contentLabel="Add Project"
+                        className="Modal"
+                        style={ {overlay: {zIndex: 10}} }>
+                            <div className='button-center'>
+                                <h3>{this.state.messageFromServer}</h3>
+                                <Link to={{pathname: '/', search: '' }} style={{ textDecoration: 'none' }}>
+                                <Button bsStyle="success" bsSize="small" onClick={this.closeModal}>Fechar</Button>
+                                </Link>
+                            </div>
+                        </Modal>
                     </div>
                     )
         }

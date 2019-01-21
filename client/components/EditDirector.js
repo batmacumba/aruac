@@ -19,6 +19,7 @@ class EditDirector extends React.Component {
             name:'',
             photo:'',
             story: '',
+            story_en: '',
             messageFromServer: '',
             modalIsOpen: false
         }
@@ -35,7 +36,8 @@ class EditDirector extends React.Component {
             _id: this.props.director._id,
             name: this.props.director.name,
             photo: this.props.director.photo,
-            story: this.props.director.story
+            story: this.props.director.story,
+            story_en: this.props.director.story_en
         });
     }
 
@@ -75,6 +77,7 @@ class EditDirector extends React.Component {
         data.append('name', e.state.name);
         data.append('photo', e.state.photo[0].name);
         data.append('story', e.state.story);
+        data.append('story_en', e.state.story_en);
 
         axios.post('/editDirector', data)
           .then(function(response) {
@@ -143,6 +146,15 @@ class EditDirector extends React.Component {
                                   </div>
                                 </div>
 
+                                <div className="form-group">
+                                  <label htmlFor="story_en">Currículo (Inglês)</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <textarea rows="5" type="text" className="form-control" id="story_en" name="story_en" value={this.state.story_en} onChange={this.handleTextChange}></textarea>
+                                    </div>
+                                  </div>
+                                </div>
+
                                 </form>
                               </div>
                               <div className='button-center'>
@@ -158,7 +170,6 @@ class EditDirector extends React.Component {
         else {
             return (
                     <div>
-                        <Button bsStyle="success" bsSize="small" onClick={this.openModal}><span className="glyphicon glyphicon-plus"></span></Button>
                         <Modal
                             isOpen={this.state.modalIsOpen}
                             onAfterOpen={this.afterOpenModal}

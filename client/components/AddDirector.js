@@ -21,6 +21,7 @@ class AddDirector extends React.Component {
           name: '',
           photo: '',
           story: '',
+          story_en: '',
           messageFromServer: '',
           modalIsOpen: false
       }
@@ -42,6 +43,7 @@ class AddDirector extends React.Component {
                     name: '',
                     photo: '',
                     story: '',
+                    story_en: '',
                     messageFromServer: ''
                     });
   }
@@ -62,6 +64,7 @@ class AddDirector extends React.Component {
     data.append('name', e.state.name);
     data.append('photo', e.state.photo[0].name);
     data.append('story', e.state.story);
+    data.append('story_en', e.state.story_en);
 
     axios.post('/newDirector', data)
       .then(function(response) {
@@ -136,6 +139,15 @@ class AddDirector extends React.Component {
                                 </div>
                               </div>
 
+                              <div className="form-group">
+                                <label htmlFor="story_en">Currículo (Inglês)</label>
+                                <div className="row">
+                                  <div className="col-sm-11">
+                                    <textarea rows="5" type="text" className="form-control" id="story_en" name="story_en" value={this.state.story_en} onChange={this.handleTextChange}></textarea>
+                                  </div>
+                                </div>
+                              </div>
+
                               </form>
                             </div>
                             <div className='button-center'>
@@ -151,7 +163,6 @@ class AddDirector extends React.Component {
       else {
           return (
                   <div>
-                      <Button bsStyle="success" bsSize="small" onClick={this.openModal}><span className="glyphicon glyphicon-plus"></span></Button>
                       <Modal
                           isOpen={this.state.modalIsOpen}
                           onAfterOpen={this.afterOpenModal}

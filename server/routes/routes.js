@@ -177,6 +177,7 @@ router.route('/updateInfo')
      info.youtube = req.body.youtube;
      info.email = req.body.email;
      info.story = req.body.story;
+     info.story_en = req.body.story_en;
 
      Info.find(function (err, previous) {
          /* existing document */
@@ -216,6 +217,7 @@ router.route('/newDirector')
       director.name = req.body.name;
       director.photo = req.body.photo;
       director.story = req.body.story;
+      director.story_en = req.body.story_en;
 
       var tmpPath = './server/public/images/tmp/';
       var targetPath = './server/public/images/upload/directors/' + director.name + '/';
@@ -243,6 +245,7 @@ router.route('/editDirector')
       director.name = req.body.name;
       director.photo = req.body.photo;
       director.story = req.body.story;
+      director.story_en = req.body.story_en;
 
       var tmpPath = './server/public/images/tmp/';
       var targetPath = './server/public/images/upload/directors/' + director.name + '/';

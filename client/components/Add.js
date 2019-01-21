@@ -206,11 +206,11 @@ class Add extends React.Component {
     newState.splice(i, 1);
     this.setState({ [fieldName]: newState });
     /* bug workaround */
-    if (fieldName == "crew" || fieldName == "crew_en") {
-      document.getElementById(fieldName + " role " + i).value = newState[i].role;
-      document.getElementById(fieldName + " name " + i).value = newState[i].name;
-    }
-    else document.getElementById(fieldName + " " + i).value = newState[i];
+    // if (fieldName == "crew" || fieldName == "crew_en") {
+    //   document.getElementById(fieldName + " role " + i).value = newState[i].role;
+    //   document.getElementById(fieldName + " name " + i).value = newState[i].name;
+    // }
+    // else document.getElementById(fieldName + " " + i).value = newState[i];
   }
 
   /**
@@ -278,7 +278,6 @@ class Add extends React.Component {
   }
 
   render() {
-      console.log(this.state);
       if (this.state.messageFromServer == ''){
           return (
                   <div>

@@ -39,7 +39,6 @@ class App extends React.Component {
     }
 
     render() {
-        console.log("app -> lang", this.state.lang);
         return (
             <div>
 
@@ -64,7 +63,7 @@ class App extends React.Component {
                     <div className="container-fluid">
                       { this.state.lang == 'pt' &&
                           <ul className="nav navbar-nav">
-                            <li><Link to="/">HOME</Link></li>
+                            <li><Link to="/">ARUAC</Link></li>
                             <li><Link to="/produtora">PRODUTORA</Link></li>
                             <li><Link to="/diretores">DIRETORES</Link></li>
                             <li><Link to="/contato">CONTATO</Link></li>
@@ -72,8 +71,8 @@ class App extends React.Component {
                       }
                       { this.state.lang == 'en' &&
                           <ul className="nav navbar-nav">
-                            <li><Link to="/">HOME</Link></li>
-                            <li><Link to="/produtora">WORK</Link></li>
+                            <li><Link to="/">ARUAC</Link></li>
+                            <li><Link to="/produtora">ABOUT</Link></li>
                             <li><Link to="/diretores">DIRECTORS</Link></li>
                             <li><Link to="/contato">CONTACT</Link></li>
                           </ul>
@@ -95,10 +94,23 @@ class App extends React.Component {
                 <footer className="footer-distributed">
                   <div className="footer-left">
                     <div className="footer-links text-footer">
-                      <Link to="/">ARUAC</Link>
-                      <Link to="/produtora">PRODUTORA</Link>
-                      <Link to="/diretores">DIRETORES</Link>
-                      <Link to="/contato">CONTATO</Link>
+                    { this.state.lang == 'pt' &&
+                        <span>
+                            <Link to="/">ARUAC</Link>
+                            <Link to="/produtora">PRODUTORA</Link>
+                            <Link to="/diretores">DIRETORES</Link>
+                            <Link to="/contato">CONTATO</Link>
+                        </span>
+                    }
+                    { this.state.lang == 'en' &&
+                        <span>
+                            <Link to="/">ARUAC</Link>
+                            <Link to="/produtora">ABOUT</Link>
+                            <Link to="/diretores">DIRECTORS</Link>
+                            <Link to="/contato">CONTACT</Link>
+                        </span>
+                    }
+
                       <br/><hr/>
                       <div className="footer-icons">
 

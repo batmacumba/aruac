@@ -17,6 +17,7 @@ class Info extends React.Component {
             youtube: '',
             email: '',
             story: '',
+            story_en: '',
             messageFromServer: '',
             modalIsOpen: false
         }
@@ -40,6 +41,7 @@ class Info extends React.Component {
             youtube: nextProps.info.youtube,
             email: nextProps.info.email,
             story: nextProps.info.story,
+            story_en: nextProps.info.story_en
         });
     }
 
@@ -164,13 +166,23 @@ class Info extends React.Component {
 
                                 {/* PRODUTORA */}
                                 {this.props.prev == "prod" &&
-                                    <div className="form-group">
-                                      <label htmlFor="story">Resumo</label>
-                                      <div className="row">
-                                        <div className="col-sm-11">
-                                          <textarea rows="20" type="text" className="form-control" id="story" name="story" value={this.state.story} onChange={this.handleTextChange}></textarea>
+                                    <div>
+                                        <div className="form-group">
+                                          <label htmlFor="story">Resumo</label>
+                                          <div className="row">
+                                            <div className="col-sm-11">
+                                              <textarea rows="20" type="text" className="form-control" id="story" name="story" value={this.state.story} onChange={this.handleTextChange}></textarea>
+                                            </div>
+                                          </div>
                                         </div>
-                                      </div>
+                                        <div className="form-group">
+                                          <label htmlFor="story_en">Resumo (Inglês)</label>
+                                          <div className="row">
+                                            <div className="col-sm-11">
+                                              <textarea rows="20" type="text" className="form-control" id="story_en" name="story_en" value={this.state.story_en} onChange={this.handleTextChange}></textarea>
+                                            </div>
+                                          </div>
+                                        </div>
                                     </div>
                                 }
 
@@ -189,7 +201,6 @@ class Info extends React.Component {
         else {
             return (
                     <div>
-                        <Button bsStyle="success" bsSize="small" onClick={this.openModal}><span className="glyphicon glyphicon-plus"></span></Button>
                         <Modal
                         isOpen={this.state.modalIsOpen}
                         onAfterOpen={this.afterOpenModal}
