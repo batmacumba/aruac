@@ -30,12 +30,13 @@ export default class Home extends React.Component {
         });
     }
     render() {
+        console.log("home -> lang", this.props.lang);
         return (
                 <div>
                     <Masonry className={'masonry'} options={masonryOptions}>
-                        {this.state.data.map(function(exp){
+                        {this.state.data.map((exp) => {
                           return (
-                            <Detail project={exp} key={exp._id}/>
+                            <Detail project={exp} key={exp._id} lang={this.props.lang} />
                           );})
                         }
                     </Masonry>

@@ -39,6 +39,7 @@ class App extends React.Component {
     }
 
     render() {
+        console.log("app -> lang", this.state.lang);
         return (
             <div>
 

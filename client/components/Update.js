@@ -53,23 +53,6 @@ class Update extends React.Component {
     }
 
     componentDidMount() {
-      /* crew retrieve from db */
-      let crewCopy = this.props.project.crew[0].split('*!&').reverse();
-      this.props.project.crew = [];
-      for (var i = 0; i < crewCopy.length; i++) {
-        var par = crewCopy[i].split('*!');
-        if (par[0] == '') ;
-        else {
-          var crewMember = {
-            role: '',
-            name: ''
-          };
-          crewMember.role = par[0];
-          crewMember.name = par[1];
-          this.props.project.crew.unshift(crewMember);
-        }
-      }
-
       this.setState({
         id: this.props.project._id,
         title: this.props.project.title,
@@ -254,14 +237,10 @@ class Update extends React.Component {
     update(e) {
       const data = new FormData();
       data.append('_id', e.state.id);
+      
       Object.keys(e.state).map( name => {
-        if (name == "crew") {
-          var equipe = '';
-          for (var i = 0; i < e.state[name].length; i++)
-            equipe = equipe + e.state[name][i].role + '*!' + e.state[name][i].name + '*!&';
-          data.append(name, equipe);
-        }
-        else if (name == "stills" || name == "thumbnail") ;
+        if (name == "stills" || name == "thumbnail") ;
+        else if (name == "crew") data.append(name, JSON.stringify(e.state[name]));
         else data.append(name, e.state[name]);
       });
 

@@ -20,23 +20,34 @@ class Add extends React.Component {
       super();
       this.state = {
           title: '',
+          title_en: '',
           director: [''],
           year: '',
           trailer: '',
           stills: [],
           thumbnail: '',
           genre: '',
+          genre_en: '',
           duration: '',
           country: [''],
+          country_en: [''],
           crew: [{
+            role: 'Função',
+            name: 'Nome'
+          }],
+          crew_en: [{
             role: 'Função',
             name: 'Nome'
           }],
           cast: [''],
           storyline: '',
+          storyline_en: '',
           awards: [''],
+          awards_en: [''],
           festivals: [''],
+          festivals_en: [''],
           reviews: [''],
+          reviews_en: [''],
           category: 'Cinema',
           messageFromServer: '',
           modalIsOpen: false
@@ -60,23 +71,34 @@ class Add extends React.Component {
       this.setState({
                     modalIsOpen: false,
                     title: '',
+                    title_en: '',
                     director: [''],
                     year: '',
                     trailer: '',
                     stills: [],
                     thumbnail: '',
                     genre: '',
+                    genre_en: '',
                     duration: '',
                     country: [''],
+                    country_en: [''],
                     crew: [{
+                      role: 'Função',
+                      name: 'Nome'
+                    }],
+                    crew_en: [{
                       role: 'Função',
                       name: 'Nome'
                     }],
                     cast: [''],
                     storyline: '',
+                    storyline_en: '',
                     awards: [''],
+                    awards_en: [''],
                     festivals: [''],
+                    festivals_en: [''],
                     reviews: [''],
+                    reviews_en: [''],
                     category: 'Cinema',
                     messageFromServer: ''
                     });
@@ -98,14 +120,10 @@ class Add extends React.Component {
   */
   insertNewProject(e) {
     const data = new FormData();
+
     Object.keys(e.state).map( name => {
-      if (name == "crew") {
-        var equipe = '';
-        for (var i = 0; i < e.state[name].length; i++)
-          equipe = equipe + e.state[name][i].role + '*!' + e.state[name][i].name + '*!&';
-        data.append(name, equipe);
-      }
-      else if (name == "stills" || name == "thumbnail") ;
+      if (name == "stills" || name == "thumbnail") ;
+      else if (name == "crew" || name == "crew_en") data.append(name, JSON.stringify(e.state[name]));
       else data.append(name, e.state[name]);
     });
 
@@ -127,14 +145,13 @@ class Add extends React.Component {
   handleTextChange(e) {
     /* files */
     if (e.target.files) {
-      this.setState({ [e.target.name]: e.target.files,
-       });
+      this.setState({ [e.target.name]: e.target.files});
       return;
     }
 
     var i;
     /* crew */
-    if (e.target.name == "crew") i = parseInt(e.target.id.split(" ")[2]);
+    if (e.target.name == "crew" || e.target.name == "crew_en") i = parseInt(e.target.id.split(" ")[2]);
     /* etc */
     else i = parseInt(e.target.id.split(" ")[1]);
     /* single element */
@@ -143,7 +160,7 @@ class Add extends React.Component {
     /* array */
     else {
       const newState = this.state[e.target.name].slice();
-      if (e.target.name == "crew") {
+      if (e.target.name == "crew" || e.target.name == "crew_en") {
         if (e.target.id.split(" ")[1] == "name") newState[i].name = e.target.value;
         else newState[i].role = e.target.value;
       }
@@ -159,23 +176,23 @@ class Add extends React.Component {
   prepend(fieldName) {
     const newState = this.state[fieldName].slice();
     newState.unshift(this.state[fieldName][0]);
-    if (fieldName == "crew") newState[0] = { role: '', name: '' };
+    if (fieldName == "crew" || fieldName == "crew_en") newState[0] = { role: '', name: '' };
     else newState[0] = '';
     this.setState({ [fieldName]: newState });
 
-    if (fieldName == "crew") {
+    if (fieldName == "crew" || fieldName == "crew_en") {
       document.getElementById(fieldName + " role 0").value = '';
       document.getElementById(fieldName + " name 0").value = '';
       document.getElementById(fieldName + " role 0").focus();
       /* bug workaround */
-      document.getElementById(fieldName + " role 1").value = newState[1].role;
-      document.getElementById(fieldName + " name 1").value = newState[1].name;
+      // document.getElementById(fieldName + " role 1").value = newState[1].role;
+      // document.getElementById(fieldName + " name 1").value = newState[1].name;
     }
     else {
       document.getElementById(fieldName + " 0").value = '';
       document.getElementById(fieldName + " 0").focus();
       /* bug workaround */
-      document.getElementById(fieldName + " " + 1).value = newState[1];
+      // document.getElementById(fieldName + " " + 1).value = newState[1];
     }
   }
 
@@ -189,7 +206,7 @@ class Add extends React.Component {
     newState.splice(i, 1);
     this.setState({ [fieldName]: newState });
     /* bug workaround */
-    if (fieldName == "crew") {
+    if (fieldName == "crew" || fieldName == "crew_en") {
       document.getElementById(fieldName + " role " + i).value = newState[i].role;
       document.getElementById(fieldName + " name " + i).value = newState[i].name;
     }
@@ -203,7 +220,7 @@ class Add extends React.Component {
   */
   displayFields(fieldName, i) {
     /* returns 1D string array fields */
-    if (fieldName != "crew") {
+    if (fieldName != "crew" && fieldName != "crew_en") {
         if (i == 0)
           return (
             <div className="row form-group" key={fieldName + i}>
@@ -261,7 +278,7 @@ class Add extends React.Component {
   }
 
   render() {
-      // console.log(this.state);
+      console.log(this.state);
       if (this.state.messageFromServer == ''){
           return (
                   <div>
@@ -300,6 +317,15 @@ class Add extends React.Component {
                                   <div className="row">
                                     <div className="col-sm-11">
                                       <input type="text" className="form-control" id="title" name="title" value={this.state.title} onChange={this.handleTextChange}></input>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="form-group">
+                                  <label htmlFor="title_en">Nome do projeto (Inglês)</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <input type="text" className="form-control" id="title_en" name="title_en" value={this.state.title_en} onChange={this.handleTextChange}></input>
                                     </div>
                                   </div>
                                 </div>
@@ -370,6 +396,15 @@ class Add extends React.Component {
                                 </div>
 
                                 <div className="form-group">
+                                  <label htmlFor="genre_en">Gênero (Inglês)</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <input type="text" className="form-control" id="genre_en" name="genre_en" value={this.state.genre_en} onChange={this.handleTextChange}></input>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="form-group">
                                   <label htmlFor="duration">Duração em minutos</label>
                                   <div className="row">
                                     <div className="col-sm-11">
@@ -386,9 +421,23 @@ class Add extends React.Component {
                                 </div>
 
                                 <div className="form-group">
+                                  <label>País (Inglês)</label>
+                                  { this.state.country_en.map((el, i) => {
+                                    return (this.displayFields("country_en", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
                                   <label>Equipe</label>
                                   { this.state.crew.map((el, i) => {
                                     return (this.displayFields("crew", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Equipe (Inglês)</label>
+                                  { this.state.crew_en.map((el, i) => {
+                                    return (this.displayFields("crew_en", i) );
                                   })}
                                 </div>
 
@@ -409,9 +458,25 @@ class Add extends React.Component {
                                 </div>
 
                                 <div className="form-group">
+                                  <label htmlFor="storyline_en">Sinopse (Inglês)</label>
+                                  <div className="row">
+                                    <div className="col-sm-11">
+                                      <textarea rows="5" type="text" className="form-control" id="storyline_en" name="storyline_en" value={this.state.storyline_en} onChange={this.handleTextChange}></textarea>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="form-group">
                                   <label>Prêmios</label>
                                   { this.state.awards.map((el, i) => {
                                     return (this.displayFields("awards", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Prêmios (Inglês)</label>
+                                  { this.state.awards_en.map((el, i) => {
+                                    return (this.displayFields("awards_en", i) );
                                   })}
                                 </div>
 
@@ -423,9 +488,23 @@ class Add extends React.Component {
                                 </div>
 
                                 <div className="form-group">
-                                  <label>Críticas (URL)</label>
+                                  <label>Festivais (Inglês)</label>
+                                  { this.state.festivals_en.map((el, i) => {
+                                    return (this.displayFields("festivals_en", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Críticas URL</label>
                                   { this.state.reviews.map((el, i) => {
                                     return (this.displayFields("reviews", i) );
+                                  })}
+                                </div>
+
+                                <div className="form-group">
+                                  <label>Críticas URL (Inglês)</label>
+                                  { this.state.reviews_en.map((el, i) => {
+                                    return (this.displayFields("reviews_en", i) );
                                   })}
                                 </div>
 

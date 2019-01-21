@@ -26,6 +26,11 @@ class Detail extends React.Component {
         this.renderVideo = this.renderVideo.bind(this);
     }
 
+    componentDidMount() {
+        this.props.project.crew.reverse();
+        this.props.project.crew_en.reverse();
+    }
+
     openUpdate() {
         this.setState({
           modalIsOpen: false,
@@ -63,14 +68,13 @@ class Detail extends React.Component {
 
     /**
     * displayCrew - returns formatted role and name
-    * @str: given string array
+    * @obj: given object
     * @i: index of the wanted member
     */
-    displayCrew(str, i) {
-        if (str == '' || str == 'Função*!Nome') return;
-        var strArray = str.split('*!');
-        var nameFormatted = strArray[1].toUpperCase();
-        var strFormatted = strArray[0] + ' ' + nameFormatted;
+    displayCrew(obj, i) {
+        if (obj == null) return;
+        var nameFormatted = obj.name.toUpperCase();
+        var strFormatted = obj.role + ' ' + nameFormatted;
         return (
             <div key={strFormatted + i}>
                 {strFormatted} <br/>
@@ -159,6 +163,7 @@ class Detail extends React.Component {
     }
 
     render() {
+        console.log("detail -> lang", this.props.lang);
       if (this.state.messageFromServer == '') {
         /* parse das imagens */
         const images = [];
@@ -186,7 +191,8 @@ class Detail extends React.Component {
               <img src={this.props.project.thumbnail} />
               <div className="overlay-bg"></div>
               <div className="overlay-text">
-                <h3>{this.props.project.title}</h3><hr/>
+                <h3>{this.props.lang == 'pt' && this.props.project.title}
+                    {this.props.lang == 'en' && this.props.project.title_en}</h3><hr/>
                 { this.props.project.director.map((name, i) => {
                   return (this.displayDirector(name, i));
                 })} <br/>
@@ -206,7 +212,8 @@ class Detail extends React.Component {
             style={ {overlay: {zIndex: 10}} }>
               <div className="frame">
                 <button type="button" className="close" aria-hidden="true" onClick={this.closeModal}>&times;</button>
-                <h4 className="modal-title text-modal-title">{this.props.project.title}</h4>
+                <h4 className="modal-title text-modal-title">{this.props.lang == 'pt' && this.props.project.title}
+                    {this.props.lang == 'en' && this.props.project.title_en}</h4>
 
                 {/* CAROUSEL */}
                 { images.length > 0 &&
@@ -227,23 +234,38 @@ class Detail extends React.Component {
                 <div className="row text-modal">
                   <div className="col-md-3 text-cred">
                     {this.props.project.genre &&
+                     this.props.lang == 'pt' &&
                         this.props.project.genre + ' | '}
+                    {this.props.project.genre &&
+                     this.props.lang == 'en' &&
+                        this.props.project.genre_en + ' | '}
                     {this.props.project.duration &&
                         this.props.project.duration + ' | '}
                     {this.props.project.country[0].length > 0 &&
+                     this.props.lang == 'pt' &&
                         this.props.project.country[0].toUpperCase() + ' | '}
+                    {this.props.project.country_en[0].length > 0 &&
+                     this.props.lang == 'en' &&
+                        this.props.project.country_en[0].toUpperCase() + ' | '}
                     {this.props.project.year &&
                         this.props.project.year} <br/><br/>
 
                     {/* EQUIPE */}
-                    { this.props.project.crew[0].split('*!&').reverse().map((str, i) => {
-                      return (this.displayCrew(str, i));
-                    })} <br/>
+                    { this.props.lang == 'pt' && this.props.project.crew.map((obj, i) => {
+                      return (this.displayCrew(obj, i));
+                    })}
+
+                    { this.props.lang == 'en' && this.props.project.crew_en.map((obj, i) => {
+                      return (this.displayCrew(obj, i));
+                    })}
+
+                    <br/>
 
                     {/* ELENCO */}
                     {this.props.project.cast[0].length > 0 &&
                       <div>
-                        com&nbsp;
+                        { this.props.lang == 'pt' && <div>com&nbsp;</div> }
+                        { this.props.lang == 'en' && <div>with&nbsp;</div> }
                         { this.props.project.cast.map((name, i) => {
                           return (this.displayCast(name, i));
                         })}
