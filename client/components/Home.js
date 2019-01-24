@@ -30,7 +30,6 @@ export default class Home extends React.Component {
         });
     }
     render() {
-        console.log("home -> lang", this.props.lang);
         return (
                 <div>
                     <Masonry className={'masonry'} options={masonryOptions}>

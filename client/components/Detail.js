@@ -129,13 +129,13 @@ class Detail extends React.Component {
       if (name == '')
         ;
       else if (i == this.props.project.cast.length - 2) {
-          if (this.props.lang == 'pt') return (name + ' e ');
-          else if (this.props.lang == 'en') return (name + ' and ');
+          if (this.props.lang == 'pt') return (name.toUpperCase() + ' e ');
+          else if (this.props.lang == 'en') return (name.toUpperCase() + ' and ');
       }
       else if (i == this.props.project.cast.length - 1)
-        return (name);
+        return (name.toUpperCase());
       else
-        return (name + ', ');
+        return (name.toUpperCase() + ', ');
     }
 
     /**
