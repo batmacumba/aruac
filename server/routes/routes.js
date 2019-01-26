@@ -15,6 +15,7 @@ var rimraf = require('rimraf');
 router.route('/upload')
 .post(function(req, res) {
     var path = './server/public/images/tmp/' + req.files.filepond.name;
+    console.log(path);
     req.files.filepond.mv(path,
         function(err) {
             if (err) {
