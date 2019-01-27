@@ -179,8 +179,8 @@ class Detail extends React.Component {
         /* parse do trailer */
         if (this.props.project.trailer) {
           images.unshift({
-            thumbnail: './client/img/video-play.png',
-            original: './client/img/video-play-original.png',
+            thumbnail: './client/public/img/video-play.png',
+            original: './client/public/img/video-play-original.png',
             embedUrl: this.props.project.trailer,
             renderItem: this.renderVideo.bind(this)
           });
