@@ -7,7 +7,6 @@ module.exports = {
       path: path.join(__dirname, 'client/public/js/'),
       filename: 'bundle.js',
     },
-    devtool: "#eval-source-map",
     module: {
         loaders: [{
                   test: /.jsx?$/,
@@ -23,3 +22,5 @@ module.exports = {
                   }]
     },
 }
+
+//devtool: "#eval-source-map",
