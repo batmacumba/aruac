@@ -7,19 +7,6 @@ module.exports = {
       path: path.join(__dirname, 'client/public/js/'),
       filename: 'bundle.js',
     },
-    plugins: [
-    new webpack.optimize.OccurrenceOrderPlugin(),
-    new webpack.DefinePlugin({
-      'process.env': {
-        'NODE_ENV': JSON.stringify('production')
-      }
-    }),
-    new webpack.optimize.UglifyJsPlugin({
-      compressor: {
-        warnings: false
-      }
-    })
-  ],
     module: {
         loaders: [{
                   test: /.jsx?$/,
