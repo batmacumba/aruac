@@ -6,7 +6,10 @@ var CompressionPlugin = require('compression-webpack-plugin');
 
 module.exports = {
     plugins: [
-        new CompressionPlugin()
+        new CompressionPlugin({
+          algorithm: 'gzip',
+          deleteOriginalAssets: true
+        })
     ],
     devtool: 'cheap-module-source-map',
     entry: './client/index.js',

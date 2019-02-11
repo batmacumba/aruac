@@ -8,6 +8,13 @@ var mongoose = require('mongoose');
 var fileUpload = require('express-fileupload');
 var cors = require('cors');
 
+// Serve GZIP bundle.js
+app.get('/js/bundle.js', function (req, res, next) {
+  req.url = req.url + '.gz';
+  res.set('Content-Encoding', 'gzip');
+  next();
+});
+
 app.use(express.static(path.join(__dirname, '../client/public/')));
 app.use(bodyParser.json({limit: '50mb'}));
 app.use(bodyParser.urlencoded({limit: '50mb', extended: false}));
@@ -23,12 +30,6 @@ app.use('/*', function(req, res) {
     }
   })
 })
-
-app.get('*.js', function (req, res, next) {
-  req.url = req.url + '.gz';
-  res.set('Content-Encoding', 'gzip');
-  next();
-});
 
 mongoose.connect('mongodb://localhost/myapp');
 
