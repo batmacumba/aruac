@@ -24,6 +24,12 @@ app.use('/*', function(req, res) {
   })
 })
 
+app.get('*.js', function (req, res, next) {
+  req.url = req.url + '.gz';
+  res.set('Content-Encoding', 'gzip');
+  next();
+});
+
 mongoose.connect('mongodb://localhost/myapp');
 
 module.exports=app;
