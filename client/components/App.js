@@ -13,19 +13,36 @@ class App extends React.Component {
         super();
         this.state = {
             info: [],
-            lang: 'pt'
+            lang: 'pt',
+            isLogged: false
         };
         this.getInfo = this.getInfo.bind(this);
+        this.getCredential = this.getCredential.bind(this);
         this.changeLang = this.changeLang.bind(this);
     }
     componentDidMount() {
         this.getInfo(this);
+        this.getCredential(this);
     }
 
     getInfo(ev){
         axios.get('/getInfo')
         .then(function(response) {
             ev.setState({info: response.data});
+        });
+    }
+    
+    getCredential(ev){
+        var token = localStorage.getItem('aruacToken');
+        if (!token) return;
+        
+        const data = new FormData();
+        data.append('token', token);
+        axios.post('/checkUser', data)
+        .then(function(response) {
+              console.log("response ", response);
+              if (response.data == 'true') ev.setState({ isLogged: true });
+              else ev.setState({ isLogged: false });
         });
     }
 

@@ -55,8 +55,10 @@ class LogIn extends React.Component {
         
         axios.post('/logUser', data)
         .then(function(response) {
+            console.log(response.data);
+            if (response.data.msg == 'OK') localStorage.setItem('aruacToken', response.data.token);
             e.setState({
-                messageFromServer: response.data,
+                messageFromServer: response.data.msg,
                 modalIsOpen: true
                 });
             });
@@ -83,7 +85,7 @@ class LogIn extends React.Component {
         if (this.state.messageFromServer == '') {
             return (
                 <div className="text-aruac login">
-                    <h4>Cadastrar</h4>
+                    <h4>Logar</h4>
                     <hr/>
                     <form>
                         <div className="form-group">
@@ -117,7 +119,7 @@ class LogIn extends React.Component {
                         isOpen={this.state.modalIsOpen}
                         onAfterOpen={this.afterOpenModal}
                         onRequestClose={this.closeModal}
-                        contentLabel="Edit Director"
+                        contentLabel="Login"
                         className="Modal"
                         style={ {overlay: {zIndex: 10}} }>
                             <div className='button-center'>

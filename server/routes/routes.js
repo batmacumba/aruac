@@ -10,6 +10,8 @@ var mv = require('mv');
 var rimraf = require('rimraf');
 var bcrypt = require("bcryptjs");
 var User = require('../../models/User');
+var jwt = require('jwt-simple');
+var secret = 'FFek5VApTF6T1xPpH1mFMx6c7d20tJY7';
 
 /*******************************************************************************
                                    GLOBAL
@@ -292,14 +294,41 @@ router.get('/getDirectors',function(req, res) {
 
 router.route('/newUser')
 .post(function(req, res) {
-      var user = new User();
-      user.username = req.body.username;
-      user.password = bcrypt.hashSync(req.body.password, 10);
+    var user = new User();
+    user.username = req.body.username;
+    user.password = bcrypt.hashSync(req.body.password, 10);
+
+    user.save(function(err) {
+        if (err) res.send('Houve algum problema, tente de novo.');
+        else res.send('Usuário adicionado!');
+    });
+});
+
+router.route('/logUser')
+.post(function(req, res) {
+    User.findOne({ username: req.body.username}, function(err, user) {
+        if (err)   return res.send({ msg:'Houve algum problema, tente de novo.'});
+        if (!user) return res.send({ msg:'Usuário não existe'});
+        if(!bcrypt.compareSync(req.body.password, user.password))
+                   return res.send({ msg:'Senha incorreta!'});
+
+        var payload = { username: req.body.username };
+        var jwt_token = jwt.encode(payload, secret);
+        res.send({ msg:'OK',
+                   token: jwt_token,
+                 });
+    });
+});
+
+router.route('/checkUser')
+.post(function(req, res) {
+    var decoded = jwt.decode(req.body.token, secret);
+    var name = decoded.username;
       
-      user.save(function(err) {
-                    if (err) res.send('Houve algum problema, tente de novo.');
-                    else res.send('Usuário adicionado!');
-                    });
+    User.findOne({ username: name}, function(err, user) {
+               if (err || !user) res.send('false');
+               else res.send('OK');
+    });
 });
 
 /******************************************************************************/
