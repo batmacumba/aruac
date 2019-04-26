@@ -327,7 +327,7 @@ router.route('/checkUser')
       
     User.findOne({ username: name}, function(err, user) {
                if (err || !user) res.send('false');
-               else res.send('OK');
+               else res.send('true');
     });
 });
 

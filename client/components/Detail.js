@@ -415,8 +415,12 @@ class Detail extends React.Component {
                     }
 
                     <hr/>
-                    <a href="javascript:void(0);" onClick={this.openUpdate}><i className="fa fa-2x fa-pen">&nbsp;Editar</i></a>&nbsp;
-                    <a href="javascript:void(0);" onClick={this.deleteProject.bind(this, this)}><i className="fa fa-2x fa-trash">&nbsp;Deletar</i></a>
+                    {this.props.isLogged &&
+                        <div>
+                            <a href="javascript:void(0);" onClick={this.openUpdate}><i className="fa fa-2x fa-pen">&nbsp;Editar</i></a>
+                            <a href="javascript:void(0);" onClick={this.deleteProject.bind(this, this)}><i className="fa fa-2x fa-trash">&nbsp;Deletar</i></a>
+                        </div>
+                    }
 
                   </div>
                 </div>

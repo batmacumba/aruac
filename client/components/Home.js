@@ -39,7 +39,7 @@ export default class Home extends React.Component {
                           );})
                         }
                     </Masonry>
-                    <Add/>
+                    { this.props.isLogged && <Add/> }
                 </div>
                 );
     }

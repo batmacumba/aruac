@@ -61,8 +61,12 @@ class Diretores extends React.Component {
                                             )
                                             })}
                                     </p>
-                                    <EditDirector director={director}/>
-                                    <DelDirector director={director}/>
+                                    {this.props.isLogged &&
+                                      <div>
+                                        <EditDirector director={director}/>
+                                        <DelDirector director={director}/>
+                                      </div>
+                                    }
                                   </TabPanel>
                               );})
                             }
@@ -70,7 +74,9 @@ class Diretores extends React.Component {
                         </Tabs>
                     }
                     <hr/>
-                    <AddDirector/>
+                    {this.props.isLogged &&
+                        <AddDirector/>
+                    }
 
                 </div>
                 );

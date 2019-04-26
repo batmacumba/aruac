@@ -55,9 +55,11 @@ class Produtora extends React.Component {
                             </div>
                         </div>
                     </div>
-                    <div className="button-center">
-                        <Info info={this.state.info} prev="prod" />
-                    </div>
+                    {this.props.isLogged &&
+                        <div className="button-center">
+                            <Info info={this.state.info} prev="prod" />
+                        </div>
+                    }
                 </div>
                 );
     }
