@@ -8,6 +8,7 @@
     "ajv": "^6.5.2",
     "axios": "^0.18.0",
     "babel-cli": "^6.26.0",
+    "bcryptjs": "^2.4.3",
     "body-parser": "^1.18.3",
     "cors": "^2.8.4",
     "express": "^4.16.3",

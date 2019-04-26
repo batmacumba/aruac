@@ -8,6 +8,8 @@ var fs = require('fs');
 var crypto = require('crypto');
 var mv = require('mv');
 var rimraf = require('rimraf');
+var bcrypt = require("bcryptjs");
+var User = require('../../models/User');
 
 /*******************************************************************************
                                    GLOBAL
@@ -282,6 +284,22 @@ router.get('/getDirectors',function(req, res) {
         if (err) res.send(err);
         res.json(directors);
     });
+});
+
+/*******************************************************************************
+                                AUTENTICAÇÃO
+ *******************************************************************************/
+
+router.route('/newUser')
+.post(function(req, res) {
+      var user = new User();
+      user.username = req.body.username;
+      user.password = bcrypt.hashSync(req.body.password, 10);
+      
+      user.save(function(err) {
+                    if (err) res.send('Houve algum problema, tente de novo.');
+                    else res.send('Usuário adicionado!');
+                    });
 });
 
 /******************************************************************************/

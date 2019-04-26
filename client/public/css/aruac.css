@@ -1,5 +1,7 @@
 * { box-sizing: border-box; }
-body { background-color: #F6F6F6; }
+body {
+    background-color: #F6F6F6;
+}
 /************************************************
                     BUTTON
 ************************************************/
@@ -408,4 +410,9 @@ table {
 .button-center {
     padding-top: 20px;
     text-align: center;
+}
+
+.login {
+    width: 35%;
+    margin: 0 auto;
 }

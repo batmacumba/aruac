@@ -5,6 +5,8 @@ import Home from './Home';
 import Produtora from './Produtora';
 import Diretores from './Diretores';
 import Contato from './Contato';
+import SignUp from './Signup';
+import LogIn from './Login';
 
 class App extends React.Component {
     constructor() {
@@ -84,6 +86,8 @@ class App extends React.Component {
                 {/* MAIN */}
                 <div className="main">
                     <Switch>
+                        <Route path="/logar"     render={(props) => ( <LogIn lang={this.state.lang}/> )} />
+                        <Route path="/cadastrar" render={(props) => ( <SignUp lang={this.state.lang}/> )} />
                         <Route path="/contato"   render={(props) => ( <Contato lang={this.state.lang}/> )} />
                         <Route path="/diretores" render={(props) => ( <Diretores lang={this.state.lang}/> )} />
                         <Route path="/produtora" render={(props) => ( <Produtora lang={this.state.lang}/> )} />
