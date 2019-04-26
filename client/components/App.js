@@ -42,6 +42,7 @@ class App extends React.Component {
         .then(function(response) {
               console.log(response);
               if (response.data == true) ev.setState({ isLogged: true });
+              else if (response.data == 'expired') localStorage.removeItem('aruacToken');
               else ev.setState({ isLogged: false });
         });
     }

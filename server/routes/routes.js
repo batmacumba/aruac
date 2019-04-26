@@ -11,6 +11,8 @@ var rimraf = require('rimraf');
 var bcrypt = require("bcryptjs");
 var User = require('../../models/User');
 var jwt = require('jwt-simple');
+
+/* essa senha precisa ser privada para dar o mínimo de segurança ao site */
 var secret = 'FFek5VApTF6T1xPpH1mFMx6c7d20tJY7';
 
 /*******************************************************************************
@@ -312,7 +314,9 @@ router.route('/logUser')
         if(!bcrypt.compareSync(req.body.password, user.password))
                    return res.send({ msg:'Senha incorreta!'});
 
-        var payload = { username: req.body.username };
+        var payload = { username: req.body.username,
+                        date: new Date().getTime()
+                 };
         var jwt_token = jwt.encode(payload, secret);
         res.send({ msg:'OK',
                    token: jwt_token,
@@ -324,11 +328,16 @@ router.route('/checkUser')
 .post(function(req, res) {
     var decoded = jwt.decode(req.body.token, secret);
     var name = decoded.username;
+    var tokenDate = decoded.date;
+    var daysElapsed = (new Date().getTime() - tokenDate) / (1000 * 3600 * 24);
       
-    User.findOne({ username: name}, function(err, user) {
-               if (err || !user) res.send('false');
-               else res.send('true');
-    });
+    if (daysElapsed > 7) res.send('expired');
+    else {
+        User.findOne({ username: name}, function(err, user) {
+                   if (err || !user) res.send('false');
+                   else res.send('true');
+        });
+    }
 });
 
 /******************************************************************************/
