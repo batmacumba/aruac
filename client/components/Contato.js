@@ -68,7 +68,7 @@ class Contato extends React.Component {
                     </div>
                     {this.props.isLogged &&
                         <div className="button-center">
-                            <Info info={this.state.info} prev="con" />
+                            <Info info={this.state.info} token={this.state.token} prev="con" />
                         </div>
                     }
                 </div>

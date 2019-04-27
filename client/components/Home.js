@@ -30,16 +30,19 @@ export default class Home extends React.Component {
         });
     }
     render() {
+        console.log("this.props.token", this.props.token);
         return (
                 <div>
                     <Masonry className={'masonry'} options={masonryOptions}>
                         {this.state.data.map((exp) => {
                           return (
-                            <Detail project={exp} key={exp._id} lang={this.props.lang} />
+                            <Detail project={exp} key={exp._id} lang={this.props.lang}
+                                                                token={this.props.token}
+                                                                isLogged={this.props.isLogged}/>
                           );})
                         }
                     </Masonry>
-                    { this.props.isLogged && <Add/> }
+                    { this.props.isLogged && <Add token={this.props.token}/> }
                 </div>
                 );
     }

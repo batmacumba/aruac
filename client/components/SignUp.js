@@ -52,6 +52,7 @@ class SignUp extends React.Component {
         const data = new FormData();
         data.append('username', e.state.username);
         data.append('password', e.state.password);
+        data.append('token', this.props.token);
         
         axios.post('/newUser', data)
         .then(function(response) {

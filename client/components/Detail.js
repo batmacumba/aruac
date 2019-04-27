@@ -59,12 +59,13 @@ class Detail extends React.Component {
         data.append('_id', this.props.project._id);
         data.append('title', this.props.project.title);
         data.append('token', this.props.token);
-      axios.post('/delete', data)
+        
+        axios.post('/delete', data)
         .then(function(response) {
           e.setState({
             messageFromServer: response.data
           });
-      });
+        });
     }
 
     /**
@@ -205,7 +206,7 @@ class Detail extends React.Component {
             </div>
 
             {/* UPDATE MODAL */}
-            { this.state.updateIsOpen && <Update project={this.props.project} key={'update ' + this.props.project._id} detail={this}/> }
+                { this.state.updateIsOpen && <Update project={this.props.project} key={'update ' + this.props.project._id} detail={this} lang={this.props.lang} token={this.props.token} isLogged={this.props.isLogged}/> }
 
             {/* DETAIL MODAL */}
             <Modal
@@ -418,7 +419,7 @@ class Detail extends React.Component {
                     <hr/>
                     {this.props.isLogged &&
                         <div>
-                            <a href="javascript:void(0);" onClick={this.openUpdate}><i className="fa fa-2x fa-pen">&nbsp;Editar</i></a>
+                            <a href="javascript:void(0);" onClick={this.openUpdate}><i className="fa fa-2x fa-pen">&nbsp;Editar</i></a>&nbsp;
                             <a href="javascript:void(0);" onClick={this.deleteProject.bind(this, this)}><i className="fa fa-2x fa-trash">&nbsp;Deletar</i></a>
                         </div>
                     }

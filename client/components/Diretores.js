@@ -63,8 +63,8 @@ class Diretores extends React.Component {
                                     </p>
                                     {this.props.isLogged &&
                                       <div>
-                                        <EditDirector director={director}/>
-                                        <DelDirector director={director}/>
+                                        <EditDirector director={director} token={this.props.token}/>
+                                        <DelDirector director={director} token={this.props.token} />
                                       </div>
                                     }
                                   </TabPanel>
@@ -75,7 +75,7 @@ class Diretores extends React.Component {
                     }
                     <hr/>
                     {this.props.isLogged &&
-                        <AddDirector/>
+                        <AddDirector token={this.props.token}/>
                     }
 
                 </div>

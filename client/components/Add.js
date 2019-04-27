@@ -120,7 +120,7 @@ class Add extends React.Component {
   */
   insertNewProject(e) {
     const data = new FormData();
-
+    data.append('token', this.props.token);
     Object.keys(e.state).map( name => {
       if (name == "stills" || name == "thumbnail") ;
       else if (name == "crew" || name == "crew_en") data.append(name, JSON.stringify(e.state[name]));

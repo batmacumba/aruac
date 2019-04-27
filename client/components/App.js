@@ -7,6 +7,7 @@ import Diretores from './Diretores';
 import Contato from './Contato';
 import SignUp from './Signup';
 import LogIn from './Login';
+import Admin from './Admin';
 
 class App extends React.Component {
     constructor() {
@@ -114,6 +115,9 @@ class App extends React.Component {
                         <Route path="/cadastrar" render={(props) => ( <SignUp lang={this.state.lang}
                                                                               isLogged={this.state.isLogged}
                                                                               token={this.state.token}/> )} />
+                        <Route path="/admin" render={(props) => ( <Admin lang={this.state.lang}
+                                                                     isLogged={this.state.isLogged}
+                                                                     token={this.state.token}/> )} />
                         <Route path="/contato"   render={(props) => ( <Contato lang={this.state.lang}
                                                                                isLogged={this.state.isLogged}
                                                                                token={this.state.token}/> )} />
@@ -159,6 +163,7 @@ class App extends React.Component {
                           <a target="_blank" href={"https://api.whatsapp.com/send?phone=" + this.state.info.phone.replace(/[+-]/g, '')}><i className="fab fa-whatsapp"></i></a>
                           }
                           <a target="_blank" href={"mailto:" + this.state.info.email + "?Subject=Contato%20Aruac"}><i className="fa fa-envelope"></i></a>
+                          <Link to="/admin"><i className="fas fa-sign-in-alt"></i></Link>
 
                       </div>
                     </div>

@@ -30,29 +30,10 @@ router.route('/upload')
             })
 });
 
-function NaoForUsuario(clientToken) {
-    return
-    Session.findOne({ token: clientToken}, function(err, session) {
-        if (err || !session) return true;
-        else {
-            var daysElapsed = (new Date().getTime() - session.date) / (1000 * 3600 * 24);
-            if (daysElapsed > 7) Session.deleteOne({ token: clientToken }, function (err) { return true; });
-            else return false;
-        }
-    });
-}
-
-function NaoForAdministrador(clientToken) {
-    return
-    Session.findOne({ token: clientToken}, function(err, session) {
-        if (err || !session) return true;
-        else {
-            var daysElapsed = (new Date().getTime() - session.date) / (1000 * 3600 * 24);
-            if (daysElapsed > 7) Session.deleteOne({ token: clientToken }, function (err) { return true; });
-            else if (session.username != "admin") return true;
-            else return false;
-        }
-    });
+function sessionExpired(sessionDate) {
+    var daysElapsed = (new Date().getTime() - sessionDate) / (1000 * 3600 * 24);
+    if (daysElapsed > 7) return true;
+    return false;
 }
 
 /*******************************************************************************
@@ -61,37 +42,40 @@ function NaoForAdministrador(clientToken) {
 
 router.route('/insert')
 .post(function(req, res) {
-      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
-      var project = new Project();
-      project.title = req.body.title;
-      project.title_en = req.body.title_en;
-      project.director = req.body.director.split(',');
-      project.year = req.body.year;
-      project.trailer = req.body.trailer;
-      project.genre = req.body.genre;
-      project.genre_en = req.body.genre_en;
-      project.duration = req.body.duration;
-      project.country = req.body.country;
-      project.country_en = req.body.country_en;
-      project.crew = JSON.parse(req.body.crew);
-      project.crew_en = JSON.parse(req.body.crew_en);
-      project.cast = req.body.cast.split(',');
-      project.storyline = req.body.storyline;
-      project.storyline_en = req.body.storyline_en;
-      project.awards = req.body.awards;
-      project.awards_en = req.body.awards_en;
-      project.festivals = req.body.festivals;
-      project.festivals_en = req.body.festivals_en;
-      project.reviews = req.body.reviews.split(',');
-      project.reviews_en = req.body.reviews_en.split(',');
-      project.stills = req.body.stills;
-      project.thumbnail = req.body.thumbnail;
-      project.category = req.body.category;
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+                  
+        var project = new Project();
+        project.title = req.body.title;
+        project.title_en = req.body.title_en;
+        project.director = req.body.director.split(',');
+        project.year = req.body.year;
+        project.trailer = req.body.trailer;
+        project.genre = req.body.genre;
+        project.genre_en = req.body.genre_en;
+        project.duration = req.body.duration;
+        project.country = req.body.country;
+        project.country_en = req.body.country_en;
+        project.crew = JSON.parse(req.body.crew);
+        project.crew_en = JSON.parse(req.body.crew_en);
+        project.cast = req.body.cast.split(',');
+        project.storyline = req.body.storyline;
+        project.storyline_en = req.body.storyline_en;
+        project.awards = req.body.awards;
+        project.awards_en = req.body.awards_en;
+        project.festivals = req.body.festivals;
+        project.festivals_en = req.body.festivals_en;
+        project.reviews = req.body.reviews.split(',');
+        project.reviews_en = req.body.reviews_en.split(',');
+        project.stills = req.body.stills;
+        project.thumbnail = req.body.thumbnail;
+        project.category = req.body.category;
 
-      var tmpPath = './server/public/images/tmp/';
-      var targetPath = './server/public/images/upload/projects/' + project.title + '/';
-      /* moves files into permanent folders */
-      if (project.stills && project.stills.length > 0) {
+        var tmpPath = './server/public/images/tmp/';
+        var targetPath = './server/public/images/upload/projects/' + project.title + '/';
+        /* moves files into permanent folders */
+        if (project.stills && project.stills.length > 0) {
           for (var i = 0; i < project.stills.length; i++) {
               mv(tmpPath + project.stills[i], targetPath + project.stills[i],
                   {mkdirp: true}, function(err) {
@@ -99,101 +83,106 @@ router.route('/insert')
               // BUG: what happens if mv doesn't work? we're pointing at a null file
               project.stills[i] = targetPath + project.stills[i];
           }
-      }
-      if (project.thumbnail) {
+        }
+        if (project.thumbnail) {
           mv(tmpPath + project.thumbnail, targetPath + project.thumbnail,
               {mkdirp: true}, function(err) {
           });
           // BUG: what happens if mv doesn't work? we're pointing at a null file
           project.thumbnail = targetPath + project.thumbnail;
-      }
-      /* tmp folder clean */
-      rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
+        }
+        /* tmp folder clean */
+        rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
 
-      project.save(function(err) {
+        project.save(function(err) {
         if (err) res.send(err);
         else res.send('Project successfully added!');
-      });
+        });
+    });
 });
 
 router.route('/update')
 .post(function(req, res) {
-      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
-      var project = new Project();
-      project._id = req.body._id;
-      project.title = req.body.title;
-      project.title_en = req.body.title_en;
-      project.director = req.body.director.split(',');
-      project.year = req.body.year;
-      project.trailer = req.body.trailer;
-      project.genre = req.body.genre;
-      project.genre_en = req.body.genre_en;
-      project.duration = req.body.duration;
-      project.country = req.body.country;
-      project.country_en = req.body.country_en;
-      project.crew = JSON.parse(req.body.crew);
-      project.crew_en = JSON.parse(req.body.crew_en);
-      project.cast = req.body.cast.split(',');
-      project.storyline = req.body.storyline;
-      project.storyline_en = req.body.storyline_en;
-      project.awards = req.body.awards;
-      project.awards_en = req.body.awards_en;
-      project.festivals = req.body.festivals;
-      project.festivals_en = req.body.festivals_en;
-      project.reviews = req.body.reviews.split(',');
-      project.reviews_en = req.body.reviews_en.split(',');
-      project.stills = req.body.stills;
-      project.thumbnail = req.body.thumbnail;
-      project.category = req.body.category;
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+                    
+        var project = new Project();
+        project._id = req.body._id;
+        project.title = req.body.title;
+        project.title_en = req.body.title_en;
+        project.director = req.body.director.split(',');
+        project.year = req.body.year;
+        project.trailer = req.body.trailer;
+        project.genre = req.body.genre;
+        project.genre_en = req.body.genre_en;
+        project.duration = req.body.duration;
+        project.country = req.body.country;
+        project.country_en = req.body.country_en;
+        project.crew = JSON.parse(req.body.crew);
+        project.crew_en = JSON.parse(req.body.crew_en);
+        project.cast = req.body.cast.split(',');
+        project.storyline = req.body.storyline;
+        project.storyline_en = req.body.storyline_en;
+        project.awards = req.body.awards;
+        project.awards_en = req.body.awards_en;
+        project.festivals = req.body.festivals;
+        project.festivals_en = req.body.festivals_en;
+        project.reviews = req.body.reviews.split(',');
+        project.reviews_en = req.body.reviews_en.split(',');
+        project.stills = req.body.stills;
+        project.thumbnail = req.body.thumbnail;
+        project.category = req.body.category;
 
-      var tmpPath = './server/public/images/tmp/';
-      var targetPath = './server/public/images/upload/projects/' + project.title + '/';
-      /* moves files into permanent folders */
-      if (project.stills && project.stills.length > 0) {
-          for (var i = 0; i < project.stills.length; i++) {
-              mv(tmpPath + project.stills[i], targetPath + project.stills[i],
-                  {mkdirp: true}, function(err) {
-              });
-              // BUG: what happens if mv doesn't work? we're pointing at a null file
-              project.stills[i] = targetPath + project.stills[i];
-          }
-      }
-      if (project.thumbnail) {
-          mv(tmpPath + project.thumbnail, targetPath + project.thumbnail,
-              {mkdirp: true}, function(err) {
-          });
-          // BUG: what happens if mv doesn't work? we're pointing at a null file
-          project.thumbnail = targetPath + project.thumbnail;
-      }
-      /* tmp folder clean */
-      rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
+        var tmpPath = './server/public/images/tmp/';
+        var targetPath = './server/public/images/upload/projects/' + project.title + '/';
+        /* moves files into permanent folders */
+        if (project.stills && project.stills.length > 0) {
+            for (var i = 0; i < project.stills.length; i++) {
+                mv(tmpPath + project.stills[i], targetPath + project.stills[i],
+                    {mkdirp: true}, function(err) {
+                });
+                // BUG: what happens if mv doesn't work? we're pointing at a null file
+                project.stills[i] = targetPath + project.stills[i];
+            }
+        }
+        if (project.thumbnail) {
+            mv(tmpPath + project.thumbnail, targetPath + project.thumbnail, {mkdirp: true}, function(err) {;});
+            // BUG: what happens if mv doesn't work? we're pointing at a null file
+            project.thumbnail = targetPath + project.thumbnail;
+        }
+        /* tmp folder clean */
+        rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
 
-      Project.update({_id: req.body._id}, project, function(err, result) {
-        if (err) res.send(err);
-        else res.send('Project successfully updated!');
-      });
-
-      });
+        Project.update({_id: req.body._id}, project, function(err, result) {
+            if (err) res.send(err);
+            else res.send('Project successfully updated!');
+        });
+    });
+});
 
 router.route('/delete')
 .post(function(req, res) {
-    if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
-    var id = req.body._id;
-    var dir = './server/public/images/upload/projects/' + req.body.title;
-    rimraf(dir, function () { console.log('project folder deleted'); });
-    Project.find({_id: id}).remove().exec(function(err, project) {
-    if(err) res.send(err)
-    res.send('Project successfully deleted!');
-    })
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+                    
+        var id = req.body._id;
+        var dir = './server/public/images/upload/projects/' + req.body.title;
+        rimraf(dir, function () { console.log('project folder deleted'); });
+        Project.find({_id: id}).remove().exec(function(err, project) {
+            if(err) res.send(err)
+            res.send('Project successfully deleted!');
+        });
+    });
 });
 
 router.get('/getAll',function(req, res) {
-           Project.find(function(err, projects) {
-                        if (err)
-                            res.send(err);
-                        res.json(projects);
-                        });
-           });
+    Project.find(function(err, projects) {
+        if (err) res.send(err);
+        res.json(projects);
+    });
+});
 
 /*******************************************************************************
                                    INFO
@@ -201,43 +190,47 @@ router.get('/getAll',function(req, res) {
 
 router.route('/updateInfo')
 .post(function(req, res) {
-     if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
-     var info = new Info();
-     info.phone = req.body.phone;
-     info.facebook = req.body.facebook;
-     info.instagram = req.body.instagram;
-     info.youtube = req.body.youtube;
-     info.email = req.body.email;
-     info.story = req.body.story;
-     info.story_en = req.body.story_en;
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+                    
+        var info = new Info();
+        info.phone = req.body.phone;
+        info.facebook = req.body.facebook;
+        info.instagram = req.body.instagram;
+        info.youtube = req.body.youtube;
+        info.email = req.body.email;
+        info.story = req.body.story;
+        info.story_en = req.body.story_en;
 
-     Info.find(function (err, previous) {
-         /* existing document */
-         if (previous[0]) {
-             info._id = previous[0]._id;
-             Info.update({_id: info._id}, info, function(err, result) {
-               if (err) res.send(err);
-               else res.send('Informações atualizadas!');
-             });
-         }
-         /* new document */
-         else {
-             info._id = null;
-             info.save(function(err) {
-               if (err) res.send(err);
-               else res.send('Informações salvas!');
-               console.log(err);
-             });
-         }
-     });
+        Info.find(function (err, previous) {
+            /* existing document */
+            if (previous[0]) {
+                info._id = previous[0]._id;
+                Info.update({_id: info._id}, info, function(err, result) {
+                    if (err) res.send(err);
+                    else res.send('Informações atualizadas!');
+                });
+            }
+            /* new document */
+            else {
+                info._id = null;
+                info.save(function(err) {
+                    if (err) res.send(err);
+                    else res.send('Informações salvas!');
+                    console.log(err);
+                });
+            }
+        });
+    });
 });
 
 router.get('/getInfo',function(req, res) {
-          Info.find(function(err, infos) {
-                       if (err) res.send(err);
-                       res.json(infos[0]);
-                       });
-          });
+    Info.find(function(err, infos) {
+        if (err) res.send(err);
+        res.json(infos[0]);
+    });
+});
 
 /*******************************************************************************
                                  DIRETORES
@@ -245,71 +238,79 @@ router.get('/getInfo',function(req, res) {
 
 router.route('/newDirector')
 .post(function(req, res) {
-      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
-      var director = new Director();
-      director.name = req.body.name;
-      director.photo = req.body.photo;
-      director.story = req.body.story;
-      director.story_en = req.body.story_en;
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+                    
+        var director = new Director();
+        director.name = req.body.name;
+        director.photo = req.body.photo;
+        director.story = req.body.story;
+        director.story_en = req.body.story_en;
 
-      var tmpPath = './server/public/images/tmp/';
-      var targetPath = './server/public/images/upload/directors/' + director.name + '/';
-      /* moves files into permanent folders */
-      if (director.photo) {
-          mv(tmpPath + director.photo, targetPath + director.photo,
-              {mkdirp: true}, function(err) {
-          });
-          // BUG: what happens if mv doesn't work? we're pointing at a null file
-          director.photo = targetPath + director.photo;
-      }
-      /* tmp folder clean */
-      rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
+        var tmpPath = './server/public/images/tmp/';
+        var targetPath = './server/public/images/upload/directors/' + director.name + '/';
+        /* moves files into permanent folders */
+        if (director.photo) {
+            mv(tmpPath + director.photo, targetPath + director.photo, {mkdirp: true}, function(err) {;});
+            // BUG: what happens if mv doesn't work? we're pointing at a null file
+            director.photo = targetPath + director.photo;
+        }
+        /* tmp folder clean */
+        rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
 
-      director.save(function(err) {
-        if (err) res.send(err);
-        else res.send('Director successfully added!');
-      });
+        director.save(function(err) {
+            if (err) res.send(err);
+            else res.send('Director successfully added!');
+        });
+    });
 });
 
 router.route('/editDirector')
 .post(function(req, res) {
-      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
-      var director = new Director();
-      director._id = req.body._id;
-      director.name = req.body.name;
-      director.photo = req.body.photo;
-      director.story = req.body.story;
-      director.story_en = req.body.story_en;
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+                    
+        var director = new Director();
+        director._id = req.body._id;
+        director.name = req.body.name;
+        director.photo = req.body.photo;
+        director.story = req.body.story;
+        director.story_en = req.body.story_en;
 
-      var tmpPath = './server/public/images/tmp/';
-      var targetPath = './server/public/images/upload/directors/' + director.name + '/';
-      /* moves files into permanent folders */
-      if (director.photo) {
-          mv(tmpPath + director.photo, targetPath + director.photo,
-              {mkdirp: true}, function(err) {
-          });
-          // BUG: what happens if mv doesn't work? we're pointing at a null file
-          director.photo = targetPath + director.photo;
-      }
-      /* tmp folder clean */
-      rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
+        var tmpPath = './server/public/images/tmp/';
+        var targetPath = './server/public/images/upload/directors/' + director.name + '/';
+        /* moves files into permanent folders */
+        if (director.photo) {
+            mv(tmpPath + director.photo, targetPath + director.photo, {mkdirp: true}, function(err) {;});
+            // BUG: what happens if mv doesn't work? we're pointing at a null file
+            director.photo = targetPath + director.photo;
+        }
+        /* tmp folder clean */
+        rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
 
-      Director.update({_id: director._id}, director, function(err, result) {
-        if (err) res.send(err);
-        else res.send('Director successfully updated!');
-      });
+        Director.update({_id: director._id}, director, function(err, result) {
+            if (err) res.send(err);
+            else res.send('Director successfully updated!');
+        });
+    });
 });
 
 router.route('/delDirector')
 .post(function(req, res) {
-    if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
-    var id = req.body._id;
-    var dir = './server/public/images/upload/directors/' + req.body.name;
-    rimraf(dir, function () { console.log('director folder deleted'); });
-    Director.find({_id: id}).remove().exec(function(err, director) {
-        if(err) res.send(err)
-        res.send('Director successfully deleted!');
-    })
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+                    
+        var id = req.body._id;
+        var dir = './server/public/images/upload/directors/' + req.body.name;
+        rimraf(dir, function () { console.log('director folder deleted'); });
+        Director.find({_id: id}).remove().exec(function(err, director) {
+            if(err) res.send(err)
+            res.send('Director successfully deleted!');
+        });
+    });
 });
 
 router.get('/getDirectors',function(req, res) {
@@ -325,14 +326,19 @@ router.get('/getDirectors',function(req, res) {
 
 router.route('/newUser')
 .post(function(req, res) {
-    if (NaoForAdministrador(req.body.token)) return res.send('Não autorizado');
-    var user = new User();
-    user.username = req.body.username;
-    user.password = bcrypt.hashSync(req.body.password, 10);
+    Session.findOne({ token: req.body.token}, function(err, session) {
+        if (err || !session) { res.send("Não autorizado!"); return; }
+        if (sessionExpired(session.date)) { res.send("expired"); return; }
+        if (session.username != "admin") { res.send("Não autorizado!"); return; }
+                    
+        var user = new User();
+        user.username = req.body.username;
+        user.password = bcrypt.hashSync(req.body.password, 10);
 
-    user.save(function(err) {
-        if (err) res.send('Houve algum problema, tente de novo.');
-        else res.send('Usuário adicionado!');
+        user.save(function(err) {
+            if (err) res.send('Houve algum problema, tente de novo.');
+            else res.send('Usuário adicionado!');
+        });
     });
 });
 
@@ -351,12 +357,13 @@ router.route('/logUser')
         session.username = req.body.username;
         session.token = randomString
         session.date = new Date().getTime();
-        session.save(function(err) {
-            if (err) res.send('Houve algum problema, tente de novo.');
-            else res.send({ msg:'OK',
-                            token: randomString,
-                        });
+        /* limpamos o db de sessões anteriores e salvamos a nova */
+        Session.deleteOne({ username: req.body.username}, function(err, prev) {
+            session.save(function(err) {
+                if (err) res.send('Houve algum problema, tente de novo.');
+                else res.send({ msg:'OK', token: randomString });
             });
+        });
     });
 });
 
