@@ -259,6 +259,7 @@ class Update extends React.Component {
     update(e) {
       const data = new FormData();
       data.append('_id', e.state.id);
+      data.append('token', this.props.token);
 
       Object.keys(e.state).map( name => {
         if (name == "stills" || name == "thumbnail") ;

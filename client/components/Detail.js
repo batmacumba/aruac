@@ -55,9 +55,10 @@ class Detail extends React.Component {
     * deleteProject - asks server to delete the currently open project
     */
     deleteProject(e) {
-      const data = new FormData();
-      data.append('_id', this.props.project._id)
-      data.append('title', this.props.project.title)
+        const data = new FormData();
+        data.append('_id', this.props.project._id);
+        data.append('title', this.props.project.title);
+        data.append('token', this.props.token);
       axios.post('/delete', data)
         .then(function(response) {
           e.setState({

@@ -78,6 +78,7 @@ class EditDirector extends React.Component {
         data.append('photo', e.state.photo[0].name);
         data.append('story', e.state.story);
         data.append('story_en', e.state.story_en);
+        data.append('token', this.props.token);
 
         axios.post('/editDirector', data)
           .then(function(response) {

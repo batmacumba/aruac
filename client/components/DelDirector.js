@@ -39,16 +39,17 @@ class DelDirector extends React.Component {
     * deleteDirector - asks server to delete the current Director
     */
     deleteDirector(e) {
-      const data = new FormData();
-      data.append('_id', this.props.director._id)
-      data.append('name', this.props.director.name)
-      axios.post('/delDirector', data)
+        const data = new FormData();
+        data.append('_id', this.props.director._id);
+        data.append('name', this.props.director.name);
+        data.append('token', this.props.token);
+        axios.post('/delDirector', data)
         .then(function(response) {
           e.setState({
             messageFromServer: response.data,
             modalIsOpen: true
           });
-      });
+        });
     }
 
     /**

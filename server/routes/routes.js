@@ -10,10 +10,7 @@ var mv = require('mv');
 var rimraf = require('rimraf');
 var bcrypt = require("bcryptjs");
 var User = require('../../models/User');
-var jwt = require('jwt-simple');
-
-/* essa senha precisa ser privada para dar o mínimo de segurança ao site */
-var secret = 'FFek5VApTF6T1xPpH1mFMx6c7d20tJY7';
+var Session = require('../../models/Session');
 
 /*******************************************************************************
                                    GLOBAL
@@ -33,12 +30,38 @@ router.route('/upload')
             })
 });
 
+function NaoForUsuario(clientToken) {
+    return
+    Session.findOne({ token: clientToken}, function(err, session) {
+        if (err || !session) return true;
+        else {
+            var daysElapsed = (new Date().getTime() - session.date) / (1000 * 3600 * 24);
+            if (daysElapsed > 7) Session.deleteOne({ token: clientToken }, function (err) { return true; });
+            else return false;
+        }
+    });
+}
+
+function NaoForAdministrador(clientToken) {
+    return
+    Session.findOne({ token: clientToken}, function(err, session) {
+        if (err || !session) return true;
+        else {
+            var daysElapsed = (new Date().getTime() - session.date) / (1000 * 3600 * 24);
+            if (daysElapsed > 7) Session.deleteOne({ token: clientToken }, function (err) { return true; });
+            else if (session.username != "admin") return true;
+            else return false;
+        }
+    });
+}
+
 /*******************************************************************************
                                   PROJECTS
 *******************************************************************************/
 
 router.route('/insert')
 .post(function(req, res) {
+      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
       var project = new Project();
       project.title = req.body.title;
       project.title_en = req.body.title_en;
@@ -95,6 +118,7 @@ router.route('/insert')
 
 router.route('/update')
 .post(function(req, res) {
+      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
       var project = new Project();
       project._id = req.body._id;
       project.title = req.body.title;
@@ -153,13 +177,14 @@ router.route('/update')
 
 router.route('/delete')
 .post(function(req, res) {
-  var id = req.body._id;
-  var dir = './server/public/images/upload/projects/' + req.body.title;
-  rimraf(dir, function () { console.log('project folder deleted'); });
-  Project.find({_id: id}).remove().exec(function(err, project) {
+    if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
+    var id = req.body._id;
+    var dir = './server/public/images/upload/projects/' + req.body.title;
+    rimraf(dir, function () { console.log('project folder deleted'); });
+    Project.find({_id: id}).remove().exec(function(err, project) {
     if(err) res.send(err)
     res.send('Project successfully deleted!');
-  })
+    })
 });
 
 router.get('/getAll',function(req, res) {
@@ -176,6 +201,7 @@ router.get('/getAll',function(req, res) {
 
 router.route('/updateInfo')
 .post(function(req, res) {
+     if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
      var info = new Info();
      info.phone = req.body.phone;
      info.facebook = req.body.facebook;
@@ -219,6 +245,7 @@ router.get('/getInfo',function(req, res) {
 
 router.route('/newDirector')
 .post(function(req, res) {
+      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
       var director = new Director();
       director.name = req.body.name;
       director.photo = req.body.photo;
@@ -246,6 +273,7 @@ router.route('/newDirector')
 
 router.route('/editDirector')
 .post(function(req, res) {
+      if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
       var director = new Director();
       director._id = req.body._id;
       director.name = req.body.name;
@@ -274,13 +302,14 @@ router.route('/editDirector')
 
 router.route('/delDirector')
 .post(function(req, res) {
-  var id = req.body._id;
-  var dir = './server/public/images/upload/directors/' + req.body.name;
-  rimraf(dir, function () { console.log('director folder deleted'); });
-  Director.find({_id: id}).remove().exec(function(err, director) {
-    if(err) res.send(err)
-    res.send('Director successfully deleted!');
-  })
+    if (NaoForUsuario(req.body.token)) return res.send('Não autorizado');
+    var id = req.body._id;
+    var dir = './server/public/images/upload/directors/' + req.body.name;
+    rimraf(dir, function () { console.log('director folder deleted'); });
+    Director.find({_id: id}).remove().exec(function(err, director) {
+        if(err) res.send(err)
+        res.send('Director successfully deleted!');
+    })
 });
 
 router.get('/getDirectors',function(req, res) {
@@ -296,6 +325,7 @@ router.get('/getDirectors',function(req, res) {
 
 router.route('/newUser')
 .post(function(req, res) {
+    if (NaoForAdministrador(req.body.token)) return res.send('Não autorizado');
     var user = new User();
     user.username = req.body.username;
     user.password = bcrypt.hashSync(req.body.password, 10);
@@ -309,35 +339,39 @@ router.route('/newUser')
 router.route('/logUser')
 .post(function(req, res) {
     User.findOne({ username: req.body.username}, function(err, user) {
+        /* checamos o login */
         if (err)   return res.send({ msg:'Houve algum problema, tente de novo.'});
         if (!user) return res.send({ msg:'Usuário não existe'});
-        if(!bcrypt.compareSync(req.body.password, user.password))
-                   return res.send({ msg:'Senha incorreta!'});
-
-        var payload = { username: req.body.username,
-                        date: new Date().getTime()
-                 };
-        var jwt_token = jwt.encode(payload, secret);
-        res.send({ msg:'OK',
-                   token: jwt_token,
-                 });
+        if(!bcrypt.compareSync(req.body.password, user.password)) return res.send({ msg:'Senha incorreta!'});
+        
+        /* enviamos o token pro usuário e guardamos o mesmo na db */
+        var randomString = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        
+        var session = new Session();
+        session.username = req.body.username;
+        session.token = randomString
+        session.date = new Date().getTime();
+        session.save(function(err) {
+            if (err) res.send('Houve algum problema, tente de novo.');
+            else res.send({ msg:'OK',
+                            token: randomString,
+                        });
+            });
     });
 });
 
 router.route('/checkUser')
 .post(function(req, res) {
-    var decoded = jwt.decode(req.body.token, secret);
-    var name = decoded.username;
-    var tokenDate = decoded.date;
-    var daysElapsed = (new Date().getTime() - tokenDate) / (1000 * 3600 * 24);
-      
-    if (daysElapsed > 7) res.send('expired');
-    else {
-        User.findOne({ username: name}, function(err, user) {
-                   if (err || !user) res.send('false');
-                   else res.send('true');
-        });
-    }
+    var clientToken = req.body.token;
+    Session.findOne({ token: clientToken}, function(err, session) {
+        if (err || !session) res.send('false');
+        else {
+            var daysElapsed = (new Date().getTime() - session.date) / (1000 * 3600 * 24);
+            if (daysElapsed > 7)
+                Session.deleteOne({ token: clientToken }, function (err) { res.send('expired'); });
+            else res.send('true');
+        }
+    });
 });
 
 /******************************************************************************/

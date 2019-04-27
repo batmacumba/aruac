@@ -14,7 +14,8 @@ class App extends React.Component {
         this.state = {
             info: [],
             lang: 'pt',
-            isLogged: false
+            isLogged: false,
+            token: ''
         };
         this.getInfo = this.getInfo.bind(this);
         this.getCredential = this.getCredential.bind(this);
@@ -33,17 +34,20 @@ class App extends React.Component {
     }
     
     getCredential(ev){
-        var token = localStorage.getItem('aruacToken');
-        if (!token) return;
+        var localToken = localStorage.getItem('aruacToken');
+        if (!localToken) return;
         
         const data = new FormData();
-        data.append('token', token);
+        data.append('token', localToken);
         axios.post('/checkUser', data)
         .then(function(response) {
-              console.log(response);
-              if (response.data == true) ev.setState({ isLogged: true });
+              if (response.data == true) ev.setState({ isLogged: true,
+                                                       token: localToken
+                                                     });
               else if (response.data == 'expired') localStorage.removeItem('aruacToken');
-              else ev.setState({ isLogged: false });
+              else ev.setState({ isLogged: false,
+                                 token: ''
+                               });
         });
     }
 
@@ -104,12 +108,24 @@ class App extends React.Component {
                 {/* MAIN */}
                 <div className="main">
                     <Switch>
-                        <Route path="/logar"     render={(props) => ( <LogIn lang={this.state.lang} isLogged={this.state.isLogged}/> )} />
-                        <Route path="/cadastrar" render={(props) => ( <SignUp lang={this.state.lang} isLogged={this.state.isLogged}/> )} />
-                        <Route path="/contato"   render={(props) => ( <Contato lang={this.state.lang} isLogged={this.state.isLogged}/> )} />
-                        <Route path="/diretores" render={(props) => ( <Diretores lang={this.state.lang} isLogged={this.state.isLogged}/> )} />
-                        <Route path="/produtora" render={(props) => ( <Produtora lang={this.state.lang} isLogged={this.state.isLogged}/> )} />
-                        <Route exact path="/"    render={(props) => ( <Home lang={this.state.lang} isLogged={this.state.isLogged}/> )} />
+                        <Route path="/logar"     render={(props) => ( <LogIn lang={this.state.lang}
+                                                                             isLogged={this.state.isLogged}
+                                                                             token={this.state.token}/> )} />
+                        <Route path="/cadastrar" render={(props) => ( <SignUp lang={this.state.lang}
+                                                                              isLogged={this.state.isLogged}
+                                                                              token={this.state.token}/> )} />
+                        <Route path="/contato"   render={(props) => ( <Contato lang={this.state.lang}
+                                                                               isLogged={this.state.isLogged}
+                                                                               token={this.state.token}/> )} />
+                        <Route path="/diretores" render={(props) => ( <Diretores lang={this.state.lang}
+                                                                                 isLogged={this.state.isLogged}
+                                                                                 token={this.state.token}/> )} />
+                        <Route path="/produtora" render={(props) => ( <Produtora lang={this.state.lang}
+                                                                                 isLogged={this.state.isLogged}
+                                                                                 token={this.state.token}/> )} />
+                        <Route exact path="/"    render={(props) => ( <Home lang={this.state.lang}
+                                                                            isLogged={this.state.isLogged}
+                                                                            token={this.state.token}/> )} />
                     </Switch>
                 </div>
                 {/* FOOTER */}

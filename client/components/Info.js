@@ -30,7 +30,15 @@ class Info extends React.Component {
     }
 
     componentDidMount() {
-        ;
+        this.setState({
+                      phone: this.props.info.phone,
+                      facebook: this.props.info.facebook,
+                      instagram: this.props.info.instagram,
+                      youtube: this.props.info.youtube,
+                      email: this.props.info.email,
+                      story: this.props.info.story,
+                      story_en: this.props.info.story_en
+        });
     }
 
     componentWillReceiveProps(nextProps) {
@@ -78,6 +86,7 @@ class Info extends React.Component {
     update(e) {
       const data = new FormData();
       data.append('_id', e.state.id);
+      data.append('token', this.props.token);
       Object.keys(e.state).map( name => {
         data.append(name, e.state[name]);
       });
@@ -94,7 +103,6 @@ class Info extends React.Component {
     * render - manages the UI and calls the state update
     */
     render() {
-        console.log(this.state);
         if (this.state.messageFromServer == '') {
           return (
                 <div>
