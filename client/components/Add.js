@@ -48,7 +48,7 @@ class Add extends React.Component {
           festivals_en: [''],
           reviews: [''],
           reviews_en: [''],
-          category: 'Cinema',
+          category: 'Em Produção',
           messageFromServer: '',
           modalIsOpen: false
       }
@@ -99,7 +99,7 @@ class Add extends React.Component {
                     festivals_en: [''],
                     reviews: [''],
                     reviews_en: [''],
-                    category: 'Cinema',
+                    category: 'Em Produção',
                     messageFromServer: ''
                     });
   }
@@ -302,10 +302,10 @@ class Add extends React.Component {
                                 <div className="row">
                                   <div className="col-sm-11">
                                     <select id="category" name="category" value={this.state.category} onChange={this.handleTextChange}>
-                                        <option value="cinema">Cinema</option>
-                                        <option value="tv">TV</option>
-                                        <option value="teatro">Teatro</option>
-                                        <option value="etc">Outros</option>
+                                        <option value="producao">Em Produção</option>
+                                        <option value="longas">Longas</option>
+                                        <option value="tv">Televisão</option>
+                                        <option value="teatro">Espetáculos</option>
                                     </select>
                                   </div>
                                 </div>

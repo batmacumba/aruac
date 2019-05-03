@@ -416,3 +416,17 @@ table {
     width: 35%;
     margin: 0 auto;
 }
+
+/*******************************************************************************
+                                 FILTER MENU
+ ******************************************************************************/
+
+.filter-menu {
+    font-family: 'Quicksand', sans-serif;
+    font-size: 18px;
+    padding-bottom: 20px;
+}
+
+.filter-menu label {
+    cursor: pointer;
+}
