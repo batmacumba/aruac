@@ -19,6 +19,7 @@ export default class Home extends React.Component {
         this.state = {
             data: [],
             grid: [],
+            filterColor: "switch-toggle switch-candy-white",
         };
         this.getData = this.getData.bind(this);
         this.filterGrid = this.filterGrid.bind(this);
@@ -36,12 +37,34 @@ export default class Home extends React.Component {
     }
     
     filterGrid(cat) {
+        /* filtragem de projetor no grid */
         if (cat == "tudo") this.setState({grid: this.state.data});
         else {
             var newGrid = [];
             for (var i = 0; i < this.state.data.length; i++)
                 if (this.state.data[i].category == cat) newGrid.push(this.state.data[i]);
             this.setState({grid: newGrid});
+        }
+        /* atualiza cor do menu de filtragem */
+        console.log(cat);
+        switch (cat) {
+            case "tudo":
+                this.setState({filterColor: "switch-toggle switch-candy-white"});
+                break;
+            case "producao":
+                this.setState({filterColor: "switch-toggle switch-candy-red"});
+                break;
+            case "longas":
+                this.setState({filterColor: "switch-toggle switch-candy-green"});
+                break;
+            case "tv":
+                this.setState({filterColor: "switch-toggle switch-candy-blue"});
+                break;
+            case "teatro":
+                this.setState({filterColor: "switch-toggle switch-candy-yellow"});
+                break;
+            default:
+                this.setState({filterColor: "switch-toggle switch-candy-white"});
         }
     }
     
@@ -50,7 +73,7 @@ export default class Home extends React.Component {
                 <div>
                     {/* FILTER */}
                     <div class="masonry filter-menu">
-                        <div class="switch-toggle switch-candy-white" id="filter">
+                        <div class={this.state.filterColor} id="filter">
                             <fieldset>
                                 <input id="tudo" name="view" type="radio"/>
                                 <label for="tudo" onClick={this.filterGrid.bind(this, 'tudo')}>tudo</label>
