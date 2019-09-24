@@ -1,0 +1,258 @@
+<h1>utils.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+exports.readUInt32BE = <span class="function"><span class="keyword">function</span> <span class="title">readUInt32BE</span><span class="params">(bytes, off)</span> {</span>
+  <span class="keyword">var</span> res =  (bytes[<span class="number">0</span> + off] &lt;&lt; <span class="number">24</span>) |
+             (bytes[<span class="number">1</span> + off] &lt;&lt; <span class="number">16</span>) |
+             (bytes[<span class="number">2</span> + off] &lt;&lt; <span class="number">8</span>) |
+             bytes[<span class="number">3</span> + off];
+  <span class="keyword">return</span> res >>> <span class="number">0</span>;
+};
+
+exports.writeUInt32BE = <span class="function"><span class="keyword">function</span> <span class="title">writeUInt32BE</span><span class="params">(bytes, value, off)</span> {</span>
+  bytes[<span class="number">0</span> + off] = value >>> <span class="number">24</span>;
+  bytes[<span class="number">1</span> + off] = (value >>> <span class="number">16</span>) &amp; <span class="number">0xff</span>;
+  bytes[<span class="number">2</span> + off] = (value >>> <span class="number">8</span>) &amp; <span class="number">0xff</span>;
+  bytes[<span class="number">3</span> + off] = value &amp; <span class="number">0xff</span>;
+};
+
+exports.ip = <span class="function"><span class="keyword">function</span> <span class="title">ip</span><span class="params">(inL, inR, out, off)</span> {</span>
+  <span class="keyword">var</span> outL = <span class="number">0</span>;
+  <span class="keyword">var</span> outR = <span class="number">0</span>;
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">6</span>; i >= <span class="number">0</span>; i -= <span class="number">2</span>) {
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+      outL &lt;&lt;= <span class="number">1</span>;
+      outL |= (inR >>> (j + i)) &amp; <span class="number">1</span>;
+    }
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+      outL &lt;&lt;= <span class="number">1</span>;
+      outL |= (inL >>> (j + i)) &amp; <span class="number">1</span>;
+    }
+  }
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">6</span>; i >= <span class="number">0</span>; i -= <span class="number">2</span>) {
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">1</span>; j &lt;= <span class="number">25</span>; j += <span class="number">8</span>) {
+      outR &lt;&lt;= <span class="number">1</span>;
+      outR |= (inR >>> (j + i)) &amp; <span class="number">1</span>;
+    }
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">1</span>; j &lt;= <span class="number">25</span>; j += <span class="number">8</span>) {
+      outR &lt;&lt;= <span class="number">1</span>;
+      outR |= (inL >>> (j + i)) &amp; <span class="number">1</span>;
+    }
+  }
+
+  out[off + <span class="number">0</span>] = outL >>> <span class="number">0</span>;
+  out[off + <span class="number">1</span>] = outR >>> <span class="number">0</span>;
+};
+
+exports.rip = <span class="function"><span class="keyword">function</span> <span class="title">rip</span><span class="params">(inL, inR, out, off)</span> {</span>
+  <span class="keyword">var</span> outL = <span class="number">0</span>;
+  <span class="keyword">var</span> outR = <span class="number">0</span>;
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; i++) {
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">24</span>; j >= <span class="number">0</span>; j -= <span class="number">8</span>) {
+      outL &lt;&lt;= <span class="number">1</span>;
+      outL |= (inR >>> (j + i)) &amp; <span class="number">1</span>;
+      outL &lt;&lt;= <span class="number">1</span>;
+      outL |= (inL >>> (j + i)) &amp; <span class="number">1</span>;
+    }
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">4</span>; i &lt; <span class="number">8</span>; i++) {
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">24</span>; j >= <span class="number">0</span>; j -= <span class="number">8</span>) {
+      outR &lt;&lt;= <span class="number">1</span>;
+      outR |= (inR >>> (j + i)) &amp; <span class="number">1</span>;
+      outR &lt;&lt;= <span class="number">1</span>;
+      outR |= (inL >>> (j + i)) &amp; <span class="number">1</span>;
+    }
+  }
+
+  out[off + <span class="number">0</span>] = outL >>> <span class="number">0</span>;
+  out[off + <span class="number">1</span>] = outR >>> <span class="number">0</span>;
+};
+
+exports.pc1 = <span class="function"><span class="keyword">function</span> <span class="title">pc1</span><span class="params">(inL, inR, out, off)</span> {</span>
+  <span class="keyword">var</span> outL = <span class="number">0</span>;
+  <span class="keyword">var</span> outR = <span class="number">0</span>;
+
+  <span class="comment">// 7, 15, 23, 31, 39, 47, 55, 63</span>
+  <span class="comment">// 6, 14, 22, 30, 39, 47, 55, 63</span>
+  <span class="comment">// 5, 13, 21, 29, 39, 47, 55, 63</span>
+  <span class="comment">// 4, 12, 20, 28</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">7</span>; i >= <span class="number">5</span>; i--) {
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+      outL &lt;&lt;= <span class="number">1</span>;
+      outL |= (inR >> (j + i)) &amp; <span class="number">1</span>;
+    }
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+      outL &lt;&lt;= <span class="number">1</span>;
+      outL |= (inL >> (j + i)) &amp; <span class="number">1</span>;
+    }
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+    outL &lt;&lt;= <span class="number">1</span>;
+    outL |= (inR >> (j + i)) &amp; <span class="number">1</span>;
+  }
+
+  <span class="comment">// 1, 9, 17, 25, 33, 41, 49, 57</span>
+  <span class="comment">// 2, 10, 18, 26, 34, 42, 50, 58</span>
+  <span class="comment">// 3, 11, 19, 27, 35, 43, 51, 59</span>
+  <span class="comment">// 36, 44, 52, 60</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">1</span>; i &lt;= <span class="number">3</span>; i++) {
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+      outR &lt;&lt;= <span class="number">1</span>;
+      outR |= (inR >> (j + i)) &amp; <span class="number">1</span>;
+    }
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+      outR &lt;&lt;= <span class="number">1</span>;
+      outR |= (inL >> (j + i)) &amp; <span class="number">1</span>;
+    }
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt;= <span class="number">24</span>; j += <span class="number">8</span>) {
+    outR &lt;&lt;= <span class="number">1</span>;
+    outR |= (inL >> (j + i)) &amp; <span class="number">1</span>;
+  }
+
+  out[off + <span class="number">0</span>] = outL >>> <span class="number">0</span>;
+  out[off + <span class="number">1</span>] = outR >>> <span class="number">0</span>;
+};
+
+exports.r28shl = <span class="function"><span class="keyword">function</span> <span class="title">r28shl</span><span class="params">(num, shift)</span> {</span>
+  <span class="keyword">return</span> ((num &lt;&lt; shift) &amp; <span class="number">0xfffffff</span>) | (num >>> (<span class="number">28</span> - shift));
+};
+
+<span class="keyword">var</span> pc2table = [
+  <span class="comment">// inL => outL</span>
+  <span class="number">14</span>, <span class="number">11</span>, <span class="number">17</span>, <span class="number">4</span>, <span class="number">27</span>, <span class="number">23</span>, <span class="number">25</span>, <span class="number">0</span>,
+  <span class="number">13</span>, <span class="number">22</span>, <span class="number">7</span>, <span class="number">18</span>, <span class="number">5</span>, <span class="number">9</span>, <span class="number">16</span>, <span class="number">24</span>,
+  <span class="number">2</span>, <span class="number">20</span>, <span class="number">12</span>, <span class="number">21</span>, <span class="number">1</span>, <span class="number">8</span>, <span class="number">15</span>, <span class="number">26</span>,
+
+  <span class="comment">// inR => outR</span>
+  <span class="number">15</span>, <span class="number">4</span>, <span class="number">25</span>, <span class="number">19</span>, <span class="number">9</span>, <span class="number">1</span>, <span class="number">26</span>, <span class="number">16</span>,
+  <span class="number">5</span>, <span class="number">11</span>, <span class="number">23</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">17</span>, <span class="number">0</span>,
+  <span class="number">22</span>, <span class="number">3</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">20</span>, <span class="number">27</span>, <span class="number">24</span>
+];
+
+exports.pc2 = <span class="function"><span class="keyword">function</span> <span class="title">pc2</span><span class="params">(inL, inR, out, off)</span> {</span>
+  <span class="keyword">var</span> outL = <span class="number">0</span>;
+  <span class="keyword">var</span> outR = <span class="number">0</span>;
+
+  <span class="keyword">var</span> len = pc2table.length >>> <span class="number">1</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; i++) {
+    outL &lt;&lt;= <span class="number">1</span>;
+    outL |= (inL >>> pc2table[i]) &amp; <span class="number">0x1</span>;
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = len; i &lt; pc2table.length; i++) {
+    outR &lt;&lt;= <span class="number">1</span>;
+    outR |= (inR >>> pc2table[i]) &amp; <span class="number">0x1</span>;
+  }
+
+  out[off + <span class="number">0</span>] = outL >>> <span class="number">0</span>;
+  out[off + <span class="number">1</span>] = outR >>> <span class="number">0</span>;
+};
+
+exports.expand = <span class="function"><span class="keyword">function</span> <span class="title">expand</span><span class="params">(r, out, off)</span> {</span>
+  <span class="keyword">var</span> outL = <span class="number">0</span>;
+  <span class="keyword">var</span> outR = <span class="number">0</span>;
+
+  outL = ((r &amp; <span class="number">1</span>) &lt;&lt; <span class="number">5</span>) | (r >>> <span class="number">27</span>);
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">23</span>; i >= <span class="number">15</span>; i -= <span class="number">4</span>) {
+    outL &lt;&lt;= <span class="number">6</span>;
+    outL |= (r >>> i) &amp; <span class="number">0x3f</span>;
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">11</span>; i >= <span class="number">3</span>; i -= <span class="number">4</span>) {
+    outR |= (r >>> i) &amp; <span class="number">0x3f</span>;
+    outR &lt;&lt;= <span class="number">6</span>;
+  }
+  outR |= ((r &amp; <span class="number">0x1f</span>) &lt;&lt; <span class="number">1</span>) | (r >>> <span class="number">31</span>);
+
+  out[off + <span class="number">0</span>] = outL >>> <span class="number">0</span>;
+  out[off + <span class="number">1</span>] = outR >>> <span class="number">0</span>;
+};
+
+<span class="keyword">var</span> sTable = [
+  <span class="number">14</span>, <span class="number">0</span>, <span class="number">4</span>, <span class="number">15</span>, <span class="number">13</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">4</span>, <span class="number">2</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">2</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">8</span>, <span class="number">1</span>,
+  <span class="number">3</span>, <span class="number">10</span>, <span class="number">10</span>, <span class="number">6</span>, <span class="number">6</span>, <span class="number">12</span>, <span class="number">12</span>, <span class="number">11</span>, <span class="number">5</span>, <span class="number">9</span>, <span class="number">9</span>, <span class="number">5</span>, <span class="number">0</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">8</span>,
+  <span class="number">4</span>, <span class="number">15</span>, <span class="number">1</span>, <span class="number">12</span>, <span class="number">14</span>, <span class="number">8</span>, <span class="number">8</span>, <span class="number">2</span>, <span class="number">13</span>, <span class="number">4</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">2</span>, <span class="number">1</span>, <span class="number">11</span>, <span class="number">7</span>,
+  <span class="number">15</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">11</span>, <span class="number">9</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">14</span>, <span class="number">3</span>, <span class="number">10</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">0</span>, <span class="number">13</span>,
+
+  <span class="number">15</span>, <span class="number">3</span>, <span class="number">1</span>, <span class="number">13</span>, <span class="number">8</span>, <span class="number">4</span>, <span class="number">14</span>, <span class="number">7</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">11</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">8</span>, <span class="number">4</span>, <span class="number">14</span>,
+  <span class="number">9</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">0</span>, <span class="number">2</span>, <span class="number">1</span>, <span class="number">13</span>, <span class="number">10</span>, <span class="number">12</span>, <span class="number">6</span>, <span class="number">0</span>, <span class="number">9</span>, <span class="number">5</span>, <span class="number">11</span>, <span class="number">10</span>, <span class="number">5</span>,
+  <span class="number">0</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">8</span>, <span class="number">7</span>, <span class="number">10</span>, <span class="number">11</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">15</span>, <span class="number">13</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">2</span>,
+  <span class="number">5</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">6</span>, <span class="number">12</span>, <span class="number">9</span>, <span class="number">0</span>, <span class="number">3</span>, <span class="number">5</span>, <span class="number">2</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">9</span>,
+
+  <span class="number">10</span>, <span class="number">13</span>, <span class="number">0</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">0</span>, <span class="number">14</span>, <span class="number">9</span>, <span class="number">6</span>, <span class="number">3</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">15</span>, <span class="number">6</span>, <span class="number">5</span>, <span class="number">10</span>,
+  <span class="number">1</span>, <span class="number">2</span>, <span class="number">13</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">7</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">12</span>, <span class="number">4</span>, <span class="number">11</span>, <span class="number">2</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">1</span>,
+  <span class="number">13</span>, <span class="number">1</span>, <span class="number">6</span>, <span class="number">10</span>, <span class="number">4</span>, <span class="number">13</span>, <span class="number">9</span>, <span class="number">0</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">9</span>, <span class="number">3</span>, <span class="number">8</span>, <span class="number">0</span>, <span class="number">7</span>,
+  <span class="number">11</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">15</span>, <span class="number">2</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">3</span>, <span class="number">5</span>, <span class="number">11</span>, <span class="number">10</span>, <span class="number">5</span>, <span class="number">14</span>, <span class="number">2</span>, <span class="number">7</span>, <span class="number">12</span>,
+
+  <span class="number">7</span>, <span class="number">13</span>, <span class="number">13</span>, <span class="number">8</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">3</span>, <span class="number">5</span>, <span class="number">0</span>, <span class="number">6</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">9</span>, <span class="number">0</span>, <span class="number">10</span>, <span class="number">3</span>,
+  <span class="number">1</span>, <span class="number">4</span>, <span class="number">2</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">11</span>, <span class="number">1</span>, <span class="number">12</span>, <span class="number">10</span>, <span class="number">4</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">9</span>,
+  <span class="number">10</span>, <span class="number">3</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">9</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">6</span>, <span class="number">12</span>, <span class="number">10</span>, <span class="number">11</span>, <span class="number">1</span>, <span class="number">7</span>, <span class="number">13</span>, <span class="number">13</span>, <span class="number">8</span>,
+  <span class="number">15</span>, <span class="number">9</span>, <span class="number">1</span>, <span class="number">4</span>, <span class="number">3</span>, <span class="number">5</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">2</span>, <span class="number">4</span>, <span class="number">14</span>,
+
+  <span class="number">2</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">11</span>, <span class="number">4</span>, <span class="number">2</span>, <span class="number">1</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">4</span>, <span class="number">10</span>, <span class="number">7</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">1</span>,
+  <span class="number">8</span>, <span class="number">5</span>, <span class="number">5</span>, <span class="number">0</span>, <span class="number">3</span>, <span class="number">15</span>, <span class="number">15</span>, <span class="number">10</span>, <span class="number">13</span>, <span class="number">3</span>, <span class="number">0</span>, <span class="number">9</span>, <span class="number">14</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">6</span>,
+  <span class="number">4</span>, <span class="number">11</span>, <span class="number">2</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">12</span>, <span class="number">11</span>, <span class="number">7</span>, <span class="number">10</span>, <span class="number">1</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">7</span>, <span class="number">2</span>, <span class="number">8</span>, <span class="number">13</span>,
+  <span class="number">15</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">15</span>, <span class="number">12</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">9</span>, <span class="number">6</span>, <span class="number">10</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">14</span>, <span class="number">3</span>,
+
+  <span class="number">12</span>, <span class="number">10</span>, <span class="number">1</span>, <span class="number">15</span>, <span class="number">10</span>, <span class="number">4</span>, <span class="number">15</span>, <span class="number">2</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">2</span>, <span class="number">12</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">8</span>, <span class="number">5</span>,
+  <span class="number">0</span>, <span class="number">6</span>, <span class="number">13</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">13</span>, <span class="number">4</span>, <span class="number">14</span>, <span class="number">14</span>, <span class="number">0</span>, <span class="number">7</span>, <span class="number">11</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">11</span>, <span class="number">8</span>,
+  <span class="number">9</span>, <span class="number">4</span>, <span class="number">14</span>, <span class="number">3</span>, <span class="number">15</span>, <span class="number">2</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">9</span>, <span class="number">8</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">15</span>, <span class="number">3</span>, <span class="number">10</span>,
+  <span class="number">7</span>, <span class="number">11</span>, <span class="number">0</span>, <span class="number">14</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">6</span>, <span class="number">13</span>, <span class="number">0</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">13</span>,
+
+  <span class="number">4</span>, <span class="number">13</span>, <span class="number">11</span>, <span class="number">0</span>, <span class="number">2</span>, <span class="number">11</span>, <span class="number">14</span>, <span class="number">7</span>, <span class="number">15</span>, <span class="number">4</span>, <span class="number">0</span>, <span class="number">9</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">13</span>, <span class="number">10</span>,
+  <span class="number">3</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">3</span>, <span class="number">9</span>, <span class="number">5</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">2</span>, <span class="number">10</span>, <span class="number">15</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">6</span>,
+  <span class="number">1</span>, <span class="number">6</span>, <span class="number">4</span>, <span class="number">11</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">13</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">7</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">7</span>,
+  <span class="number">10</span>, <span class="number">9</span>, <span class="number">15</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">0</span>, <span class="number">8</span>, <span class="number">15</span>, <span class="number">0</span>, <span class="number">14</span>, <span class="number">5</span>, <span class="number">2</span>, <span class="number">9</span>, <span class="number">3</span>, <span class="number">2</span>, <span class="number">12</span>,
+
+  <span class="number">13</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">4</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">10</span>, <span class="number">15</span>, <span class="number">3</span>, <span class="number">11</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">4</span>,
+  <span class="number">10</span>, <span class="number">12</span>, <span class="number">9</span>, <span class="number">5</span>, <span class="number">3</span>, <span class="number">6</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">5</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">2</span>,
+  <span class="number">7</span>, <span class="number">2</span>, <span class="number">11</span>, <span class="number">1</span>, <span class="number">4</span>, <span class="number">14</span>, <span class="number">1</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">4</span>, <span class="number">12</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">8</span>, <span class="number">2</span>, <span class="number">13</span>,
+  <span class="number">0</span>, <span class="number">15</span>, <span class="number">6</span>, <span class="number">12</span>, <span class="number">10</span>, <span class="number">9</span>, <span class="number">13</span>, <span class="number">0</span>, <span class="number">15</span>, <span class="number">3</span>, <span class="number">3</span>, <span class="number">5</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">11</span>
+];
+
+exports.substitute = <span class="function"><span class="keyword">function</span> <span class="title">substitute</span><span class="params">(inL, inR)</span> {</span>
+  <span class="keyword">var</span> out = <span class="number">0</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; i++) {
+    <span class="keyword">var</span> b = (inL >>> (<span class="number">18</span> - i * <span class="number">6</span>)) &amp; <span class="number">0x3f</span>;
+    <span class="keyword">var</span> sb = sTable[i * <span class="number">0x40</span> + b];
+
+    out &lt;&lt;= <span class="number">4</span>;
+    out |= sb;
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; i++) {
+    <span class="keyword">var</span> b = (inR >>> (<span class="number">18</span> - i * <span class="number">6</span>)) &amp; <span class="number">0x3f</span>;
+    <span class="keyword">var</span> sb = sTable[<span class="number">4</span> * <span class="number">0x40</span> + i * <span class="number">0x40</span> + b];
+
+    out &lt;&lt;= <span class="number">4</span>;
+    out |= sb;
+  }
+  <span class="keyword">return</span> out >>> <span class="number">0</span>;
+};
+
+<span class="keyword">var</span> permuteTable = [
+  <span class="number">16</span>, <span class="number">25</span>, <span class="number">12</span>, <span class="number">11</span>, <span class="number">3</span>, <span class="number">20</span>, <span class="number">4</span>, <span class="number">15</span>, <span class="number">31</span>, <span class="number">17</span>, <span class="number">9</span>, <span class="number">6</span>, <span class="number">27</span>, <span class="number">14</span>, <span class="number">1</span>, <span class="number">22</span>,
+  <span class="number">30</span>, <span class="number">24</span>, <span class="number">8</span>, <span class="number">18</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">29</span>, <span class="number">23</span>, <span class="number">13</span>, <span class="number">19</span>, <span class="number">2</span>, <span class="number">26</span>, <span class="number">10</span>, <span class="number">21</span>, <span class="number">28</span>, <span class="number">7</span>
+];
+
+exports.permute = <span class="function"><span class="keyword">function</span> <span class="title">permute</span><span class="params">(num)</span> {</span>
+  <span class="keyword">var</span> out = <span class="number">0</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; permuteTable.length; i++) {
+    out &lt;&lt;= <span class="number">1</span>;
+    out |= (num >>> permuteTable[i]) &amp; <span class="number">0x1</span>;
+  }
+  <span class="keyword">return</span> out >>> <span class="number">0</span>;
+};
+
+exports.padSplit = <span class="function"><span class="keyword">function</span> <span class="title">padSplit</span><span class="params">(num, size, group)</span> {</span>
+  <span class="keyword">var</span> str = num.toString(<span class="number">2</span>);
+  <span class="keyword">while</span> (str.length &lt; size)
+    str = <span class="string">'0'</span> + str;
+
+  <span class="keyword">var</span> out = [];
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; size; i += group)
+    out.push(str.slice(i, i + group));
+  <span class="keyword">return</span> out.join(<span class="string">' '</span>);
+};
+</code></pre>

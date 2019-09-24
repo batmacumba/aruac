@@ -1,0 +1,97 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+<span class="keyword">var</span> Transform = require(<span class="string">'stream'</span>).Transform
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">throwIfNotStringOrBuffer</span> <span class="params">(val, prefix)</span> {</span>
+  <span class="keyword">if</span> (!Buffer.isBuffer(val) &amp;&amp; <span class="keyword">typeof</span> val !== <span class="string">'string'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(prefix + <span class="string">' must be a string or a buffer'</span>)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">HashBase</span> <span class="params">(blockSize)</span> {</span>
+  Transform.call(<span class="keyword">this</span>)
+
+  <span class="keyword">this</span>._block = Buffer.allocUnsafe(blockSize)
+  <span class="keyword">this</span>._blockSize = blockSize
+  <span class="keyword">this</span>._blockOffset = <span class="number">0</span>
+  <span class="keyword">this</span>._length = [<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>]
+
+  <span class="keyword">this</span>._finalized = <span class="literal">false</span>
+}
+
+inherits(HashBase, Transform)
+
+HashBase.prototype._transform = <span class="function"><span class="keyword">function</span> <span class="params">(chunk, encoding, callback)</span> {</span>
+  <span class="keyword">var</span> error = <span class="literal">null</span>
+  <span class="keyword">try</span> {
+    <span class="keyword">this</span>.update(chunk, encoding)
+  } <span class="keyword">catch</span> (err) {
+    error = err
+  }
+
+  callback(error)
+}
+
+HashBase.prototype._flush = <span class="function"><span class="keyword">function</span> <span class="params">(callback)</span> {</span>
+  <span class="keyword">var</span> error = <span class="literal">null</span>
+  <span class="keyword">try</span> {
+    <span class="keyword">this</span>.push(<span class="keyword">this</span>.digest())
+  } <span class="keyword">catch</span> (err) {
+    error = err
+  }
+
+  callback(error)
+}
+
+HashBase.prototype.update = <span class="function"><span class="keyword">function</span> <span class="params">(data, encoding)</span> {</span>
+  throwIfNotStringOrBuffer(data, <span class="string">'Data'</span>)
+  <span class="keyword">if</span> (<span class="keyword">this</span>._finalized) <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Digest already called'</span>)
+  <span class="keyword">if</span> (!Buffer.isBuffer(data)) data = Buffer.from(data, encoding)
+
+  <span class="comment">// consume data</span>
+  <span class="keyword">var</span> block = <span class="keyword">this</span>._block
+  <span class="keyword">var</span> offset = <span class="number">0</span>
+  <span class="keyword">while</span> (<span class="keyword">this</span>._blockOffset + data.length - offset >= <span class="keyword">this</span>._blockSize) {
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="keyword">this</span>._blockOffset; i &lt; <span class="keyword">this</span>._blockSize;) block[i++] = data[offset++]
+    <span class="keyword">this</span>._update()
+    <span class="keyword">this</span>._blockOffset = <span class="number">0</span>
+  }
+  <span class="keyword">while</span> (offset &lt; data.length) block[<span class="keyword">this</span>._blockOffset++] = data[offset++]
+
+  <span class="comment">// update length</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>, carry = data.length * <span class="number">8</span>; carry > <span class="number">0</span>; ++j) {
+    <span class="keyword">this</span>._length[j] += carry
+    carry = (<span class="keyword">this</span>._length[j] / <span class="number">0x0100000000</span>) | <span class="number">0</span>
+    <span class="keyword">if</span> (carry > <span class="number">0</span>) <span class="keyword">this</span>._length[j] -= <span class="number">0x0100000000</span> * carry
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+HashBase.prototype._update = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'_update is not implemented'</span>)
+}
+
+HashBase.prototype.digest = <span class="function"><span class="keyword">function</span> <span class="params">(encoding)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>._finalized) <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Digest already called'</span>)
+  <span class="keyword">this</span>._finalized = <span class="literal">true</span>
+
+  <span class="keyword">var</span> digest = <span class="keyword">this</span>._digest()
+  <span class="keyword">if</span> (encoding !== <span class="literal">undefined</span>) digest = digest.toString(encoding)
+
+  <span class="comment">// reset state</span>
+  <span class="keyword">this</span>._block.fill(<span class="number">0</span>)
+  <span class="keyword">this</span>._blockOffset = <span class="number">0</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; ++i) <span class="keyword">this</span>._length[i] = <span class="number">0</span>
+
+  <span class="keyword">return</span> digest
+}
+
+HashBase.prototype._digest = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'_digest is not implemented'</span>)
+}
+
+module.exports = HashBase
+</code></pre>

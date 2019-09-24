@@ -1,0 +1,55 @@
+<h1>sha224.js</h1>
+<pre><code class="lang-js"><span class="comment">/**
+ * A JavaScript implementation of the Secure Hash Algorithm, SHA-256, as defined
+ * in FIPS 180-2
+ * Version 2.2-beta Copyright Angel Marin, Paul Johnston 2000 - 2009.
+ * Other contributors: Greg Holt, Andrew Kepert, Ydnar, Lostinet
+ *
+ */</span>
+
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>)
+<span class="keyword">var</span> Sha256 = require(<span class="string">'./sha256'</span>)
+<span class="keyword">var</span> Hash = require(<span class="string">'./hash'</span>)
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+
+<span class="keyword">var</span> W = <span class="keyword">new</span> Array(<span class="number">64</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">Sha224</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.init()
+
+  <span class="keyword">this</span>._w = W <span class="comment">// new Array(64)</span>
+
+  Hash.call(<span class="keyword">this</span>, <span class="number">64</span>, <span class="number">56</span>)
+}
+
+inherits(Sha224, Sha256)
+
+Sha224.prototype.init = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>._a = <span class="number">0xc1059ed8</span>
+  <span class="keyword">this</span>._b = <span class="number">0x367cd507</span>
+  <span class="keyword">this</span>._c = <span class="number">0x3070dd17</span>
+  <span class="keyword">this</span>._d = <span class="number">0xf70e5939</span>
+  <span class="keyword">this</span>._e = <span class="number">0xffc00b31</span>
+  <span class="keyword">this</span>._f = <span class="number">0x68581511</span>
+  <span class="keyword">this</span>._g = <span class="number">0x64f98fa7</span>
+  <span class="keyword">this</span>._h = <span class="number">0xbefa4fa4</span>
+
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+Sha224.prototype._hash = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> H = Buffer.allocUnsafe(<span class="number">28</span>)
+
+  H.writeInt32BE(<span class="keyword">this</span>._a, <span class="number">0</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._b, <span class="number">4</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._c, <span class="number">8</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._d, <span class="number">12</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._e, <span class="number">16</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._f, <span class="number">20</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._g, <span class="number">24</span>)
+
+  <span class="keyword">return</span> H
+}
+
+module.exports = Sha224
+</code></pre>

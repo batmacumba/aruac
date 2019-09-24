@@ -1,0 +1,51 @@
+<h1>common.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> utils = require(<span class="string">'../utils'</span>);
+<span class="keyword">var</span> rotr32 = utils.rotr32;
+
+<span class="function"><span class="keyword">function</span> <span class="title">ft_1</span><span class="params">(s, x, y, z)</span> {</span>
+  <span class="keyword">if</span> (s === <span class="number">0</span>)
+    <span class="keyword">return</span> ch32(x, y, z);
+  <span class="keyword">if</span> (s === <span class="number">1</span> || s === <span class="number">3</span>)
+    <span class="keyword">return</span> p32(x, y, z);
+  <span class="keyword">if</span> (s === <span class="number">2</span>)
+    <span class="keyword">return</span> maj32(x, y, z);
+}
+exports.ft_1 = ft_1;
+
+<span class="function"><span class="keyword">function</span> <span class="title">ch32</span><span class="params">(x, y, z)</span> {</span>
+  <span class="keyword">return</span> (x &amp; y) ^ ((~x) &amp; z);
+}
+exports.ch32 = ch32;
+
+<span class="function"><span class="keyword">function</span> <span class="title">maj32</span><span class="params">(x, y, z)</span> {</span>
+  <span class="keyword">return</span> (x &amp; y) ^ (x &amp; z) ^ (y &amp; z);
+}
+exports.maj32 = maj32;
+
+<span class="function"><span class="keyword">function</span> <span class="title">p32</span><span class="params">(x, y, z)</span> {</span>
+  <span class="keyword">return</span> x ^ y ^ z;
+}
+exports.p32 = p32;
+
+<span class="function"><span class="keyword">function</span> <span class="title">s0_256</span><span class="params">(x)</span> {</span>
+  <span class="keyword">return</span> rotr32(x, <span class="number">2</span>) ^ rotr32(x, <span class="number">13</span>) ^ rotr32(x, <span class="number">22</span>);
+}
+exports.s0_256 = s0_256;
+
+<span class="function"><span class="keyword">function</span> <span class="title">s1_256</span><span class="params">(x)</span> {</span>
+  <span class="keyword">return</span> rotr32(x, <span class="number">6</span>) ^ rotr32(x, <span class="number">11</span>) ^ rotr32(x, <span class="number">25</span>);
+}
+exports.s1_256 = s1_256;
+
+<span class="function"><span class="keyword">function</span> <span class="title">g0_256</span><span class="params">(x)</span> {</span>
+  <span class="keyword">return</span> rotr32(x, <span class="number">7</span>) ^ rotr32(x, <span class="number">18</span>) ^ (x >>> <span class="number">3</span>);
+}
+exports.g0_256 = g0_256;
+
+<span class="function"><span class="keyword">function</span> <span class="title">g1_256</span><span class="params">(x)</span> {</span>
+  <span class="keyword">return</span> rotr32(x, <span class="number">17</span>) ^ rotr32(x, <span class="number">19</span>) ^ (x >>> <span class="number">10</span>);
+}
+exports.g1_256 = g1_256;
+</code></pre>

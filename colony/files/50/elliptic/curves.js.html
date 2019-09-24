@@ -1,0 +1,207 @@
+<h1>curves.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> curves = exports;
+
+<span class="keyword">var</span> hash = require(<span class="string">'hash.js'</span>);
+<span class="keyword">var</span> elliptic = require(<span class="string">'../elliptic'</span>);
+
+<span class="keyword">var</span> assert = elliptic.utils.assert;
+
+<span class="function"><span class="keyword">function</span> <span class="title">PresetCurve</span><span class="params">(options)</span> {</span>
+  <span class="keyword">if</span> (options.type === <span class="string">'short'</span>)
+    <span class="keyword">this</span>.curve = <span class="keyword">new</span> elliptic.curve.short(options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (options.type === <span class="string">'edwards'</span>)
+    <span class="keyword">this</span>.curve = <span class="keyword">new</span> elliptic.curve.edwards(options);
+  <span class="keyword">else</span>
+    <span class="keyword">this</span>.curve = <span class="keyword">new</span> elliptic.curve.mont(options);
+  <span class="keyword">this</span>.g = <span class="keyword">this</span>.curve.g;
+  <span class="keyword">this</span>.n = <span class="keyword">this</span>.curve.n;
+  <span class="keyword">this</span>.hash = options.hash;
+
+  assert(<span class="keyword">this</span>.g.validate(), <span class="string">'Invalid curve'</span>);
+  assert(<span class="keyword">this</span>.g.mul(<span class="keyword">this</span>.n).isInfinity(), <span class="string">'Invalid curve, G*N != O'</span>);
+}
+curves.PresetCurve = PresetCurve;
+
+<span class="function"><span class="keyword">function</span> <span class="title">defineCurve</span><span class="params">(name, options)</span> {</span>
+  Object.defineProperty(curves, name, {
+    configurable: <span class="literal">true</span>,
+    enumerable: <span class="literal">true</span>,
+    get: <span class="keyword">function</span>() {
+      <span class="keyword">var</span> curve = <span class="keyword">new</span> PresetCurve(options);
+      Object.defineProperty(curves, name, {
+        configurable: <span class="literal">true</span>,
+        enumerable: <span class="literal">true</span>,
+        value: curve
+      });
+      <span class="keyword">return</span> curve;
+    }
+  });
+}
+
+defineCurve(<span class="string">'p192'</span>, {
+  type: <span class="string">'short'</span>,
+  prime: <span class="string">'p192'</span>,
+  p: <span class="string">'ffffffff ffffffff ffffffff fffffffe ffffffff ffffffff'</span>,
+  a: <span class="string">'ffffffff ffffffff ffffffff fffffffe ffffffff fffffffc'</span>,
+  b: <span class="string">'64210519 e59c80e7 0fa7e9ab 72243049 feb8deec c146b9b1'</span>,
+  n: <span class="string">'ffffffff ffffffff ffffffff 99def836 146bc9b1 b4d22831'</span>,
+  hash: hash.sha256,
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'188da80e b03090f6 7cbf20eb 43a18800 f4ff0afd 82ff1012'</span>,
+    <span class="string">'07192b95 ffc8da78 631011ed 6b24cdd5 73f977a1 1e794811'</span>
+  ]
+});
+
+defineCurve(<span class="string">'p224'</span>, {
+  type: <span class="string">'short'</span>,
+  prime: <span class="string">'p224'</span>,
+  p: <span class="string">'ffffffff ffffffff ffffffff ffffffff 00000000 00000000 00000001'</span>,
+  a: <span class="string">'ffffffff ffffffff ffffffff fffffffe ffffffff ffffffff fffffffe'</span>,
+  b: <span class="string">'b4050a85 0c04b3ab f5413256 5044b0b7 d7bfd8ba 270b3943 2355ffb4'</span>,
+  n: <span class="string">'ffffffff ffffffff ffffffff ffff16a2 e0b8f03e 13dd2945 5c5c2a3d'</span>,
+  hash: hash.sha256,
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'b70e0cbd 6bb4bf7f 321390b9 4a03c1d3 56c21122 343280d6 115c1d21'</span>,
+    <span class="string">'bd376388 b5f723fb 4c22dfe6 cd4375a0 5a074764 44d58199 85007e34'</span>
+  ]
+});
+
+defineCurve(<span class="string">'p256'</span>, {
+  type: <span class="string">'short'</span>,
+  prime: <span class="literal">null</span>,
+  p: <span class="string">'ffffffff 00000001 00000000 00000000 00000000 ffffffff ffffffff ffffffff'</span>,
+  a: <span class="string">'ffffffff 00000001 00000000 00000000 00000000 ffffffff ffffffff fffffffc'</span>,
+  b: <span class="string">'5ac635d8 aa3a93e7 b3ebbd55 769886bc 651d06b0 cc53b0f6 3bce3c3e 27d2604b'</span>,
+  n: <span class="string">'ffffffff 00000000 ffffffff ffffffff bce6faad a7179e84 f3b9cac2 fc632551'</span>,
+  hash: hash.sha256,
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'6b17d1f2 e12c4247 f8bce6e5 63a440f2 77037d81 2deb33a0 f4a13945 d898c296'</span>,
+    <span class="string">'4fe342e2 fe1a7f9b 8ee7eb4a 7c0f9e16 2bce3357 6b315ece cbb64068 37bf51f5'</span>
+  ]
+});
+
+defineCurve(<span class="string">'p384'</span>, {
+  type: <span class="string">'short'</span>,
+  prime: <span class="literal">null</span>,
+  p: <span class="string">'ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff '</span> +
+     <span class="string">'fffffffe ffffffff 00000000 00000000 ffffffff'</span>,
+  a: <span class="string">'ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff '</span> +
+     <span class="string">'fffffffe ffffffff 00000000 00000000 fffffffc'</span>,
+  b: <span class="string">'b3312fa7 e23ee7e4 988e056b e3f82d19 181d9c6e fe814112 0314088f '</span> +
+     <span class="string">'5013875a c656398d 8a2ed19d 2a85c8ed d3ec2aef'</span>,
+  n: <span class="string">'ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff c7634d81 '</span> +
+     <span class="string">'f4372ddf 581a0db2 48b0a77a ecec196a ccc52973'</span>,
+  hash: hash.sha384,
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'aa87ca22 be8b0537 8eb1c71e f320ad74 6e1d3b62 8ba79b98 59f741e0 82542a38 '</span> +
+    <span class="string">'5502f25d bf55296c 3a545e38 72760ab7'</span>,
+    <span class="string">'3617de4a 96262c6f 5d9e98bf 9292dc29 f8f41dbd 289a147c e9da3113 b5f0b8c0 '</span> +
+    <span class="string">'0a60b1ce 1d7e819d 7a431d7c 90ea0e5f'</span>
+  ]
+});
+
+defineCurve(<span class="string">'p521'</span>, {
+  type: <span class="string">'short'</span>,
+  prime: <span class="literal">null</span>,
+  p: <span class="string">'000001ff ffffffff ffffffff ffffffff ffffffff ffffffff '</span> +
+     <span class="string">'ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff '</span> +
+     <span class="string">'ffffffff ffffffff ffffffff ffffffff ffffffff'</span>,
+  a: <span class="string">'000001ff ffffffff ffffffff ffffffff ffffffff ffffffff '</span> +
+     <span class="string">'ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff '</span> +
+     <span class="string">'ffffffff ffffffff ffffffff ffffffff fffffffc'</span>,
+  b: <span class="string">'00000051 953eb961 8e1c9a1f 929a21a0 b68540ee a2da725b '</span> +
+     <span class="string">'99b315f3 b8b48991 8ef109e1 56193951 ec7e937b 1652c0bd '</span> +
+     <span class="string">'3bb1bf07 3573df88 3d2c34f1 ef451fd4 6b503f00'</span>,
+  n: <span class="string">'000001ff ffffffff ffffffff ffffffff ffffffff ffffffff '</span> +
+     <span class="string">'ffffffff ffffffff fffffffa 51868783 bf2f966b 7fcc0148 '</span> +
+     <span class="string">'f709a5d0 3bb5c9b8 899c47ae bb6fb71e 91386409'</span>,
+  hash: hash.sha512,
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'000000c6 858e06b7 0404e9cd 9e3ecb66 2395b442 9c648139 '</span> +
+    <span class="string">'053fb521 f828af60 6b4d3dba a14b5e77 efe75928 fe1dc127 '</span> +
+    <span class="string">'a2ffa8de 3348b3c1 856a429b f97e7e31 c2e5bd66'</span>,
+    <span class="string">'00000118 39296a78 9a3bc004 5c8a5fb4 2c7d1bd9 98f54449 '</span> +
+    <span class="string">'579b4468 17afbd17 273e662c 97ee7299 5ef42640 c550b901 '</span> +
+    <span class="string">'3fad0761 353c7086 a272c240 88be9476 9fd16650'</span>
+  ]
+});
+
+defineCurve(<span class="string">'curve25519'</span>, {
+  type: <span class="string">'mont'</span>,
+  prime: <span class="string">'p25519'</span>,
+  p: <span class="string">'7fffffffffffffff ffffffffffffffff ffffffffffffffff ffffffffffffffed'</span>,
+  a: <span class="string">'76d06'</span>,
+  b: <span class="string">'1'</span>,
+  n: <span class="string">'1000000000000000 0000000000000000 14def9dea2f79cd6 5812631a5cf5d3ed'</span>,
+  hash: hash.sha256,
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'9'</span>
+  ]
+});
+
+defineCurve(<span class="string">'ed25519'</span>, {
+  type: <span class="string">'edwards'</span>,
+  prime: <span class="string">'p25519'</span>,
+  p: <span class="string">'7fffffffffffffff ffffffffffffffff ffffffffffffffff ffffffffffffffed'</span>,
+  a: <span class="string">'-1'</span>,
+  c: <span class="string">'1'</span>,
+  <span class="comment">// -121665 * (121666^(-1)) (mod P)</span>
+  d: <span class="string">'52036cee2b6ffe73 8cc740797779e898 00700a4d4141d8ab 75eb4dca135978a3'</span>,
+  n: <span class="string">'1000000000000000 0000000000000000 14def9dea2f79cd6 5812631a5cf5d3ed'</span>,
+  hash: hash.sha256,
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a'</span>,
+
+    <span class="comment">// 4/5</span>
+    <span class="string">'6666666666666666666666666666666666666666666666666666666666666658'</span>
+  ]
+});
+
+<span class="keyword">var</span> pre;
+<span class="keyword">try</span> {
+  pre = require(<span class="string">'./precomputed/secp256k1'</span>);
+} <span class="keyword">catch</span> (e) {
+  pre = <span class="literal">undefined</span>;
+}
+
+defineCurve(<span class="string">'secp256k1'</span>, {
+  type: <span class="string">'short'</span>,
+  prime: <span class="string">'k256'</span>,
+  p: <span class="string">'ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff fffffffe fffffc2f'</span>,
+  a: <span class="string">'0'</span>,
+  b: <span class="string">'7'</span>,
+  n: <span class="string">'ffffffff ffffffff ffffffff fffffffe baaedce6 af48a03b bfd25e8c d0364141'</span>,
+  h: <span class="string">'1'</span>,
+  hash: hash.sha256,
+
+  <span class="comment">// Precomputed endomorphism</span>
+  beta: <span class="string">'7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee'</span>,
+  lambda: <span class="string">'5363ad4cc05c30e0a5261c028812645a122e22ea20816678df02967c1b23bd72'</span>,
+  basis: [
+    {
+      a: <span class="string">'3086d221a7d46bcde86c90e49284eb15'</span>,
+      b: <span class="string">'-e4437ed6010e88286f547fa90abfe4c3'</span>
+    },
+    {
+      a: <span class="string">'114ca50f7a8e2f3f657c1108d9d44cfd8'</span>,
+      b: <span class="string">'3086d221a7d46bcde86c90e49284eb15'</span>
+    }
+  ],
+
+  gRed: <span class="literal">false</span>,
+  g: [
+    <span class="string">'79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'</span>,
+    <span class="string">'483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8'</span>,
+    pre
+  ]
+});
+</code></pre>

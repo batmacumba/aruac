@@ -1,0 +1,39 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> acorn = require(<span class="string">'acorn'</span>)
+<span class="keyword">var</span> xtend = require(<span class="string">'xtend'</span>)
+
+<span class="keyword">var</span> CJSParser = acorn.Parser
+  .extend(require(<span class="string">'./lib/bigint'</span>))
+  .extend(require(<span class="string">'./lib/class-fields'</span>))
+  .extend(require(<span class="string">'./lib/static-class-features'</span>))
+  .extend(require(<span class="string">'acorn-dynamic-import'</span>).<span class="keyword">default</span>)
+<span class="keyword">var</span> ESModulesParser = CJSParser
+  .extend(require(<span class="string">'./lib/export-ns-from'</span>))
+  .extend(require(<span class="string">'./lib/import-meta'</span>))
+
+<span class="function"><span class="keyword">function</span> <span class="title">mapOptions</span> <span class="params">(opts)</span> {</span>
+  <span class="keyword">if</span> (!opts) opts = {}
+  <span class="keyword">return</span> xtend({
+    ecmaVersion: <span class="number">2019</span>,
+    allowHashBang: <span class="literal">true</span>,
+    allowReturnOutsideFunction: <span class="literal">true</span>
+  }, opts)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">getParser</span> <span class="params">(opts)</span> {</span>
+  <span class="keyword">if</span> (!opts) opts = {}
+  <span class="keyword">return</span> opts.sourceType === <span class="string">'module'</span> ? ESModulesParser : CJSParser
+}
+
+module.exports = exports = xtend(acorn, {
+  parse: <span class="function"><span class="keyword">function</span> <span class="title">parse</span> <span class="params">(src, opts)</span> {</span>
+    <span class="keyword">return</span> getParser(opts).parse(src, mapOptions(opts))
+  },
+  parseExpressionAt: <span class="function"><span class="keyword">function</span> <span class="title">parseExpressionAt</span> <span class="params">(src, offset, opts)</span> {</span>
+    <span class="keyword">return</span> getParser(opts).parseExpressionAt(src, offset, mapOptions(opts))
+  },
+  tokenizer: <span class="function"><span class="keyword">function</span> <span class="title">tokenizer</span> <span class="params">(src, opts)</span> {</span>
+    <span class="keyword">return</span> getParser(opts).tokenizer(src, mapOptions(opts))
+  }
+})
+</code></pre>

@@ -1,0 +1,91 @@
+<h1>certificate.js</h1>
+<pre><code class="lang-js"><span class="comment">// from https://github.com/Rantanen/node-dtls/blob/25a7dc861bda38cfeac93a723500eea4f0ac2e86/Certificate.js</span>
+<span class="comment">// thanks to @Rantanen</span>
+
+<span class="string">'use strict'</span>
+
+<span class="keyword">var</span> asn = require(<span class="string">'asn1.js'</span>)
+
+<span class="keyword">var</span> Time = asn.define(<span class="string">'Time'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.choice({
+    utcTime: <span class="keyword">this</span>.utctime(),
+    generalTime: <span class="keyword">this</span>.gentime()
+  })
+})
+
+<span class="keyword">var</span> AttributeTypeValue = asn.define(<span class="string">'AttributeTypeValue'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seq().obj(
+    <span class="keyword">this</span>.key(<span class="string">'type'</span>).objid(),
+    <span class="keyword">this</span>.key(<span class="string">'value'</span>).any()
+  )
+})
+
+<span class="keyword">var</span> AlgorithmIdentifier = asn.define(<span class="string">'AlgorithmIdentifier'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seq().obj(
+    <span class="keyword">this</span>.key(<span class="string">'algorithm'</span>).objid(),
+    <span class="keyword">this</span>.key(<span class="string">'parameters'</span>).optional(),
+    <span class="keyword">this</span>.key(<span class="string">'curve'</span>).objid().optional()
+  )
+})
+
+<span class="keyword">var</span> SubjectPublicKeyInfo = asn.define(<span class="string">'SubjectPublicKeyInfo'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seq().obj(
+    <span class="keyword">this</span>.key(<span class="string">'algorithm'</span>).use(AlgorithmIdentifier),
+    <span class="keyword">this</span>.key(<span class="string">'subjectPublicKey'</span>).bitstr()
+  )
+})
+
+<span class="keyword">var</span> RelativeDistinguishedName = asn.define(<span class="string">'RelativeDistinguishedName'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.setof(AttributeTypeValue)
+})
+
+<span class="keyword">var</span> RDNSequence = asn.define(<span class="string">'RDNSequence'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seqof(RelativeDistinguishedName)
+})
+
+<span class="keyword">var</span> Name = asn.define(<span class="string">'Name'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.choice({
+    rdnSequence: <span class="keyword">this</span>.use(RDNSequence)
+  })
+})
+
+<span class="keyword">var</span> Validity = asn.define(<span class="string">'Validity'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seq().obj(
+    <span class="keyword">this</span>.key(<span class="string">'notBefore'</span>).use(Time),
+    <span class="keyword">this</span>.key(<span class="string">'notAfter'</span>).use(Time)
+  )
+})
+
+<span class="keyword">var</span> Extension = asn.define(<span class="string">'Extension'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seq().obj(
+    <span class="keyword">this</span>.key(<span class="string">'extnID'</span>).objid(),
+    <span class="keyword">this</span>.key(<span class="string">'critical'</span>).bool().def(<span class="literal">false</span>),
+    <span class="keyword">this</span>.key(<span class="string">'extnValue'</span>).octstr()
+  )
+})
+
+<span class="keyword">var</span> TBSCertificate = asn.define(<span class="string">'TBSCertificate'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seq().obj(
+    <span class="keyword">this</span>.key(<span class="string">'version'</span>).explicit(<span class="number">0</span>).int().optional(),
+    <span class="keyword">this</span>.key(<span class="string">'serialNumber'</span>).int(),
+    <span class="keyword">this</span>.key(<span class="string">'signature'</span>).use(AlgorithmIdentifier),
+    <span class="keyword">this</span>.key(<span class="string">'issuer'</span>).use(Name),
+    <span class="keyword">this</span>.key(<span class="string">'validity'</span>).use(Validity),
+    <span class="keyword">this</span>.key(<span class="string">'subject'</span>).use(Name),
+    <span class="keyword">this</span>.key(<span class="string">'subjectPublicKeyInfo'</span>).use(SubjectPublicKeyInfo),
+    <span class="keyword">this</span>.key(<span class="string">'issuerUniqueID'</span>).implicit(<span class="number">1</span>).bitstr().optional(),
+    <span class="keyword">this</span>.key(<span class="string">'subjectUniqueID'</span>).implicit(<span class="number">2</span>).bitstr().optional(),
+    <span class="keyword">this</span>.key(<span class="string">'extensions'</span>).explicit(<span class="number">3</span>).seqof(Extension).optional()
+  )
+})
+
+<span class="keyword">var</span> X509Certificate = asn.define(<span class="string">'X509Certificate'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.seq().obj(
+    <span class="keyword">this</span>.key(<span class="string">'tbsCertificate'</span>).use(TBSCertificate),
+    <span class="keyword">this</span>.key(<span class="string">'signatureAlgorithm'</span>).use(AlgorithmIdentifier),
+    <span class="keyword">this</span>.key(<span class="string">'signatureValue'</span>).bitstr()
+  )
+})
+
+module.exports = X509Certificate
+</code></pre>

@@ -1,0 +1,242 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> BN = require(<span class="string">'bn.js'</span>);
+<span class="keyword">var</span> HmacDRBG = require(<span class="string">'hmac-drbg'</span>);
+<span class="keyword">var</span> elliptic = require(<span class="string">'../../elliptic'</span>);
+<span class="keyword">var</span> utils = elliptic.utils;
+<span class="keyword">var</span> assert = utils.assert;
+
+<span class="keyword">var</span> KeyPair = require(<span class="string">'./key'</span>);
+<span class="keyword">var</span> Signature = require(<span class="string">'./signature'</span>);
+
+<span class="function"><span class="keyword">function</span> <span class="title">EC</span><span class="params">(options)</span> {</span>
+  <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> EC))
+    <span class="keyword">return</span> <span class="keyword">new</span> EC(options);
+
+  <span class="comment">// Shortcut `elliptic.ec(curve-name)`</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> options === <span class="string">'string'</span>) {
+    assert(elliptic.curves.hasOwnProperty(options), <span class="string">'Unknown curve '</span> + options);
+
+    options = elliptic.curves[options];
+  }
+
+  <span class="comment">// Shortcut for `elliptic.ec(elliptic.curves.curveName)`</span>
+  <span class="keyword">if</span> (options <span class="keyword">instanceof</span> elliptic.curves.PresetCurve)
+    options = { curve: options };
+
+  <span class="keyword">this</span>.curve = options.curve.curve;
+  <span class="keyword">this</span>.n = <span class="keyword">this</span>.curve.n;
+  <span class="keyword">this</span>.nh = <span class="keyword">this</span>.n.ushrn(<span class="number">1</span>);
+  <span class="keyword">this</span>.g = <span class="keyword">this</span>.curve.g;
+
+  <span class="comment">// Point on curve</span>
+  <span class="keyword">this</span>.g = options.curve.g;
+  <span class="keyword">this</span>.g.precompute(options.curve.n.bitLength() + <span class="number">1</span>);
+
+  <span class="comment">// Hash for function for DRBG</span>
+  <span class="keyword">this</span>.hash = options.hash || options.curve.hash;
+}
+module.exports = EC;
+
+EC.prototype.keyPair = <span class="function"><span class="keyword">function</span> <span class="title">keyPair</span><span class="params">(options)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">new</span> KeyPair(<span class="keyword">this</span>, options);
+};
+
+EC.prototype.keyFromPrivate = <span class="function"><span class="keyword">function</span> <span class="title">keyFromPrivate</span><span class="params">(priv, enc)</span> {</span>
+  <span class="keyword">return</span> KeyPair.fromPrivate(<span class="keyword">this</span>, priv, enc);
+};
+
+EC.prototype.keyFromPublic = <span class="function"><span class="keyword">function</span> <span class="title">keyFromPublic</span><span class="params">(pub, enc)</span> {</span>
+  <span class="keyword">return</span> KeyPair.fromPublic(<span class="keyword">this</span>, pub, enc);
+};
+
+EC.prototype.genKeyPair = <span class="function"><span class="keyword">function</span> <span class="title">genKeyPair</span><span class="params">(options)</span> {</span>
+  <span class="keyword">if</span> (!options)
+    options = {};
+
+  <span class="comment">// Instantiate Hmac_DRBG</span>
+  <span class="keyword">var</span> drbg = <span class="keyword">new</span> HmacDRBG({
+    hash: <span class="keyword">this</span>.hash,
+    pers: options.pers,
+    persEnc: options.persEnc || <span class="string">'utf8'</span>,
+    entropy: options.entropy || elliptic.rand(<span class="keyword">this</span>.hash.hmacStrength),
+    entropyEnc: options.entropy &amp;&amp; options.entropyEnc || <span class="string">'utf8'</span>,
+    nonce: <span class="keyword">this</span>.n.toArray()
+  });
+
+  <span class="keyword">var</span> bytes = <span class="keyword">this</span>.n.byteLength();
+  <span class="keyword">var</span> ns2 = <span class="keyword">this</span>.n.sub(<span class="keyword">new</span> BN(<span class="number">2</span>));
+  <span class="keyword">do</span> {
+    <span class="keyword">var</span> priv = <span class="keyword">new</span> BN(drbg.generate(bytes));
+    <span class="keyword">if</span> (priv.cmp(ns2) > <span class="number">0</span>)
+      <span class="keyword">continue</span>;
+
+    priv.iaddn(<span class="number">1</span>);
+    <span class="keyword">return</span> <span class="keyword">this</span>.keyFromPrivate(priv);
+  } <span class="keyword">while</span> (<span class="literal">true</span>);
+};
+
+EC.prototype._truncateToN = <span class="function"><span class="keyword">function</span> <span class="title">truncateToN</span><span class="params">(msg, truncOnly)</span> {</span>
+  <span class="keyword">var</span> delta = msg.byteLength() * <span class="number">8</span> - <span class="keyword">this</span>.n.bitLength();
+  <span class="keyword">if</span> (delta > <span class="number">0</span>)
+    msg = msg.ushrn(delta);
+  <span class="keyword">if</span> (!truncOnly &amp;&amp; msg.cmp(<span class="keyword">this</span>.n) >= <span class="number">0</span>)
+    <span class="keyword">return</span> msg.sub(<span class="keyword">this</span>.n);
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> msg;
+};
+
+EC.prototype.sign = <span class="function"><span class="keyword">function</span> <span class="title">sign</span><span class="params">(msg, key, enc, options)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> enc === <span class="string">'object'</span>) {
+    options = enc;
+    enc = <span class="literal">null</span>;
+  }
+  <span class="keyword">if</span> (!options)
+    options = {};
+
+  key = <span class="keyword">this</span>.keyFromPrivate(key, enc);
+  msg = <span class="keyword">this</span>._truncateToN(<span class="keyword">new</span> BN(msg, <span class="number">16</span>));
+
+  <span class="comment">// Zero-extend key to provide enough entropy</span>
+  <span class="keyword">var</span> bytes = <span class="keyword">this</span>.n.byteLength();
+  <span class="keyword">var</span> bkey = key.getPrivate().toArray(<span class="string">'be'</span>, bytes);
+
+  <span class="comment">// Zero-extend nonce to have the same byte size as N</span>
+  <span class="keyword">var</span> nonce = msg.toArray(<span class="string">'be'</span>, bytes);
+
+  <span class="comment">// Instantiate Hmac_DRBG</span>
+  <span class="keyword">var</span> drbg = <span class="keyword">new</span> HmacDRBG({
+    hash: <span class="keyword">this</span>.hash,
+    entropy: bkey,
+    nonce: nonce,
+    pers: options.pers,
+    persEnc: options.persEnc || <span class="string">'utf8'</span>
+  });
+
+  <span class="comment">// Number of bytes to generate</span>
+  <span class="keyword">var</span> ns1 = <span class="keyword">this</span>.n.sub(<span class="keyword">new</span> BN(<span class="number">1</span>));
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> iter = <span class="number">0</span>; <span class="literal">true</span>; iter++) {
+    <span class="keyword">var</span> k = options.k ?
+        options.k(iter) :
+        <span class="keyword">new</span> BN(drbg.generate(<span class="keyword">this</span>.n.byteLength()));
+    k = <span class="keyword">this</span>._truncateToN(k, <span class="literal">true</span>);
+    <span class="keyword">if</span> (k.cmpn(<span class="number">1</span>) &lt;= <span class="number">0</span> || k.cmp(ns1) >= <span class="number">0</span>)
+      <span class="keyword">continue</span>;
+
+    <span class="keyword">var</span> kp = <span class="keyword">this</span>.g.mul(k);
+    <span class="keyword">if</span> (kp.isInfinity())
+      <span class="keyword">continue</span>;
+
+    <span class="keyword">var</span> kpX = kp.getX();
+    <span class="keyword">var</span> r = kpX.umod(<span class="keyword">this</span>.n);
+    <span class="keyword">if</span> (r.cmpn(<span class="number">0</span>) === <span class="number">0</span>)
+      <span class="keyword">continue</span>;
+
+    <span class="keyword">var</span> s = k.invm(<span class="keyword">this</span>.n).mul(r.mul(key.getPrivate()).iadd(msg));
+    s = s.umod(<span class="keyword">this</span>.n);
+    <span class="keyword">if</span> (s.cmpn(<span class="number">0</span>) === <span class="number">0</span>)
+      <span class="keyword">continue</span>;
+
+    <span class="keyword">var</span> recoveryParam = (kp.getY().isOdd() ? <span class="number">1</span> : <span class="number">0</span>) |
+                        (kpX.cmp(r) !== <span class="number">0</span> ? <span class="number">2</span> : <span class="number">0</span>);
+
+    <span class="comment">// Use complement of `s`, if it is > `n / 2`</span>
+    <span class="keyword">if</span> (options.canonical &amp;&amp; s.cmp(<span class="keyword">this</span>.nh) > <span class="number">0</span>) {
+      s = <span class="keyword">this</span>.n.sub(s);
+      recoveryParam ^= <span class="number">1</span>;
+    }
+
+    <span class="keyword">return</span> <span class="keyword">new</span> Signature({ r: r, s: s, recoveryParam: recoveryParam });
+  }
+};
+
+EC.prototype.verify = <span class="function"><span class="keyword">function</span> <span class="title">verify</span><span class="params">(msg, signature, key, enc)</span> {</span>
+  msg = <span class="keyword">this</span>._truncateToN(<span class="keyword">new</span> BN(msg, <span class="number">16</span>));
+  key = <span class="keyword">this</span>.keyFromPublic(key, enc);
+  signature = <span class="keyword">new</span> Signature(signature, <span class="string">'hex'</span>);
+
+  <span class="comment">// Perform primitive values validation</span>
+  <span class="keyword">var</span> r = signature.r;
+  <span class="keyword">var</span> s = signature.s;
+  <span class="keyword">if</span> (r.cmpn(<span class="number">1</span>) &lt; <span class="number">0</span> || r.cmp(<span class="keyword">this</span>.n) >= <span class="number">0</span>)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  <span class="keyword">if</span> (s.cmpn(<span class="number">1</span>) &lt; <span class="number">0</span> || s.cmp(<span class="keyword">this</span>.n) >= <span class="number">0</span>)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="comment">// Validate signature</span>
+  <span class="keyword">var</span> sinv = s.invm(<span class="keyword">this</span>.n);
+  <span class="keyword">var</span> u1 = sinv.mul(msg).umod(<span class="keyword">this</span>.n);
+  <span class="keyword">var</span> u2 = sinv.mul(r).umod(<span class="keyword">this</span>.n);
+
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.curve._maxwellTrick) {
+    <span class="keyword">var</span> p = <span class="keyword">this</span>.g.mulAdd(u1, key.getPublic(), u2);
+    <span class="keyword">if</span> (p.isInfinity())
+      <span class="keyword">return</span> <span class="literal">false</span>;
+
+    <span class="keyword">return</span> p.getX().umod(<span class="keyword">this</span>.n).cmp(r) === <span class="number">0</span>;
+  }
+
+  <span class="comment">// NOTE: Greg Maxwell's trick, inspired by:</span>
+  <span class="comment">// https://git.io/vad3K</span>
+
+  <span class="keyword">var</span> p = <span class="keyword">this</span>.g.jmulAdd(u1, key.getPublic(), u2);
+  <span class="keyword">if</span> (p.isInfinity())
+    <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="comment">// Compare `p.x` of Jacobian point with `r`,</span>
+  <span class="comment">// this will do `p.x == r * p.z^2` instead of multiplying `p.x` by the</span>
+  <span class="comment">// inverse of `p.z^2`</span>
+  <span class="keyword">return</span> p.eqXToP(r);
+};
+
+EC.prototype.recoverPubKey = <span class="keyword">function</span>(msg, signature, j, enc) {
+  assert((<span class="number">3</span> &amp; j) === j, <span class="string">'The recovery param is more than two bits'</span>);
+  signature = <span class="keyword">new</span> Signature(signature, enc);
+
+  <span class="keyword">var</span> n = <span class="keyword">this</span>.n;
+  <span class="keyword">var</span> e = <span class="keyword">new</span> BN(msg);
+  <span class="keyword">var</span> r = signature.r;
+  <span class="keyword">var</span> s = signature.s;
+
+  <span class="comment">// A set LSB signifies that the y-coordinate is odd</span>
+  <span class="keyword">var</span> isYOdd = j &amp; <span class="number">1</span>;
+  <span class="keyword">var</span> isSecondKey = j >> <span class="number">1</span>;
+  <span class="keyword">if</span> (r.cmp(<span class="keyword">this</span>.curve.p.umod(<span class="keyword">this</span>.curve.n)) >= <span class="number">0</span> &amp;&amp; isSecondKey)
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Unable to find sencond key candinate'</span>);
+
+  <span class="comment">// 1.1. Let x = r + jn.</span>
+  <span class="keyword">if</span> (isSecondKey)
+    r = <span class="keyword">this</span>.curve.pointFromX(r.add(<span class="keyword">this</span>.curve.n), isYOdd);
+  <span class="keyword">else</span>
+    r = <span class="keyword">this</span>.curve.pointFromX(r, isYOdd);
+
+  <span class="keyword">var</span> rInv = signature.r.invm(n);
+  <span class="keyword">var</span> s1 = n.sub(e).mul(rInv).umod(n);
+  <span class="keyword">var</span> s2 = s.mul(rInv).umod(n);
+
+  <span class="comment">// 1.6.1 Compute Q = r^-1 (sR -  eG)</span>
+  <span class="comment">//               Q = r^-1 (sR + -eG)</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.g.mulAdd(s1, r, s2);
+};
+
+EC.prototype.getKeyRecoveryParam = <span class="keyword">function</span>(e, signature, Q, enc) {
+  signature = <span class="keyword">new</span> Signature(signature, enc);
+  <span class="keyword">if</span> (signature.recoveryParam !== <span class="literal">null</span>)
+    <span class="keyword">return</span> signature.recoveryParam;
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; i++) {
+    <span class="keyword">var</span> Qprime;
+    <span class="keyword">try</span> {
+      Qprime = <span class="keyword">this</span>.recoverPubKey(e, signature, i);
+    } <span class="keyword">catch</span> (e) {
+      <span class="keyword">continue</span>;
+    }
+
+    <span class="keyword">if</span> (Qprime.eq(Q))
+      <span class="keyword">return</span> i;
+  }
+  <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Unable to find valid recovery factor'</span>);
+};
+</code></pre>

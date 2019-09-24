@@ -1,0 +1,15 @@
+<h1>index.js</h1>
+<pre><code class="lang-js">module.exports = <span class="function"><span class="keyword">function</span> <span class="params">(xs, fn)</span> {</span>
+    <span class="keyword">var</span> res = [];
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; xs.length; i++) {
+        <span class="keyword">var</span> x = fn(xs[i], i);
+        <span class="keyword">if</span> (isArray(x)) res.push.apply(res, x);
+        <span class="keyword">else</span> res.push(x);
+    }
+    <span class="keyword">return</span> res;
+};
+
+<span class="keyword">var</span> isArray = Array.isArray || <span class="function"><span class="keyword">function</span> <span class="params">(xs)</span> {</span>
+    <span class="keyword">return</span> Object.prototype.toString.call(xs) === <span class="string">'[object Array]'</span>;
+};
+</code></pre>

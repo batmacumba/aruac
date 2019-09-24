@@ -1,0 +1,49 @@
+<h1>pako/lib/zlib/zstream</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="comment">// (C) 1995-2013 Jean-loup Gailly and Mark Adler</span>
+<span class="comment">// (C) 2014-2017 Vitaly Puzrin and Andrey Tupitsin</span>
+<span class="comment">//</span>
+<span class="comment">// This software is provided 'as-is', without any express or implied</span>
+<span class="comment">// warranty. In no event will the authors be held liable for any damages</span>
+<span class="comment">// arising from the use of this software.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is granted to anyone to use this software for any purpose,</span>
+<span class="comment">// including commercial applications, and to alter it and redistribute it</span>
+<span class="comment">// freely, subject to the following restrictions:</span>
+<span class="comment">//</span>
+<span class="comment">// 1. The origin of this software must not be misrepresented; you must not</span>
+<span class="comment">//   claim that you wrote the original software. If you use this software</span>
+<span class="comment">//   in a product, an acknowledgment in the product documentation would be</span>
+<span class="comment">//   appreciated but is not required.</span>
+<span class="comment">// 2. Altered source versions must be plainly marked as such, and must not be</span>
+<span class="comment">//   misrepresented as being the original software.</span>
+<span class="comment">// 3. This notice may not be removed or altered from any source distribution.</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">ZStream</span><span class="params">()</span> {</span>
+  <span class="comment">/* next input byte */</span>
+  <span class="keyword">this</span>.input = <span class="literal">null</span>; <span class="comment">// JS specific, because we have no pointers</span>
+  <span class="keyword">this</span>.next_in = <span class="number">0</span>;
+  <span class="comment">/* number of bytes available at input */</span>
+  <span class="keyword">this</span>.avail_in = <span class="number">0</span>;
+  <span class="comment">/* total number of input bytes read so far */</span>
+  <span class="keyword">this</span>.total_in = <span class="number">0</span>;
+  <span class="comment">/* next output byte should be put there */</span>
+  <span class="keyword">this</span>.output = <span class="literal">null</span>; <span class="comment">// JS specific, because we have no pointers</span>
+  <span class="keyword">this</span>.next_out = <span class="number">0</span>;
+  <span class="comment">/* remaining free space at output */</span>
+  <span class="keyword">this</span>.avail_out = <span class="number">0</span>;
+  <span class="comment">/* total number of bytes output so far */</span>
+  <span class="keyword">this</span>.total_out = <span class="number">0</span>;
+  <span class="comment">/* last error message, NULL if no error */</span>
+  <span class="keyword">this</span>.msg = <span class="string">''</span><span class="comment">/*Z_NULL*/</span>;
+  <span class="comment">/* not visible by applications */</span>
+  <span class="keyword">this</span>.state = <span class="literal">null</span>;
+  <span class="comment">/* best guess about the data type: binary or text */</span>
+  <span class="keyword">this</span>.data_type = <span class="number">2</span><span class="comment">/*Z_UNKNOWN*/</span>;
+  <span class="comment">/* adler32 value of the uncompressed data */</span>
+  <span class="keyword">this</span>.adler = <span class="number">0</span>;
+}
+
+module.exports = ZStream;
+</code></pre>

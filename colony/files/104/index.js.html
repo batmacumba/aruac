@@ -1,0 +1,10 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> core = require(<span class="string">'./lib/core'</span>);
+<span class="keyword">var</span> async = require(<span class="string">'./lib/async'</span>);
+async.core = core;
+async.isCore = <span class="function"><span class="keyword">function</span> <span class="title">isCore</span><span class="params">(x)</span> {</span> <span class="keyword">return</span> core[x]; };
+async.sync = require(<span class="string">'./lib/sync'</span>);
+
+exports = async;
+module.exports = async;
+</code></pre>

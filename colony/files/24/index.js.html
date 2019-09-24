@@ -1,0 +1,1779 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="comment">/*!
+ * The buffer module from node.js, for the browser.
+ *
+ * @author   Feross Aboukhadijeh &lt;https://feross.org>
+ * @license  MIT
+ */</span>
+<span class="comment">/* eslint-disable no-proto */</span>
+
+<span class="string">'use strict'</span>
+
+<span class="keyword">var</span> base64 = require(<span class="string">'base64-js'</span>)
+<span class="keyword">var</span> ieee754 = require(<span class="string">'ieee754'</span>)
+
+exports.Buffer = Buffer
+exports.SlowBuffer = SlowBuffer
+exports.INSPECT_MAX_BYTES = <span class="number">50</span>
+
+<span class="keyword">var</span> K_MAX_LENGTH = <span class="number">0x7fffffff</span>
+exports.kMaxLength = K_MAX_LENGTH
+
+<span class="comment">/**
+ * If `Buffer.TYPED_ARRAY_SUPPORT`:
+ *   === true    Use Uint8Array implementation (fastest)
+ *   === false   Print warning and recommend using `buffer` v4.x which has an Object
+ *               implementation (most compatible, even IE6)
+ *
+ * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
+ * Opera 11.6+, iOS 4.2+.
+ *
+ * We report that the browser does not support typed arrays if the are not subclassable
+ * using __proto__. Firefox 4-29 lacks support for adding new properties to `Uint8Array`
+ * (See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438). IE 10 lacks support
+ * for __proto__ and has a buggy typed array implementation.
+ */</span>
+Buffer.TYPED_ARRAY_SUPPORT = typedArraySupport()
+
+<span class="keyword">if</span> (!Buffer.TYPED_ARRAY_SUPPORT &amp;&amp; <span class="keyword">typeof</span> console !== <span class="string">'undefined'</span> &amp;&amp;
+    <span class="keyword">typeof</span> console.error === <span class="string">'function'</span>) {
+  console.error(
+    <span class="string">'This browser lacks typed array (Uint8Array) support which is required by '</span> +
+    <span class="string">'`buffer` v5.x. Use `buffer` v4.x if you require old browser support.'</span>
+  )
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">typedArraySupport</span> <span class="params">()</span> {</span>
+  <span class="comment">// Can typed array instances can be augmented?</span>
+  <span class="keyword">try</span> {
+    <span class="keyword">var</span> arr = <span class="keyword">new</span> Uint8Array(<span class="number">1</span>)
+    arr.__proto__ = { __proto__: Uint8Array.prototype, foo: <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span> <span class="keyword">return</span> <span class="number">42</span> } }
+    <span class="keyword">return</span> arr.foo() === <span class="number">42</span>
+  } <span class="keyword">catch</span> (e) {
+    <span class="keyword">return</span> <span class="literal">false</span>
+  }
+}
+
+Object.defineProperty(Buffer.prototype, <span class="string">'parent'</span>, {
+  enumerable: <span class="literal">true</span>,
+  get: <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">if</span> (!Buffer.isBuffer(<span class="keyword">this</span>)) <span class="keyword">return</span> <span class="literal">undefined</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.buffer
+  }
+})
+
+Object.defineProperty(Buffer.prototype, <span class="string">'offset'</span>, {
+  enumerable: <span class="literal">true</span>,
+  get: <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">if</span> (!Buffer.isBuffer(<span class="keyword">this</span>)) <span class="keyword">return</span> <span class="literal">undefined</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.byteOffset
+  }
+})
+
+<span class="function"><span class="keyword">function</span> <span class="title">createBuffer</span> <span class="params">(length)</span> {</span>
+  <span class="keyword">if</span> (length > K_MAX_LENGTH) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'The value "'</span> + length + <span class="string">'" is invalid for option "size"'</span>)
+  }
+  <span class="comment">// Return an augmented `Uint8Array` instance</span>
+  <span class="keyword">var</span> buf = <span class="keyword">new</span> Uint8Array(length)
+  buf.__proto__ = Buffer.prototype
+  <span class="keyword">return</span> buf
+}
+
+<span class="comment">/**
+ * The Buffer constructor returns instances of `Uint8Array` that have their
+ * prototype changed to `Buffer.prototype`. Furthermore, `Buffer` is a subclass of
+ * `Uint8Array`, so the returned instances will have all the node `Buffer` methods
+ * and the `Uint8Array` methods. Square bracket notation works as expected -- it
+ * returns a single octet.
+ *
+ * The `Uint8Array` prototype remains unmodified.
+ */</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">Buffer</span> <span class="params">(arg, encodingOrOffset, length)</span> {</span>
+  <span class="comment">// Common case.</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> arg === <span class="string">'number'</span>) {
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> encodingOrOffset === <span class="string">'string'</span>) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(
+        <span class="string">'The "string" argument must be of type string. Received type number'</span>
+      )
+    }
+    <span class="keyword">return</span> allocUnsafe(arg)
+  }
+  <span class="keyword">return</span> from(arg, encodingOrOffset, length)
+}
+
+<span class="comment">// Fix subarray() in ES2016. See: https://github.com/feross/buffer/pull/97</span>
+<span class="keyword">if</span> (<span class="keyword">typeof</span> Symbol !== <span class="string">'undefined'</span> &amp;&amp; Symbol.species != <span class="literal">null</span> &amp;&amp;
+    Buffer[Symbol.species] === Buffer) {
+  Object.defineProperty(Buffer, Symbol.species, {
+    value: <span class="literal">null</span>,
+    configurable: <span class="literal">true</span>,
+    enumerable: <span class="literal">false</span>,
+    writable: <span class="literal">false</span>
+  })
+}
+
+Buffer.poolSize = <span class="number">8192</span> <span class="comment">// not used by this implementation</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">from</span> <span class="params">(value, encodingOrOffset, length)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> value === <span class="string">'string'</span>) {
+    <span class="keyword">return</span> fromString(value, encodingOrOffset)
+  }
+
+  <span class="keyword">if</span> (ArrayBuffer.isView(value)) {
+    <span class="keyword">return</span> fromArrayLike(value)
+  }
+
+  <span class="keyword">if</span> (value == <span class="literal">null</span>) {
+    <span class="keyword">throw</span> TypeError(
+      <span class="string">'The first argument must be one of type string, Buffer, ArrayBuffer, Array, '</span> +
+      <span class="string">'or Array-like Object. Received type '</span> + (<span class="keyword">typeof</span> value)
+    )
+  }
+
+  <span class="keyword">if</span> (isInstance(value, ArrayBuffer) ||
+      (value &amp;&amp; isInstance(value.buffer, ArrayBuffer))) {
+    <span class="keyword">return</span> fromArrayBuffer(value, encodingOrOffset, length)
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> value === <span class="string">'number'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(
+      <span class="string">'The "value" argument must not be of type number. Received type number'</span>
+    )
+  }
+
+  <span class="keyword">var</span> valueOf = value.valueOf &amp;&amp; value.valueOf()
+  <span class="keyword">if</span> (valueOf != <span class="literal">null</span> &amp;&amp; valueOf !== value) {
+    <span class="keyword">return</span> Buffer.from(valueOf, encodingOrOffset, length)
+  }
+
+  <span class="keyword">var</span> b = fromObject(value)
+  <span class="keyword">if</span> (b) <span class="keyword">return</span> b
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> Symbol !== <span class="string">'undefined'</span> &amp;&amp; Symbol.toPrimitive != <span class="literal">null</span> &amp;&amp;
+      <span class="keyword">typeof</span> value[Symbol.toPrimitive] === <span class="string">'function'</span>) {
+    <span class="keyword">return</span> Buffer.from(
+      value[Symbol.toPrimitive](<span class="string">'string'</span>), encodingOrOffset, length
+    )
+  }
+
+  <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(
+    <span class="string">'The first argument must be one of type string, Buffer, ArrayBuffer, Array, '</span> +
+    <span class="string">'or Array-like Object. Received type '</span> + (<span class="keyword">typeof</span> value)
+  )
+}
+
+<span class="comment">/**
+ * Functionally equivalent to Buffer(arg, encoding) but throws a TypeError
+ * if value is a number.
+ * Buffer.from(str[, encoding])
+ * Buffer.from(array)
+ * Buffer.from(buffer)
+ * Buffer.from(arrayBuffer[, byteOffset[, length]])
+ **/</span>
+Buffer.from = <span class="function"><span class="keyword">function</span> <span class="params">(value, encodingOrOffset, length)</span> {</span>
+  <span class="keyword">return</span> from(value, encodingOrOffset, length)
+}
+
+<span class="comment">// Note: Change prototype *after* Buffer.from is defined to workaround Chrome bug:</span>
+<span class="comment">// https://github.com/feross/buffer/pull/148</span>
+Buffer.prototype.__proto__ = Uint8Array.prototype
+Buffer.__proto__ = Uint8Array
+
+<span class="function"><span class="keyword">function</span> <span class="title">assertSize</span> <span class="params">(size)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> size !== <span class="string">'number'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"size" argument must be of type number'</span>)
+  } <span class="keyword">else</span> <span class="keyword">if</span> (size &lt; <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'The value "'</span> + size + <span class="string">'" is invalid for option "size"'</span>)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">alloc</span> <span class="params">(size, fill, encoding)</span> {</span>
+  assertSize(size)
+  <span class="keyword">if</span> (size &lt;= <span class="number">0</span>) {
+    <span class="keyword">return</span> createBuffer(size)
+  }
+  <span class="keyword">if</span> (fill !== <span class="literal">undefined</span>) {
+    <span class="comment">// Only pay attention to encoding if it's a string. This</span>
+    <span class="comment">// prevents accidentally sending in a number that would</span>
+    <span class="comment">// be interpretted as a start offset.</span>
+    <span class="keyword">return</span> <span class="keyword">typeof</span> encoding === <span class="string">'string'</span>
+      ? createBuffer(size).fill(fill, encoding)
+      : createBuffer(size).fill(fill)
+  }
+  <span class="keyword">return</span> createBuffer(size)
+}
+
+<span class="comment">/**
+ * Creates a new filled Buffer instance.
+ * alloc(size[, fill[, encoding]])
+ **/</span>
+Buffer.alloc = <span class="function"><span class="keyword">function</span> <span class="params">(size, fill, encoding)</span> {</span>
+  <span class="keyword">return</span> alloc(size, fill, encoding)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">allocUnsafe</span> <span class="params">(size)</span> {</span>
+  assertSize(size)
+  <span class="keyword">return</span> createBuffer(size &lt; <span class="number">0</span> ? <span class="number">0</span> : checked(size) | <span class="number">0</span>)
+}
+
+<span class="comment">/**
+ * Equivalent to Buffer(num), by default creates a non-zero-filled Buffer instance.
+ * */</span>
+Buffer.allocUnsafe = <span class="function"><span class="keyword">function</span> <span class="params">(size)</span> {</span>
+  <span class="keyword">return</span> allocUnsafe(size)
+}
+<span class="comment">/**
+ * Equivalent to SlowBuffer(num), by default creates a non-zero-filled Buffer instance.
+ */</span>
+Buffer.allocUnsafeSlow = <span class="function"><span class="keyword">function</span> <span class="params">(size)</span> {</span>
+  <span class="keyword">return</span> allocUnsafe(size)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromString</span> <span class="params">(string, encoding)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> encoding !== <span class="string">'string'</span> || encoding === <span class="string">''</span>) {
+    encoding = <span class="string">'utf8'</span>
+  }
+
+  <span class="keyword">if</span> (!Buffer.isEncoding(encoding)) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Unknown encoding: '</span> + encoding)
+  }
+
+  <span class="keyword">var</span> length = byteLength(string, encoding) | <span class="number">0</span>
+  <span class="keyword">var</span> buf = createBuffer(length)
+
+  <span class="keyword">var</span> actual = buf.write(string, encoding)
+
+  <span class="keyword">if</span> (actual !== length) {
+    <span class="comment">// Writing a hex string, for example, that contains invalid characters will</span>
+    <span class="comment">// cause everything after the first invalid character to be ignored. (e.g.</span>
+    <span class="comment">// 'abxxcd' will be treated as 'ab')</span>
+    buf = buf.slice(<span class="number">0</span>, actual)
+  }
+
+  <span class="keyword">return</span> buf
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromArrayLike</span> <span class="params">(array)</span> {</span>
+  <span class="keyword">var</span> length = array.length &lt; <span class="number">0</span> ? <span class="number">0</span> : checked(array.length) | <span class="number">0</span>
+  <span class="keyword">var</span> buf = createBuffer(length)
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; length; i += <span class="number">1</span>) {
+    buf[i] = array[i] &amp; <span class="number">255</span>
+  }
+  <span class="keyword">return</span> buf
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromArrayBuffer</span> <span class="params">(array, byteOffset, length)</span> {</span>
+  <span class="keyword">if</span> (byteOffset &lt; <span class="number">0</span> || array.byteLength &lt; byteOffset) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'"offset" is outside of buffer bounds'</span>)
+  }
+
+  <span class="keyword">if</span> (array.byteLength &lt; byteOffset + (length || <span class="number">0</span>)) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'"length" is outside of buffer bounds'</span>)
+  }
+
+  <span class="keyword">var</span> buf
+  <span class="keyword">if</span> (byteOffset === <span class="literal">undefined</span> &amp;&amp; length === <span class="literal">undefined</span>) {
+    buf = <span class="keyword">new</span> Uint8Array(array)
+  } <span class="keyword">else</span> <span class="keyword">if</span> (length === <span class="literal">undefined</span>) {
+    buf = <span class="keyword">new</span> Uint8Array(array, byteOffset)
+  } <span class="keyword">else</span> {
+    buf = <span class="keyword">new</span> Uint8Array(array, byteOffset, length)
+  }
+
+  <span class="comment">// Return an augmented `Uint8Array` instance</span>
+  buf.__proto__ = Buffer.prototype
+  <span class="keyword">return</span> buf
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromObject</span> <span class="params">(obj)</span> {</span>
+  <span class="keyword">if</span> (Buffer.isBuffer(obj)) {
+    <span class="keyword">var</span> len = checked(obj.length) | <span class="number">0</span>
+    <span class="keyword">var</span> buf = createBuffer(len)
+
+    <span class="keyword">if</span> (buf.length === <span class="number">0</span>) {
+      <span class="keyword">return</span> buf
+    }
+
+    obj.copy(buf, <span class="number">0</span>, <span class="number">0</span>, len)
+    <span class="keyword">return</span> buf
+  }
+
+  <span class="keyword">if</span> (obj.length !== <span class="literal">undefined</span>) {
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> obj.length !== <span class="string">'number'</span> || numberIsNaN(obj.length)) {
+      <span class="keyword">return</span> createBuffer(<span class="number">0</span>)
+    }
+    <span class="keyword">return</span> fromArrayLike(obj)
+  }
+
+  <span class="keyword">if</span> (obj.type === <span class="string">'Buffer'</span> &amp;&amp; Array.isArray(obj.data)) {
+    <span class="keyword">return</span> fromArrayLike(obj.data)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">checked</span> <span class="params">(length)</span> {</span>
+  <span class="comment">// Note: cannot use `length &lt; K_MAX_LENGTH` here because that fails when</span>
+  <span class="comment">// length is NaN (which is otherwise coerced to zero.)</span>
+  <span class="keyword">if</span> (length >= K_MAX_LENGTH) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Attempt to allocate Buffer larger than maximum '</span> +
+                         <span class="string">'size: 0x'</span> + K_MAX_LENGTH.toString(<span class="number">16</span>) + <span class="string">' bytes'</span>)
+  }
+  <span class="keyword">return</span> length | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">SlowBuffer</span> <span class="params">(length)</span> {</span>
+  <span class="keyword">if</span> (+length != length) { <span class="comment">// eslint-disable-line eqeqeq</span>
+    length = <span class="number">0</span>
+  }
+  <span class="keyword">return</span> Buffer.alloc(+length)
+}
+
+Buffer.isBuffer = <span class="function"><span class="keyword">function</span> <span class="title">isBuffer</span> <span class="params">(b)</span> {</span>
+  <span class="keyword">return</span> b != <span class="literal">null</span> &amp;&amp; b._isBuffer === <span class="literal">true</span> &amp;&amp;
+    b !== Buffer.prototype <span class="comment">// so Buffer.isBuffer(Buffer.prototype) will be false</span>
+}
+
+Buffer.compare = <span class="function"><span class="keyword">function</span> <span class="title">compare</span> <span class="params">(a, b)</span> {</span>
+  <span class="keyword">if</span> (isInstance(a, Uint8Array)) a = Buffer.from(a, a.offset, a.byteLength)
+  <span class="keyword">if</span> (isInstance(b, Uint8Array)) b = Buffer.from(b, b.offset, b.byteLength)
+  <span class="keyword">if</span> (!Buffer.isBuffer(a) || !Buffer.isBuffer(b)) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(
+      <span class="string">'The "buf1", "buf2" arguments must be one of type Buffer or Uint8Array'</span>
+    )
+  }
+
+  <span class="keyword">if</span> (a === b) <span class="keyword">return</span> <span class="number">0</span>
+
+  <span class="keyword">var</span> x = a.length
+  <span class="keyword">var</span> y = b.length
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, len = Math.min(x, y); i &lt; len; ++i) {
+    <span class="keyword">if</span> (a[i] !== b[i]) {
+      x = a[i]
+      y = b[i]
+      <span class="keyword">break</span>
+    }
+  }
+
+  <span class="keyword">if</span> (x &lt; y) <span class="keyword">return</span> -<span class="number">1</span>
+  <span class="keyword">if</span> (y &lt; x) <span class="keyword">return</span> <span class="number">1</span>
+  <span class="keyword">return</span> <span class="number">0</span>
+}
+
+Buffer.isEncoding = <span class="function"><span class="keyword">function</span> <span class="title">isEncoding</span> <span class="params">(encoding)</span> {</span>
+  <span class="keyword">switch</span> (String(encoding).toLowerCase()) {
+    <span class="keyword">case</span> <span class="string">'hex'</span>:
+    <span class="keyword">case</span> <span class="string">'utf8'</span>:
+    <span class="keyword">case</span> <span class="string">'utf-8'</span>:
+    <span class="keyword">case</span> <span class="string">'ascii'</span>:
+    <span class="keyword">case</span> <span class="string">'latin1'</span>:
+    <span class="keyword">case</span> <span class="string">'binary'</span>:
+    <span class="keyword">case</span> <span class="string">'base64'</span>:
+    <span class="keyword">case</span> <span class="string">'ucs2'</span>:
+    <span class="keyword">case</span> <span class="string">'ucs-2'</span>:
+    <span class="keyword">case</span> <span class="string">'utf16le'</span>:
+    <span class="keyword">case</span> <span class="string">'utf-16le'</span>:
+      <span class="keyword">return</span> <span class="literal">true</span>
+    <span class="keyword">default</span>:
+      <span class="keyword">return</span> <span class="literal">false</span>
+  }
+}
+
+Buffer.concat = <span class="function"><span class="keyword">function</span> <span class="title">concat</span> <span class="params">(list, length)</span> {</span>
+  <span class="keyword">if</span> (!Array.isArray(list)) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"list" argument must be an Array of Buffers'</span>)
+  }
+
+  <span class="keyword">if</span> (list.length === <span class="number">0</span>) {
+    <span class="keyword">return</span> Buffer.alloc(<span class="number">0</span>)
+  }
+
+  <span class="keyword">var</span> i
+  <span class="keyword">if</span> (length === <span class="literal">undefined</span>) {
+    length = <span class="number">0</span>
+    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; list.length; ++i) {
+      length += list[i].length
+    }
+  }
+
+  <span class="keyword">var</span> buffer = Buffer.allocUnsafe(length)
+  <span class="keyword">var</span> pos = <span class="number">0</span>
+  <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; list.length; ++i) {
+    <span class="keyword">var</span> buf = list[i]
+    <span class="keyword">if</span> (isInstance(buf, Uint8Array)) {
+      buf = Buffer.from(buf)
+    }
+    <span class="keyword">if</span> (!Buffer.isBuffer(buf)) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"list" argument must be an Array of Buffers'</span>)
+    }
+    buf.copy(buffer, pos)
+    pos += buf.length
+  }
+  <span class="keyword">return</span> buffer
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">byteLength</span> <span class="params">(string, encoding)</span> {</span>
+  <span class="keyword">if</span> (Buffer.isBuffer(string)) {
+    <span class="keyword">return</span> string.length
+  }
+  <span class="keyword">if</span> (ArrayBuffer.isView(string) || isInstance(string, ArrayBuffer)) {
+    <span class="keyword">return</span> string.byteLength
+  }
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> string !== <span class="string">'string'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(
+      <span class="string">'The "string" argument must be one of type string, Buffer, or ArrayBuffer. '</span> +
+      <span class="string">'Received type '</span> + <span class="keyword">typeof</span> string
+    )
+  }
+
+  <span class="keyword">var</span> len = string.length
+  <span class="keyword">var</span> mustMatch = (arguments.length > <span class="number">2</span> &amp;&amp; arguments[<span class="number">2</span>] === <span class="literal">true</span>)
+  <span class="keyword">if</span> (!mustMatch &amp;&amp; len === <span class="number">0</span>) <span class="keyword">return</span> <span class="number">0</span>
+
+  <span class="comment">// Use a for loop to avoid recursion</span>
+  <span class="keyword">var</span> loweredCase = <span class="literal">false</span>
+  <span class="keyword">for</span> (;;) {
+    <span class="keyword">switch</span> (encoding) {
+      <span class="keyword">case</span> <span class="string">'ascii'</span>:
+      <span class="keyword">case</span> <span class="string">'latin1'</span>:
+      <span class="keyword">case</span> <span class="string">'binary'</span>:
+        <span class="keyword">return</span> len
+      <span class="keyword">case</span> <span class="string">'utf8'</span>:
+      <span class="keyword">case</span> <span class="string">'utf-8'</span>:
+        <span class="keyword">return</span> utf8ToBytes(string).length
+      <span class="keyword">case</span> <span class="string">'ucs2'</span>:
+      <span class="keyword">case</span> <span class="string">'ucs-2'</span>:
+      <span class="keyword">case</span> <span class="string">'utf16le'</span>:
+      <span class="keyword">case</span> <span class="string">'utf-16le'</span>:
+        <span class="keyword">return</span> len * <span class="number">2</span>
+      <span class="keyword">case</span> <span class="string">'hex'</span>:
+        <span class="keyword">return</span> len >>> <span class="number">1</span>
+      <span class="keyword">case</span> <span class="string">'base64'</span>:
+        <span class="keyword">return</span> base64ToBytes(string).length
+      <span class="keyword">default</span>:
+        <span class="keyword">if</span> (loweredCase) {
+          <span class="keyword">return</span> mustMatch ? -<span class="number">1</span> : utf8ToBytes(string).length <span class="comment">// assume utf8</span>
+        }
+        encoding = (<span class="string">''</span> + encoding).toLowerCase()
+        loweredCase = <span class="literal">true</span>
+    }
+  }
+}
+Buffer.byteLength = byteLength
+
+<span class="function"><span class="keyword">function</span> <span class="title">slowToString</span> <span class="params">(encoding, start, end)</span> {</span>
+  <span class="keyword">var</span> loweredCase = <span class="literal">false</span>
+
+  <span class="comment">// No need to verify that "this.length &lt;= MAX_UINT32" since it's a read-only</span>
+  <span class="comment">// property of a typed array.</span>
+
+  <span class="comment">// This behaves neither like String nor Uint8Array in that we set start/end</span>
+  <span class="comment">// to their upper/lower bounds if the value passed is out of range.</span>
+  <span class="comment">// undefined is handled specially as per ECMA-262 6th Edition,</span>
+  <span class="comment">// Section 13.3.3.7 Runtime Semantics: KeyedBindingInitialization.</span>
+  <span class="keyword">if</span> (start === <span class="literal">undefined</span> || start &lt; <span class="number">0</span>) {
+    start = <span class="number">0</span>
+  }
+  <span class="comment">// Return early if start > this.length. Done here to prevent potential uint32</span>
+  <span class="comment">// coercion fail below.</span>
+  <span class="keyword">if</span> (start > <span class="keyword">this</span>.length) {
+    <span class="keyword">return</span> <span class="string">''</span>
+  }
+
+  <span class="keyword">if</span> (end === <span class="literal">undefined</span> || end > <span class="keyword">this</span>.length) {
+    end = <span class="keyword">this</span>.length
+  }
+
+  <span class="keyword">if</span> (end &lt;= <span class="number">0</span>) {
+    <span class="keyword">return</span> <span class="string">''</span>
+  }
+
+  <span class="comment">// Force coersion to uint32. This will also coerce falsey/NaN values to 0.</span>
+  end >>>= <span class="number">0</span>
+  start >>>= <span class="number">0</span>
+
+  <span class="keyword">if</span> (end &lt;= start) {
+    <span class="keyword">return</span> <span class="string">''</span>
+  }
+
+  <span class="keyword">if</span> (!encoding) encoding = <span class="string">'utf8'</span>
+
+  <span class="keyword">while</span> (<span class="literal">true</span>) {
+    <span class="keyword">switch</span> (encoding) {
+      <span class="keyword">case</span> <span class="string">'hex'</span>:
+        <span class="keyword">return</span> hexSlice(<span class="keyword">this</span>, start, end)
+
+      <span class="keyword">case</span> <span class="string">'utf8'</span>:
+      <span class="keyword">case</span> <span class="string">'utf-8'</span>:
+        <span class="keyword">return</span> utf8Slice(<span class="keyword">this</span>, start, end)
+
+      <span class="keyword">case</span> <span class="string">'ascii'</span>:
+        <span class="keyword">return</span> asciiSlice(<span class="keyword">this</span>, start, end)
+
+      <span class="keyword">case</span> <span class="string">'latin1'</span>:
+      <span class="keyword">case</span> <span class="string">'binary'</span>:
+        <span class="keyword">return</span> latin1Slice(<span class="keyword">this</span>, start, end)
+
+      <span class="keyword">case</span> <span class="string">'base64'</span>:
+        <span class="keyword">return</span> base64Slice(<span class="keyword">this</span>, start, end)
+
+      <span class="keyword">case</span> <span class="string">'ucs2'</span>:
+      <span class="keyword">case</span> <span class="string">'ucs-2'</span>:
+      <span class="keyword">case</span> <span class="string">'utf16le'</span>:
+      <span class="keyword">case</span> <span class="string">'utf-16le'</span>:
+        <span class="keyword">return</span> utf16leSlice(<span class="keyword">this</span>, start, end)
+
+      <span class="keyword">default</span>:
+        <span class="keyword">if</span> (loweredCase) <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Unknown encoding: '</span> + encoding)
+        encoding = (encoding + <span class="string">''</span>).toLowerCase()
+        loweredCase = <span class="literal">true</span>
+    }
+  }
+}
+
+<span class="comment">// This property is used by `Buffer.isBuffer` (and the `is-buffer` npm package)</span>
+<span class="comment">// to detect a Buffer instance. It's not possible to use `instanceof Buffer`</span>
+<span class="comment">// reliably in a browserify context because there could be multiple different</span>
+<span class="comment">// copies of the 'buffer' package in use. This method works even for Buffer</span>
+<span class="comment">// instances that were created from another copy of the `buffer` package.</span>
+<span class="comment">// See: https://github.com/feross/buffer/issues/154</span>
+Buffer.prototype._isBuffer = <span class="literal">true</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">swap</span> <span class="params">(b, n, m)</span> {</span>
+  <span class="keyword">var</span> i = b[n]
+  b[n] = b[m]
+  b[m] = i
+}
+
+Buffer.prototype.swap16 = <span class="function"><span class="keyword">function</span> <span class="title">swap16</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> len = <span class="keyword">this</span>.length
+  <span class="keyword">if</span> (len % <span class="number">2</span> !== <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Buffer size must be a multiple of 16-bits'</span>)
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; i += <span class="number">2</span>) {
+    swap(<span class="keyword">this</span>, i, i + <span class="number">1</span>)
+  }
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+Buffer.prototype.swap32 = <span class="function"><span class="keyword">function</span> <span class="title">swap32</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> len = <span class="keyword">this</span>.length
+  <span class="keyword">if</span> (len % <span class="number">4</span> !== <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Buffer size must be a multiple of 32-bits'</span>)
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; i += <span class="number">4</span>) {
+    swap(<span class="keyword">this</span>, i, i + <span class="number">3</span>)
+    swap(<span class="keyword">this</span>, i + <span class="number">1</span>, i + <span class="number">2</span>)
+  }
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+Buffer.prototype.swap64 = <span class="function"><span class="keyword">function</span> <span class="title">swap64</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> len = <span class="keyword">this</span>.length
+  <span class="keyword">if</span> (len % <span class="number">8</span> !== <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Buffer size must be a multiple of 64-bits'</span>)
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; i += <span class="number">8</span>) {
+    swap(<span class="keyword">this</span>, i, i + <span class="number">7</span>)
+    swap(<span class="keyword">this</span>, i + <span class="number">1</span>, i + <span class="number">6</span>)
+    swap(<span class="keyword">this</span>, i + <span class="number">2</span>, i + <span class="number">5</span>)
+    swap(<span class="keyword">this</span>, i + <span class="number">3</span>, i + <span class="number">4</span>)
+  }
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+Buffer.prototype.toString = <span class="function"><span class="keyword">function</span> <span class="title">toString</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> length = <span class="keyword">this</span>.length
+  <span class="keyword">if</span> (length === <span class="number">0</span>) <span class="keyword">return</span> <span class="string">''</span>
+  <span class="keyword">if</span> (arguments.length === <span class="number">0</span>) <span class="keyword">return</span> utf8Slice(<span class="keyword">this</span>, <span class="number">0</span>, length)
+  <span class="keyword">return</span> slowToString.apply(<span class="keyword">this</span>, arguments)
+}
+
+Buffer.prototype.toLocaleString = Buffer.prototype.toString
+
+Buffer.prototype.equals = <span class="function"><span class="keyword">function</span> <span class="title">equals</span> <span class="params">(b)</span> {</span>
+  <span class="keyword">if</span> (!Buffer.isBuffer(b)) <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Argument must be a Buffer'</span>)
+  <span class="keyword">if</span> (<span class="keyword">this</span> === b) <span class="keyword">return</span> <span class="literal">true</span>
+  <span class="keyword">return</span> Buffer.compare(<span class="keyword">this</span>, b) === <span class="number">0</span>
+}
+
+Buffer.prototype.inspect = <span class="function"><span class="keyword">function</span> <span class="title">inspect</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> str = <span class="string">''</span>
+  <span class="keyword">var</span> max = exports.INSPECT_MAX_BYTES
+  str = <span class="keyword">this</span>.toString(<span class="string">'hex'</span>, <span class="number">0</span>, max).replace(<span class="regexp">/(.{2})/g</span>, <span class="string">'$1 '</span>).trim()
+  <span class="keyword">if</span> (<span class="keyword">this</span>.length > max) str += <span class="string">' ... '</span>
+  <span class="keyword">return</span> <span class="string">'&lt;Buffer '</span> + str + <span class="string">'>'</span>
+}
+
+Buffer.prototype.compare = <span class="function"><span class="keyword">function</span> <span class="title">compare</span> <span class="params">(target, start, end, thisStart, thisEnd)</span> {</span>
+  <span class="keyword">if</span> (isInstance(target, Uint8Array)) {
+    target = Buffer.from(target, target.offset, target.byteLength)
+  }
+  <span class="keyword">if</span> (!Buffer.isBuffer(target)) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(
+      <span class="string">'The "target" argument must be one of type Buffer or Uint8Array. '</span> +
+      <span class="string">'Received type '</span> + (<span class="keyword">typeof</span> target)
+    )
+  }
+
+  <span class="keyword">if</span> (start === <span class="literal">undefined</span>) {
+    start = <span class="number">0</span>
+  }
+  <span class="keyword">if</span> (end === <span class="literal">undefined</span>) {
+    end = target ? target.length : <span class="number">0</span>
+  }
+  <span class="keyword">if</span> (thisStart === <span class="literal">undefined</span>) {
+    thisStart = <span class="number">0</span>
+  }
+  <span class="keyword">if</span> (thisEnd === <span class="literal">undefined</span>) {
+    thisEnd = <span class="keyword">this</span>.length
+  }
+
+  <span class="keyword">if</span> (start &lt; <span class="number">0</span> || end > target.length || thisStart &lt; <span class="number">0</span> || thisEnd > <span class="keyword">this</span>.length) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'out of range index'</span>)
+  }
+
+  <span class="keyword">if</span> (thisStart >= thisEnd &amp;&amp; start >= end) {
+    <span class="keyword">return</span> <span class="number">0</span>
+  }
+  <span class="keyword">if</span> (thisStart >= thisEnd) {
+    <span class="keyword">return</span> -<span class="number">1</span>
+  }
+  <span class="keyword">if</span> (start >= end) {
+    <span class="keyword">return</span> <span class="number">1</span>
+  }
+
+  start >>>= <span class="number">0</span>
+  end >>>= <span class="number">0</span>
+  thisStart >>>= <span class="number">0</span>
+  thisEnd >>>= <span class="number">0</span>
+
+  <span class="keyword">if</span> (<span class="keyword">this</span> === target) <span class="keyword">return</span> <span class="number">0</span>
+
+  <span class="keyword">var</span> x = thisEnd - thisStart
+  <span class="keyword">var</span> y = end - start
+  <span class="keyword">var</span> len = Math.min(x, y)
+
+  <span class="keyword">var</span> thisCopy = <span class="keyword">this</span>.slice(thisStart, thisEnd)
+  <span class="keyword">var</span> targetCopy = target.slice(start, end)
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; ++i) {
+    <span class="keyword">if</span> (thisCopy[i] !== targetCopy[i]) {
+      x = thisCopy[i]
+      y = targetCopy[i]
+      <span class="keyword">break</span>
+    }
+  }
+
+  <span class="keyword">if</span> (x &lt; y) <span class="keyword">return</span> -<span class="number">1</span>
+  <span class="keyword">if</span> (y &lt; x) <span class="keyword">return</span> <span class="number">1</span>
+  <span class="keyword">return</span> <span class="number">0</span>
+}
+
+<span class="comment">// Finds either the first index of `val` in `buffer` at offset >= `byteOffset`,</span>
+<span class="comment">// OR the last index of `val` in `buffer` at offset &lt;= `byteOffset`.</span>
+<span class="comment">//</span>
+<span class="comment">// Arguments:</span>
+<span class="comment">// - buffer - a Buffer to search</span>
+<span class="comment">// - val - a string, Buffer, or number</span>
+<span class="comment">// - byteOffset - an index into `buffer`; will be clamped to an int32</span>
+<span class="comment">// - encoding - an optional encoding, relevant is val is a string</span>
+<span class="comment">// - dir - true for indexOf, false for lastIndexOf</span>
+<span class="function"><span class="keyword">function</span> <span class="title">bidirectionalIndexOf</span> <span class="params">(buffer, val, byteOffset, encoding, dir)</span> {</span>
+  <span class="comment">// Empty buffer means no match</span>
+  <span class="keyword">if</span> (buffer.length === <span class="number">0</span>) <span class="keyword">return</span> -<span class="number">1</span>
+
+  <span class="comment">// Normalize byteOffset</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> byteOffset === <span class="string">'string'</span>) {
+    encoding = byteOffset
+    byteOffset = <span class="number">0</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (byteOffset > <span class="number">0x7fffffff</span>) {
+    byteOffset = <span class="number">0x7fffffff</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (byteOffset &lt; -<span class="number">0x80000000</span>) {
+    byteOffset = -<span class="number">0x80000000</span>
+  }
+  byteOffset = +byteOffset <span class="comment">// Coerce to Number.</span>
+  <span class="keyword">if</span> (numberIsNaN(byteOffset)) {
+    <span class="comment">// byteOffset: it it's undefined, null, NaN, "foo", etc, search whole buffer</span>
+    byteOffset = dir ? <span class="number">0</span> : (buffer.length - <span class="number">1</span>)
+  }
+
+  <span class="comment">// Normalize byteOffset: negative offsets start from the end of the buffer</span>
+  <span class="keyword">if</span> (byteOffset &lt; <span class="number">0</span>) byteOffset = buffer.length + byteOffset
+  <span class="keyword">if</span> (byteOffset >= buffer.length) {
+    <span class="keyword">if</span> (dir) <span class="keyword">return</span> -<span class="number">1</span>
+    <span class="keyword">else</span> byteOffset = buffer.length - <span class="number">1</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (byteOffset &lt; <span class="number">0</span>) {
+    <span class="keyword">if</span> (dir) byteOffset = <span class="number">0</span>
+    <span class="keyword">else</span> <span class="keyword">return</span> -<span class="number">1</span>
+  }
+
+  <span class="comment">// Normalize val</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> val === <span class="string">'string'</span>) {
+    val = Buffer.from(val, encoding)
+  }
+
+  <span class="comment">// Finally, search either indexOf (if dir is true) or lastIndexOf</span>
+  <span class="keyword">if</span> (Buffer.isBuffer(val)) {
+    <span class="comment">// Special case: looking for empty string/buffer always fails</span>
+    <span class="keyword">if</span> (val.length === <span class="number">0</span>) {
+      <span class="keyword">return</span> -<span class="number">1</span>
+    }
+    <span class="keyword">return</span> arrayIndexOf(buffer, val, byteOffset, encoding, dir)
+  } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">typeof</span> val === <span class="string">'number'</span>) {
+    val = val &amp; <span class="number">0xFF</span> <span class="comment">// Search for a byte value [0-255]</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> Uint8Array.prototype.indexOf === <span class="string">'function'</span>) {
+      <span class="keyword">if</span> (dir) {
+        <span class="keyword">return</span> Uint8Array.prototype.indexOf.call(buffer, val, byteOffset)
+      } <span class="keyword">else</span> {
+        <span class="keyword">return</span> Uint8Array.prototype.lastIndexOf.call(buffer, val, byteOffset)
+      }
+    }
+    <span class="keyword">return</span> arrayIndexOf(buffer, [ val ], byteOffset, encoding, dir)
+  }
+
+  <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'val must be string, number or Buffer'</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">arrayIndexOf</span> <span class="params">(arr, val, byteOffset, encoding, dir)</span> {</span>
+  <span class="keyword">var</span> indexSize = <span class="number">1</span>
+  <span class="keyword">var</span> arrLength = arr.length
+  <span class="keyword">var</span> valLength = val.length
+
+  <span class="keyword">if</span> (encoding !== <span class="literal">undefined</span>) {
+    encoding = String(encoding).toLowerCase()
+    <span class="keyword">if</span> (encoding === <span class="string">'ucs2'</span> || encoding === <span class="string">'ucs-2'</span> ||
+        encoding === <span class="string">'utf16le'</span> || encoding === <span class="string">'utf-16le'</span>) {
+      <span class="keyword">if</span> (arr.length &lt; <span class="number">2</span> || val.length &lt; <span class="number">2</span>) {
+        <span class="keyword">return</span> -<span class="number">1</span>
+      }
+      indexSize = <span class="number">2</span>
+      arrLength /= <span class="number">2</span>
+      valLength /= <span class="number">2</span>
+      byteOffset /= <span class="number">2</span>
+    }
+  }
+
+  <span class="function"><span class="keyword">function</span> <span class="title">read</span> <span class="params">(buf, i)</span> {</span>
+    <span class="keyword">if</span> (indexSize === <span class="number">1</span>) {
+      <span class="keyword">return</span> buf[i]
+    } <span class="keyword">else</span> {
+      <span class="keyword">return</span> buf.readUInt16BE(i * indexSize)
+    }
+  }
+
+  <span class="keyword">var</span> i
+  <span class="keyword">if</span> (dir) {
+    <span class="keyword">var</span> foundIndex = -<span class="number">1</span>
+    <span class="keyword">for</span> (i = byteOffset; i &lt; arrLength; i++) {
+      <span class="keyword">if</span> (read(arr, i) === read(val, foundIndex === -<span class="number">1</span> ? <span class="number">0</span> : i - foundIndex)) {
+        <span class="keyword">if</span> (foundIndex === -<span class="number">1</span>) foundIndex = i
+        <span class="keyword">if</span> (i - foundIndex + <span class="number">1</span> === valLength) <span class="keyword">return</span> foundIndex * indexSize
+      } <span class="keyword">else</span> {
+        <span class="keyword">if</span> (foundIndex !== -<span class="number">1</span>) i -= i - foundIndex
+        foundIndex = -<span class="number">1</span>
+      }
+    }
+  } <span class="keyword">else</span> {
+    <span class="keyword">if</span> (byteOffset + valLength > arrLength) byteOffset = arrLength - valLength
+    <span class="keyword">for</span> (i = byteOffset; i >= <span class="number">0</span>; i--) {
+      <span class="keyword">var</span> found = <span class="literal">true</span>
+      <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; valLength; j++) {
+        <span class="keyword">if</span> (read(arr, i + j) !== read(val, j)) {
+          found = <span class="literal">false</span>
+          <span class="keyword">break</span>
+        }
+      }
+      <span class="keyword">if</span> (found) <span class="keyword">return</span> i
+    }
+  }
+
+  <span class="keyword">return</span> -<span class="number">1</span>
+}
+
+Buffer.prototype.includes = <span class="function"><span class="keyword">function</span> <span class="title">includes</span> <span class="params">(val, byteOffset, encoding)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.indexOf(val, byteOffset, encoding) !== -<span class="number">1</span>
+}
+
+Buffer.prototype.indexOf = <span class="function"><span class="keyword">function</span> <span class="title">indexOf</span> <span class="params">(val, byteOffset, encoding)</span> {</span>
+  <span class="keyword">return</span> bidirectionalIndexOf(<span class="keyword">this</span>, val, byteOffset, encoding, <span class="literal">true</span>)
+}
+
+Buffer.prototype.lastIndexOf = <span class="function"><span class="keyword">function</span> <span class="title">lastIndexOf</span> <span class="params">(val, byteOffset, encoding)</span> {</span>
+  <span class="keyword">return</span> bidirectionalIndexOf(<span class="keyword">this</span>, val, byteOffset, encoding, <span class="literal">false</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">hexWrite</span> <span class="params">(buf, string, offset, length)</span> {</span>
+  offset = Number(offset) || <span class="number">0</span>
+  <span class="keyword">var</span> remaining = buf.length - offset
+  <span class="keyword">if</span> (!length) {
+    length = remaining
+  } <span class="keyword">else</span> {
+    length = Number(length)
+    <span class="keyword">if</span> (length > remaining) {
+      length = remaining
+    }
+  }
+
+  <span class="keyword">var</span> strLen = string.length
+
+  <span class="keyword">if</span> (length > strLen / <span class="number">2</span>) {
+    length = strLen / <span class="number">2</span>
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; length; ++i) {
+    <span class="keyword">var</span> parsed = parseInt(string.substr(i * <span class="number">2</span>, <span class="number">2</span>), <span class="number">16</span>)
+    <span class="keyword">if</span> (numberIsNaN(parsed)) <span class="keyword">return</span> i
+    buf[offset + i] = parsed
+  }
+  <span class="keyword">return</span> i
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">utf8Write</span> <span class="params">(buf, string, offset, length)</span> {</span>
+  <span class="keyword">return</span> blitBuffer(utf8ToBytes(string, buf.length - offset), buf, offset, length)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">asciiWrite</span> <span class="params">(buf, string, offset, length)</span> {</span>
+  <span class="keyword">return</span> blitBuffer(asciiToBytes(string), buf, offset, length)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">latin1Write</span> <span class="params">(buf, string, offset, length)</span> {</span>
+  <span class="keyword">return</span> asciiWrite(buf, string, offset, length)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">base64Write</span> <span class="params">(buf, string, offset, length)</span> {</span>
+  <span class="keyword">return</span> blitBuffer(base64ToBytes(string), buf, offset, length)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">ucs2Write</span> <span class="params">(buf, string, offset, length)</span> {</span>
+  <span class="keyword">return</span> blitBuffer(utf16leToBytes(string, buf.length - offset), buf, offset, length)
+}
+
+Buffer.prototype.write = <span class="function"><span class="keyword">function</span> <span class="title">write</span> <span class="params">(string, offset, length, encoding)</span> {</span>
+  <span class="comment">// Buffer#write(string)</span>
+  <span class="keyword">if</span> (offset === <span class="literal">undefined</span>) {
+    encoding = <span class="string">'utf8'</span>
+    length = <span class="keyword">this</span>.length
+    offset = <span class="number">0</span>
+  <span class="comment">// Buffer#write(string, encoding)</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (length === <span class="literal">undefined</span> &amp;&amp; <span class="keyword">typeof</span> offset === <span class="string">'string'</span>) {
+    encoding = offset
+    length = <span class="keyword">this</span>.length
+    offset = <span class="number">0</span>
+  <span class="comment">// Buffer#write(string, offset[, length][, encoding])</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (isFinite(offset)) {
+    offset = offset >>> <span class="number">0</span>
+    <span class="keyword">if</span> (isFinite(length)) {
+      length = length >>> <span class="number">0</span>
+      <span class="keyword">if</span> (encoding === <span class="literal">undefined</span>) encoding = <span class="string">'utf8'</span>
+    } <span class="keyword">else</span> {
+      encoding = length
+      length = <span class="literal">undefined</span>
+    }
+  } <span class="keyword">else</span> {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(
+      <span class="string">'Buffer.write(string, encoding, offset[, length]) is no longer supported'</span>
+    )
+  }
+
+  <span class="keyword">var</span> remaining = <span class="keyword">this</span>.length - offset
+  <span class="keyword">if</span> (length === <span class="literal">undefined</span> || length > remaining) length = remaining
+
+  <span class="keyword">if</span> ((string.length > <span class="number">0</span> &amp;&amp; (length &lt; <span class="number">0</span> || offset &lt; <span class="number">0</span>)) || offset > <span class="keyword">this</span>.length) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Attempt to write outside buffer bounds'</span>)
+  }
+
+  <span class="keyword">if</span> (!encoding) encoding = <span class="string">'utf8'</span>
+
+  <span class="keyword">var</span> loweredCase = <span class="literal">false</span>
+  <span class="keyword">for</span> (;;) {
+    <span class="keyword">switch</span> (encoding) {
+      <span class="keyword">case</span> <span class="string">'hex'</span>:
+        <span class="keyword">return</span> hexWrite(<span class="keyword">this</span>, string, offset, length)
+
+      <span class="keyword">case</span> <span class="string">'utf8'</span>:
+      <span class="keyword">case</span> <span class="string">'utf-8'</span>:
+        <span class="keyword">return</span> utf8Write(<span class="keyword">this</span>, string, offset, length)
+
+      <span class="keyword">case</span> <span class="string">'ascii'</span>:
+        <span class="keyword">return</span> asciiWrite(<span class="keyword">this</span>, string, offset, length)
+
+      <span class="keyword">case</span> <span class="string">'latin1'</span>:
+      <span class="keyword">case</span> <span class="string">'binary'</span>:
+        <span class="keyword">return</span> latin1Write(<span class="keyword">this</span>, string, offset, length)
+
+      <span class="keyword">case</span> <span class="string">'base64'</span>:
+        <span class="comment">// Warning: maxLength not taken into account in base64Write</span>
+        <span class="keyword">return</span> base64Write(<span class="keyword">this</span>, string, offset, length)
+
+      <span class="keyword">case</span> <span class="string">'ucs2'</span>:
+      <span class="keyword">case</span> <span class="string">'ucs-2'</span>:
+      <span class="keyword">case</span> <span class="string">'utf16le'</span>:
+      <span class="keyword">case</span> <span class="string">'utf-16le'</span>:
+        <span class="keyword">return</span> ucs2Write(<span class="keyword">this</span>, string, offset, length)
+
+      <span class="keyword">default</span>:
+        <span class="keyword">if</span> (loweredCase) <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Unknown encoding: '</span> + encoding)
+        encoding = (<span class="string">''</span> + encoding).toLowerCase()
+        loweredCase = <span class="literal">true</span>
+    }
+  }
+}
+
+Buffer.prototype.toJSON = <span class="function"><span class="keyword">function</span> <span class="title">toJSON</span> <span class="params">()</span> {</span>
+  <span class="keyword">return</span> {
+    type: <span class="string">'Buffer'</span>,
+    data: Array.prototype.slice.call(<span class="keyword">this</span>._arr || <span class="keyword">this</span>, <span class="number">0</span>)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">base64Slice</span> <span class="params">(buf, start, end)</span> {</span>
+  <span class="keyword">if</span> (start === <span class="number">0</span> &amp;&amp; end === buf.length) {
+    <span class="keyword">return</span> base64.fromByteArray(buf)
+  } <span class="keyword">else</span> {
+    <span class="keyword">return</span> base64.fromByteArray(buf.slice(start, end))
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">utf8Slice</span> <span class="params">(buf, start, end)</span> {</span>
+  end = Math.min(buf.length, end)
+  <span class="keyword">var</span> res = []
+
+  <span class="keyword">var</span> i = start
+  <span class="keyword">while</span> (i &lt; end) {
+    <span class="keyword">var</span> firstByte = buf[i]
+    <span class="keyword">var</span> codePoint = <span class="literal">null</span>
+    <span class="keyword">var</span> bytesPerSequence = (firstByte > <span class="number">0xEF</span>) ? <span class="number">4</span>
+      : (firstByte > <span class="number">0xDF</span>) ? <span class="number">3</span>
+        : (firstByte > <span class="number">0xBF</span>) ? <span class="number">2</span>
+          : <span class="number">1</span>
+
+    <span class="keyword">if</span> (i + bytesPerSequence &lt;= end) {
+      <span class="keyword">var</span> secondByte, thirdByte, fourthByte, tempCodePoint
+
+      <span class="keyword">switch</span> (bytesPerSequence) {
+        <span class="keyword">case</span> <span class="number">1</span>:
+          <span class="keyword">if</span> (firstByte &lt; <span class="number">0x80</span>) {
+            codePoint = firstByte
+          }
+          <span class="keyword">break</span>
+        <span class="keyword">case</span> <span class="number">2</span>:
+          secondByte = buf[i + <span class="number">1</span>]
+          <span class="keyword">if</span> ((secondByte &amp; <span class="number">0xC0</span>) === <span class="number">0x80</span>) {
+            tempCodePoint = (firstByte &amp; <span class="number">0x1F</span>) &lt;&lt; <span class="number">0x6</span> | (secondByte &amp; <span class="number">0x3F</span>)
+            <span class="keyword">if</span> (tempCodePoint > <span class="number">0x7F</span>) {
+              codePoint = tempCodePoint
+            }
+          }
+          <span class="keyword">break</span>
+        <span class="keyword">case</span> <span class="number">3</span>:
+          secondByte = buf[i + <span class="number">1</span>]
+          thirdByte = buf[i + <span class="number">2</span>]
+          <span class="keyword">if</span> ((secondByte &amp; <span class="number">0xC0</span>) === <span class="number">0x80</span> &amp;&amp; (thirdByte &amp; <span class="number">0xC0</span>) === <span class="number">0x80</span>) {
+            tempCodePoint = (firstByte &amp; <span class="number">0xF</span>) &lt;&lt; <span class="number">0xC</span> | (secondByte &amp; <span class="number">0x3F</span>) &lt;&lt; <span class="number">0x6</span> | (thirdByte &amp; <span class="number">0x3F</span>)
+            <span class="keyword">if</span> (tempCodePoint > <span class="number">0x7FF</span> &amp;&amp; (tempCodePoint &lt; <span class="number">0xD800</span> || tempCodePoint > <span class="number">0xDFFF</span>)) {
+              codePoint = tempCodePoint
+            }
+          }
+          <span class="keyword">break</span>
+        <span class="keyword">case</span> <span class="number">4</span>:
+          secondByte = buf[i + <span class="number">1</span>]
+          thirdByte = buf[i + <span class="number">2</span>]
+          fourthByte = buf[i + <span class="number">3</span>]
+          <span class="keyword">if</span> ((secondByte &amp; <span class="number">0xC0</span>) === <span class="number">0x80</span> &amp;&amp; (thirdByte &amp; <span class="number">0xC0</span>) === <span class="number">0x80</span> &amp;&amp; (fourthByte &amp; <span class="number">0xC0</span>) === <span class="number">0x80</span>) {
+            tempCodePoint = (firstByte &amp; <span class="number">0xF</span>) &lt;&lt; <span class="number">0x12</span> | (secondByte &amp; <span class="number">0x3F</span>) &lt;&lt; <span class="number">0xC</span> | (thirdByte &amp; <span class="number">0x3F</span>) &lt;&lt; <span class="number">0x6</span> | (fourthByte &amp; <span class="number">0x3F</span>)
+            <span class="keyword">if</span> (tempCodePoint > <span class="number">0xFFFF</span> &amp;&amp; tempCodePoint &lt; <span class="number">0x110000</span>) {
+              codePoint = tempCodePoint
+            }
+          }
+      }
+    }
+
+    <span class="keyword">if</span> (codePoint === <span class="literal">null</span>) {
+      <span class="comment">// we did not generate a valid codePoint so insert a</span>
+      <span class="comment">// replacement char (U+FFFD) and advance only 1 byte</span>
+      codePoint = <span class="number">0xFFFD</span>
+      bytesPerSequence = <span class="number">1</span>
+    } <span class="keyword">else</span> <span class="keyword">if</span> (codePoint > <span class="number">0xFFFF</span>) {
+      <span class="comment">// encode to utf16 (surrogate pair dance)</span>
+      codePoint -= <span class="number">0x10000</span>
+      res.push(codePoint >>> <span class="number">10</span> &amp; <span class="number">0x3FF</span> | <span class="number">0xD800</span>)
+      codePoint = <span class="number">0xDC00</span> | codePoint &amp; <span class="number">0x3FF</span>
+    }
+
+    res.push(codePoint)
+    i += bytesPerSequence
+  }
+
+  <span class="keyword">return</span> decodeCodePointsArray(res)
+}
+
+<span class="comment">// Based on http://stackoverflow.com/a/22747272/680742, the browser with</span>
+<span class="comment">// the lowest limit is Chrome, with 0x10000 args.</span>
+<span class="comment">// We go 1 magnitude less, for safety</span>
+<span class="keyword">var</span> MAX_ARGUMENTS_LENGTH = <span class="number">0x1000</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">decodeCodePointsArray</span> <span class="params">(codePoints)</span> {</span>
+  <span class="keyword">var</span> len = codePoints.length
+  <span class="keyword">if</span> (len &lt;= MAX_ARGUMENTS_LENGTH) {
+    <span class="keyword">return</span> String.fromCharCode.apply(String, codePoints) <span class="comment">// avoid extra slice()</span>
+  }
+
+  <span class="comment">// Decode in chunks to avoid "call stack size exceeded".</span>
+  <span class="keyword">var</span> res = <span class="string">''</span>
+  <span class="keyword">var</span> i = <span class="number">0</span>
+  <span class="keyword">while</span> (i &lt; len) {
+    res += String.fromCharCode.apply(
+      String,
+      codePoints.slice(i, i += MAX_ARGUMENTS_LENGTH)
+    )
+  }
+  <span class="keyword">return</span> res
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">asciiSlice</span> <span class="params">(buf, start, end)</span> {</span>
+  <span class="keyword">var</span> ret = <span class="string">''</span>
+  end = Math.min(buf.length, end)
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = start; i &lt; end; ++i) {
+    ret += String.fromCharCode(buf[i] &amp; <span class="number">0x7F</span>)
+  }
+  <span class="keyword">return</span> ret
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">latin1Slice</span> <span class="params">(buf, start, end)</span> {</span>
+  <span class="keyword">var</span> ret = <span class="string">''</span>
+  end = Math.min(buf.length, end)
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = start; i &lt; end; ++i) {
+    ret += String.fromCharCode(buf[i])
+  }
+  <span class="keyword">return</span> ret
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">hexSlice</span> <span class="params">(buf, start, end)</span> {</span>
+  <span class="keyword">var</span> len = buf.length
+
+  <span class="keyword">if</span> (!start || start &lt; <span class="number">0</span>) start = <span class="number">0</span>
+  <span class="keyword">if</span> (!end || end &lt; <span class="number">0</span> || end > len) end = len
+
+  <span class="keyword">var</span> out = <span class="string">''</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = start; i &lt; end; ++i) {
+    out += toHex(buf[i])
+  }
+  <span class="keyword">return</span> out
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">utf16leSlice</span> <span class="params">(buf, start, end)</span> {</span>
+  <span class="keyword">var</span> bytes = buf.slice(start, end)
+  <span class="keyword">var</span> res = <span class="string">''</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; bytes.length; i += <span class="number">2</span>) {
+    res += String.fromCharCode(bytes[i] + (bytes[i + <span class="number">1</span>] * <span class="number">256</span>))
+  }
+  <span class="keyword">return</span> res
+}
+
+Buffer.prototype.slice = <span class="function"><span class="keyword">function</span> <span class="title">slice</span> <span class="params">(start, end)</span> {</span>
+  <span class="keyword">var</span> len = <span class="keyword">this</span>.length
+  start = ~~start
+  end = end === <span class="literal">undefined</span> ? len : ~~end
+
+  <span class="keyword">if</span> (start &lt; <span class="number">0</span>) {
+    start += len
+    <span class="keyword">if</span> (start &lt; <span class="number">0</span>) start = <span class="number">0</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (start > len) {
+    start = len
+  }
+
+  <span class="keyword">if</span> (end &lt; <span class="number">0</span>) {
+    end += len
+    <span class="keyword">if</span> (end &lt; <span class="number">0</span>) end = <span class="number">0</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (end > len) {
+    end = len
+  }
+
+  <span class="keyword">if</span> (end &lt; start) end = start
+
+  <span class="keyword">var</span> newBuf = <span class="keyword">this</span>.subarray(start, end)
+  <span class="comment">// Return an augmented `Uint8Array` instance</span>
+  newBuf.__proto__ = Buffer.prototype
+  <span class="keyword">return</span> newBuf
+}
+
+<span class="comment">/*
+ * Need to make sure that buffer isn't trying to write out of bounds.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">checkOffset</span> <span class="params">(offset, ext, length)</span> {</span>
+  <span class="keyword">if</span> ((offset % <span class="number">1</span>) !== <span class="number">0</span> || offset &lt; <span class="number">0</span>) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'offset is not uint'</span>)
+  <span class="keyword">if</span> (offset + ext > length) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Trying to access beyond buffer length'</span>)
+}
+
+Buffer.prototype.readUIntLE = <span class="function"><span class="keyword">function</span> <span class="title">readUIntLE</span> <span class="params">(offset, byteLength, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  byteLength = byteLength >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, byteLength, <span class="keyword">this</span>.length)
+
+  <span class="keyword">var</span> val = <span class="keyword">this</span>[offset]
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">var</span> i = <span class="number">0</span>
+  <span class="keyword">while</span> (++i &lt; byteLength &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    val += <span class="keyword">this</span>[offset + i] * mul
+  }
+
+  <span class="keyword">return</span> val
+}
+
+Buffer.prototype.readUIntBE = <span class="function"><span class="keyword">function</span> <span class="title">readUIntBE</span> <span class="params">(offset, byteLength, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  byteLength = byteLength >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) {
+    checkOffset(offset, byteLength, <span class="keyword">this</span>.length)
+  }
+
+  <span class="keyword">var</span> val = <span class="keyword">this</span>[offset + --byteLength]
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">while</span> (byteLength > <span class="number">0</span> &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    val += <span class="keyword">this</span>[offset + --byteLength] * mul
+  }
+
+  <span class="keyword">return</span> val
+}
+
+Buffer.prototype.readUInt8 = <span class="function"><span class="keyword">function</span> <span class="title">readUInt8</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">1</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">return</span> <span class="keyword">this</span>[offset]
+}
+
+Buffer.prototype.readUInt16LE = <span class="function"><span class="keyword">function</span> <span class="title">readUInt16LE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">2</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">return</span> <span class="keyword">this</span>[offset] | (<span class="keyword">this</span>[offset + <span class="number">1</span>] &lt;&lt; <span class="number">8</span>)
+}
+
+Buffer.prototype.readUInt16BE = <span class="function"><span class="keyword">function</span> <span class="title">readUInt16BE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">2</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">return</span> (<span class="keyword">this</span>[offset] &lt;&lt; <span class="number">8</span>) | <span class="keyword">this</span>[offset + <span class="number">1</span>]
+}
+
+Buffer.prototype.readUInt32LE = <span class="function"><span class="keyword">function</span> <span class="title">readUInt32LE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">4</span>, <span class="keyword">this</span>.length)
+
+  <span class="keyword">return</span> ((<span class="keyword">this</span>[offset]) |
+      (<span class="keyword">this</span>[offset + <span class="number">1</span>] &lt;&lt; <span class="number">8</span>) |
+      (<span class="keyword">this</span>[offset + <span class="number">2</span>] &lt;&lt; <span class="number">16</span>)) +
+      (<span class="keyword">this</span>[offset + <span class="number">3</span>] * <span class="number">0x1000000</span>)
+}
+
+Buffer.prototype.readUInt32BE = <span class="function"><span class="keyword">function</span> <span class="title">readUInt32BE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">4</span>, <span class="keyword">this</span>.length)
+
+  <span class="keyword">return</span> (<span class="keyword">this</span>[offset] * <span class="number">0x1000000</span>) +
+    ((<span class="keyword">this</span>[offset + <span class="number">1</span>] &lt;&lt; <span class="number">16</span>) |
+    (<span class="keyword">this</span>[offset + <span class="number">2</span>] &lt;&lt; <span class="number">8</span>) |
+    <span class="keyword">this</span>[offset + <span class="number">3</span>])
+}
+
+Buffer.prototype.readIntLE = <span class="function"><span class="keyword">function</span> <span class="title">readIntLE</span> <span class="params">(offset, byteLength, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  byteLength = byteLength >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, byteLength, <span class="keyword">this</span>.length)
+
+  <span class="keyword">var</span> val = <span class="keyword">this</span>[offset]
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">var</span> i = <span class="number">0</span>
+  <span class="keyword">while</span> (++i &lt; byteLength &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    val += <span class="keyword">this</span>[offset + i] * mul
+  }
+  mul *= <span class="number">0x80</span>
+
+  <span class="keyword">if</span> (val >= mul) val -= Math.pow(<span class="number">2</span>, <span class="number">8</span> * byteLength)
+
+  <span class="keyword">return</span> val
+}
+
+Buffer.prototype.readIntBE = <span class="function"><span class="keyword">function</span> <span class="title">readIntBE</span> <span class="params">(offset, byteLength, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  byteLength = byteLength >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, byteLength, <span class="keyword">this</span>.length)
+
+  <span class="keyword">var</span> i = byteLength
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">var</span> val = <span class="keyword">this</span>[offset + --i]
+  <span class="keyword">while</span> (i > <span class="number">0</span> &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    val += <span class="keyword">this</span>[offset + --i] * mul
+  }
+  mul *= <span class="number">0x80</span>
+
+  <span class="keyword">if</span> (val >= mul) val -= Math.pow(<span class="number">2</span>, <span class="number">8</span> * byteLength)
+
+  <span class="keyword">return</span> val
+}
+
+Buffer.prototype.readInt8 = <span class="function"><span class="keyword">function</span> <span class="title">readInt8</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">1</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">if</span> (!(<span class="keyword">this</span>[offset] &amp; <span class="number">0x80</span>)) <span class="keyword">return</span> (<span class="keyword">this</span>[offset])
+  <span class="keyword">return</span> ((<span class="number">0xff</span> - <span class="keyword">this</span>[offset] + <span class="number">1</span>) * -<span class="number">1</span>)
+}
+
+Buffer.prototype.readInt16LE = <span class="function"><span class="keyword">function</span> <span class="title">readInt16LE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">2</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">var</span> val = <span class="keyword">this</span>[offset] | (<span class="keyword">this</span>[offset + <span class="number">1</span>] &lt;&lt; <span class="number">8</span>)
+  <span class="keyword">return</span> (val &amp; <span class="number">0x8000</span>) ? val | <span class="number">0xFFFF0000</span> : val
+}
+
+Buffer.prototype.readInt16BE = <span class="function"><span class="keyword">function</span> <span class="title">readInt16BE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">2</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">var</span> val = <span class="keyword">this</span>[offset + <span class="number">1</span>] | (<span class="keyword">this</span>[offset] &lt;&lt; <span class="number">8</span>)
+  <span class="keyword">return</span> (val &amp; <span class="number">0x8000</span>) ? val | <span class="number">0xFFFF0000</span> : val
+}
+
+Buffer.prototype.readInt32LE = <span class="function"><span class="keyword">function</span> <span class="title">readInt32LE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">4</span>, <span class="keyword">this</span>.length)
+
+  <span class="keyword">return</span> (<span class="keyword">this</span>[offset]) |
+    (<span class="keyword">this</span>[offset + <span class="number">1</span>] &lt;&lt; <span class="number">8</span>) |
+    (<span class="keyword">this</span>[offset + <span class="number">2</span>] &lt;&lt; <span class="number">16</span>) |
+    (<span class="keyword">this</span>[offset + <span class="number">3</span>] &lt;&lt; <span class="number">24</span>)
+}
+
+Buffer.prototype.readInt32BE = <span class="function"><span class="keyword">function</span> <span class="title">readInt32BE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">4</span>, <span class="keyword">this</span>.length)
+
+  <span class="keyword">return</span> (<span class="keyword">this</span>[offset] &lt;&lt; <span class="number">24</span>) |
+    (<span class="keyword">this</span>[offset + <span class="number">1</span>] &lt;&lt; <span class="number">16</span>) |
+    (<span class="keyword">this</span>[offset + <span class="number">2</span>] &lt;&lt; <span class="number">8</span>) |
+    (<span class="keyword">this</span>[offset + <span class="number">3</span>])
+}
+
+Buffer.prototype.readFloatLE = <span class="function"><span class="keyword">function</span> <span class="title">readFloatLE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">4</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">return</span> ieee754.read(<span class="keyword">this</span>, offset, <span class="literal">true</span>, <span class="number">23</span>, <span class="number">4</span>)
+}
+
+Buffer.prototype.readFloatBE = <span class="function"><span class="keyword">function</span> <span class="title">readFloatBE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">4</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">return</span> ieee754.read(<span class="keyword">this</span>, offset, <span class="literal">false</span>, <span class="number">23</span>, <span class="number">4</span>)
+}
+
+Buffer.prototype.readDoubleLE = <span class="function"><span class="keyword">function</span> <span class="title">readDoubleLE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">8</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">return</span> ieee754.read(<span class="keyword">this</span>, offset, <span class="literal">true</span>, <span class="number">52</span>, <span class="number">8</span>)
+}
+
+Buffer.prototype.readDoubleBE = <span class="function"><span class="keyword">function</span> <span class="title">readDoubleBE</span> <span class="params">(offset, noAssert)</span> {</span>
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkOffset(offset, <span class="number">8</span>, <span class="keyword">this</span>.length)
+  <span class="keyword">return</span> ieee754.read(<span class="keyword">this</span>, offset, <span class="literal">false</span>, <span class="number">52</span>, <span class="number">8</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">checkInt</span> <span class="params">(buf, value, offset, ext, max, min)</span> {</span>
+  <span class="keyword">if</span> (!Buffer.isBuffer(buf)) <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"buffer" argument must be a Buffer instance'</span>)
+  <span class="keyword">if</span> (value > max || value &lt; min) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'"value" argument is out of bounds'</span>)
+  <span class="keyword">if</span> (offset + ext > buf.length) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Index out of range'</span>)
+}
+
+Buffer.prototype.writeUIntLE = <span class="function"><span class="keyword">function</span> <span class="title">writeUIntLE</span> <span class="params">(value, offset, byteLength, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  byteLength = byteLength >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) {
+    <span class="keyword">var</span> maxBytes = Math.pow(<span class="number">2</span>, <span class="number">8</span> * byteLength) - <span class="number">1</span>
+    checkInt(<span class="keyword">this</span>, value, offset, byteLength, maxBytes, <span class="number">0</span>)
+  }
+
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">var</span> i = <span class="number">0</span>
+  <span class="keyword">this</span>[offset] = value &amp; <span class="number">0xFF</span>
+  <span class="keyword">while</span> (++i &lt; byteLength &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    <span class="keyword">this</span>[offset + i] = (value / mul) &amp; <span class="number">0xFF</span>
+  }
+
+  <span class="keyword">return</span> offset + byteLength
+}
+
+Buffer.prototype.writeUIntBE = <span class="function"><span class="keyword">function</span> <span class="title">writeUIntBE</span> <span class="params">(value, offset, byteLength, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  byteLength = byteLength >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) {
+    <span class="keyword">var</span> maxBytes = Math.pow(<span class="number">2</span>, <span class="number">8</span> * byteLength) - <span class="number">1</span>
+    checkInt(<span class="keyword">this</span>, value, offset, byteLength, maxBytes, <span class="number">0</span>)
+  }
+
+  <span class="keyword">var</span> i = byteLength - <span class="number">1</span>
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">this</span>[offset + i] = value &amp; <span class="number">0xFF</span>
+  <span class="keyword">while</span> (--i >= <span class="number">0</span> &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    <span class="keyword">this</span>[offset + i] = (value / mul) &amp; <span class="number">0xFF</span>
+  }
+
+  <span class="keyword">return</span> offset + byteLength
+}
+
+Buffer.prototype.writeUInt8 = <span class="function"><span class="keyword">function</span> <span class="title">writeUInt8</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">1</span>, <span class="number">0xff</span>, <span class="number">0</span>)
+  <span class="keyword">this</span>[offset] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">return</span> offset + <span class="number">1</span>
+}
+
+Buffer.prototype.writeUInt16LE = <span class="function"><span class="keyword">function</span> <span class="title">writeUInt16LE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">2</span>, <span class="number">0xffff</span>, <span class="number">0</span>)
+  <span class="keyword">this</span>[offset] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value >>> <span class="number">8</span>)
+  <span class="keyword">return</span> offset + <span class="number">2</span>
+}
+
+Buffer.prototype.writeUInt16BE = <span class="function"><span class="keyword">function</span> <span class="title">writeUInt16BE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">2</span>, <span class="number">0xffff</span>, <span class="number">0</span>)
+  <span class="keyword">this</span>[offset] = (value >>> <span class="number">8</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">return</span> offset + <span class="number">2</span>
+}
+
+Buffer.prototype.writeUInt32LE = <span class="function"><span class="keyword">function</span> <span class="title">writeUInt32LE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">4</span>, <span class="number">0xffffffff</span>, <span class="number">0</span>)
+  <span class="keyword">this</span>[offset + <span class="number">3</span>] = (value >>> <span class="number">24</span>)
+  <span class="keyword">this</span>[offset + <span class="number">2</span>] = (value >>> <span class="number">16</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value >>> <span class="number">8</span>)
+  <span class="keyword">this</span>[offset] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">return</span> offset + <span class="number">4</span>
+}
+
+Buffer.prototype.writeUInt32BE = <span class="function"><span class="keyword">function</span> <span class="title">writeUInt32BE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">4</span>, <span class="number">0xffffffff</span>, <span class="number">0</span>)
+  <span class="keyword">this</span>[offset] = (value >>> <span class="number">24</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value >>> <span class="number">16</span>)
+  <span class="keyword">this</span>[offset + <span class="number">2</span>] = (value >>> <span class="number">8</span>)
+  <span class="keyword">this</span>[offset + <span class="number">3</span>] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">return</span> offset + <span class="number">4</span>
+}
+
+Buffer.prototype.writeIntLE = <span class="function"><span class="keyword">function</span> <span class="title">writeIntLE</span> <span class="params">(value, offset, byteLength, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) {
+    <span class="keyword">var</span> limit = Math.pow(<span class="number">2</span>, (<span class="number">8</span> * byteLength) - <span class="number">1</span>)
+
+    checkInt(<span class="keyword">this</span>, value, offset, byteLength, limit - <span class="number">1</span>, -limit)
+  }
+
+  <span class="keyword">var</span> i = <span class="number">0</span>
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">var</span> sub = <span class="number">0</span>
+  <span class="keyword">this</span>[offset] = value &amp; <span class="number">0xFF</span>
+  <span class="keyword">while</span> (++i &lt; byteLength &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    <span class="keyword">if</span> (value &lt; <span class="number">0</span> &amp;&amp; sub === <span class="number">0</span> &amp;&amp; <span class="keyword">this</span>[offset + i - <span class="number">1</span>] !== <span class="number">0</span>) {
+      sub = <span class="number">1</span>
+    }
+    <span class="keyword">this</span>[offset + i] = ((value / mul) >> <span class="number">0</span>) - sub &amp; <span class="number">0xFF</span>
+  }
+
+  <span class="keyword">return</span> offset + byteLength
+}
+
+Buffer.prototype.writeIntBE = <span class="function"><span class="keyword">function</span> <span class="title">writeIntBE</span> <span class="params">(value, offset, byteLength, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) {
+    <span class="keyword">var</span> limit = Math.pow(<span class="number">2</span>, (<span class="number">8</span> * byteLength) - <span class="number">1</span>)
+
+    checkInt(<span class="keyword">this</span>, value, offset, byteLength, limit - <span class="number">1</span>, -limit)
+  }
+
+  <span class="keyword">var</span> i = byteLength - <span class="number">1</span>
+  <span class="keyword">var</span> mul = <span class="number">1</span>
+  <span class="keyword">var</span> sub = <span class="number">0</span>
+  <span class="keyword">this</span>[offset + i] = value &amp; <span class="number">0xFF</span>
+  <span class="keyword">while</span> (--i >= <span class="number">0</span> &amp;&amp; (mul *= <span class="number">0x100</span>)) {
+    <span class="keyword">if</span> (value &lt; <span class="number">0</span> &amp;&amp; sub === <span class="number">0</span> &amp;&amp; <span class="keyword">this</span>[offset + i + <span class="number">1</span>] !== <span class="number">0</span>) {
+      sub = <span class="number">1</span>
+    }
+    <span class="keyword">this</span>[offset + i] = ((value / mul) >> <span class="number">0</span>) - sub &amp; <span class="number">0xFF</span>
+  }
+
+  <span class="keyword">return</span> offset + byteLength
+}
+
+Buffer.prototype.writeInt8 = <span class="function"><span class="keyword">function</span> <span class="title">writeInt8</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">1</span>, <span class="number">0x7f</span>, -<span class="number">0x80</span>)
+  <span class="keyword">if</span> (value &lt; <span class="number">0</span>) value = <span class="number">0xff</span> + value + <span class="number">1</span>
+  <span class="keyword">this</span>[offset] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">return</span> offset + <span class="number">1</span>
+}
+
+Buffer.prototype.writeInt16LE = <span class="function"><span class="keyword">function</span> <span class="title">writeInt16LE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">2</span>, <span class="number">0x7fff</span>, -<span class="number">0x8000</span>)
+  <span class="keyword">this</span>[offset] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value >>> <span class="number">8</span>)
+  <span class="keyword">return</span> offset + <span class="number">2</span>
+}
+
+Buffer.prototype.writeInt16BE = <span class="function"><span class="keyword">function</span> <span class="title">writeInt16BE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">2</span>, <span class="number">0x7fff</span>, -<span class="number">0x8000</span>)
+  <span class="keyword">this</span>[offset] = (value >>> <span class="number">8</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">return</span> offset + <span class="number">2</span>
+}
+
+Buffer.prototype.writeInt32LE = <span class="function"><span class="keyword">function</span> <span class="title">writeInt32LE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">4</span>, <span class="number">0x7fffffff</span>, -<span class="number">0x80000000</span>)
+  <span class="keyword">this</span>[offset] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value >>> <span class="number">8</span>)
+  <span class="keyword">this</span>[offset + <span class="number">2</span>] = (value >>> <span class="number">16</span>)
+  <span class="keyword">this</span>[offset + <span class="number">3</span>] = (value >>> <span class="number">24</span>)
+  <span class="keyword">return</span> offset + <span class="number">4</span>
+}
+
+Buffer.prototype.writeInt32BE = <span class="function"><span class="keyword">function</span> <span class="title">writeInt32BE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) checkInt(<span class="keyword">this</span>, value, offset, <span class="number">4</span>, <span class="number">0x7fffffff</span>, -<span class="number">0x80000000</span>)
+  <span class="keyword">if</span> (value &lt; <span class="number">0</span>) value = <span class="number">0xffffffff</span> + value + <span class="number">1</span>
+  <span class="keyword">this</span>[offset] = (value >>> <span class="number">24</span>)
+  <span class="keyword">this</span>[offset + <span class="number">1</span>] = (value >>> <span class="number">16</span>)
+  <span class="keyword">this</span>[offset + <span class="number">2</span>] = (value >>> <span class="number">8</span>)
+  <span class="keyword">this</span>[offset + <span class="number">3</span>] = (value &amp; <span class="number">0xff</span>)
+  <span class="keyword">return</span> offset + <span class="number">4</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">checkIEEE754</span> <span class="params">(buf, value, offset, ext, max, min)</span> {</span>
+  <span class="keyword">if</span> (offset + ext > buf.length) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Index out of range'</span>)
+  <span class="keyword">if</span> (offset &lt; <span class="number">0</span>) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Index out of range'</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">writeFloat</span> <span class="params">(buf, value, offset, littleEndian, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) {
+    checkIEEE754(buf, value, offset, <span class="number">4</span>, <span class="number">3.4028234663852886e+38</span>, -<span class="number">3.4028234663852886e+38</span>)
+  }
+  ieee754.write(buf, value, offset, littleEndian, <span class="number">23</span>, <span class="number">4</span>)
+  <span class="keyword">return</span> offset + <span class="number">4</span>
+}
+
+Buffer.prototype.writeFloatLE = <span class="function"><span class="keyword">function</span> <span class="title">writeFloatLE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  <span class="keyword">return</span> writeFloat(<span class="keyword">this</span>, value, offset, <span class="literal">true</span>, noAssert)
+}
+
+Buffer.prototype.writeFloatBE = <span class="function"><span class="keyword">function</span> <span class="title">writeFloatBE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  <span class="keyword">return</span> writeFloat(<span class="keyword">this</span>, value, offset, <span class="literal">false</span>, noAssert)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">writeDouble</span> <span class="params">(buf, value, offset, littleEndian, noAssert)</span> {</span>
+  value = +value
+  offset = offset >>> <span class="number">0</span>
+  <span class="keyword">if</span> (!noAssert) {
+    checkIEEE754(buf, value, offset, <span class="number">8</span>, <span class="number">1.7976931348623157E+308</span>, -<span class="number">1.7976931348623157E+308</span>)
+  }
+  ieee754.write(buf, value, offset, littleEndian, <span class="number">52</span>, <span class="number">8</span>)
+  <span class="keyword">return</span> offset + <span class="number">8</span>
+}
+
+Buffer.prototype.writeDoubleLE = <span class="function"><span class="keyword">function</span> <span class="title">writeDoubleLE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  <span class="keyword">return</span> writeDouble(<span class="keyword">this</span>, value, offset, <span class="literal">true</span>, noAssert)
+}
+
+Buffer.prototype.writeDoubleBE = <span class="function"><span class="keyword">function</span> <span class="title">writeDoubleBE</span> <span class="params">(value, offset, noAssert)</span> {</span>
+  <span class="keyword">return</span> writeDouble(<span class="keyword">this</span>, value, offset, <span class="literal">false</span>, noAssert)
+}
+
+<span class="comment">// copy(targetBuffer, targetStart=0, sourceStart=0, sourceEnd=buffer.length)</span>
+Buffer.prototype.copy = <span class="function"><span class="keyword">function</span> <span class="title">copy</span> <span class="params">(target, targetStart, start, end)</span> {</span>
+  <span class="keyword">if</span> (!Buffer.isBuffer(target)) <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'argument should be a Buffer'</span>)
+  <span class="keyword">if</span> (!start) start = <span class="number">0</span>
+  <span class="keyword">if</span> (!end &amp;&amp; end !== <span class="number">0</span>) end = <span class="keyword">this</span>.length
+  <span class="keyword">if</span> (targetStart >= target.length) targetStart = target.length
+  <span class="keyword">if</span> (!targetStart) targetStart = <span class="number">0</span>
+  <span class="keyword">if</span> (end > <span class="number">0</span> &amp;&amp; end &lt; start) end = start
+
+  <span class="comment">// Copy 0 bytes; we're done</span>
+  <span class="keyword">if</span> (end === start) <span class="keyword">return</span> <span class="number">0</span>
+  <span class="keyword">if</span> (target.length === <span class="number">0</span> || <span class="keyword">this</span>.length === <span class="number">0</span>) <span class="keyword">return</span> <span class="number">0</span>
+
+  <span class="comment">// Fatal error conditions</span>
+  <span class="keyword">if</span> (targetStart &lt; <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'targetStart out of bounds'</span>)
+  }
+  <span class="keyword">if</span> (start &lt; <span class="number">0</span> || start >= <span class="keyword">this</span>.length) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Index out of range'</span>)
+  <span class="keyword">if</span> (end &lt; <span class="number">0</span>) <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'sourceEnd out of bounds'</span>)
+
+  <span class="comment">// Are we oob?</span>
+  <span class="keyword">if</span> (end > <span class="keyword">this</span>.length) end = <span class="keyword">this</span>.length
+  <span class="keyword">if</span> (target.length - targetStart &lt; end - start) {
+    end = target.length - targetStart + start
+  }
+
+  <span class="keyword">var</span> len = end - start
+
+  <span class="keyword">if</span> (<span class="keyword">this</span> === target &amp;&amp; <span class="keyword">typeof</span> Uint8Array.prototype.copyWithin === <span class="string">'function'</span>) {
+    <span class="comment">// Use built-in when available, missing from IE11</span>
+    <span class="keyword">this</span>.copyWithin(targetStart, start, end)
+  } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span> === target &amp;&amp; start &lt; targetStart &amp;&amp; targetStart &lt; end) {
+    <span class="comment">// descending copy from end</span>
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = len - <span class="number">1</span>; i >= <span class="number">0</span>; --i) {
+      target[i + targetStart] = <span class="keyword">this</span>[i + start]
+    }
+  } <span class="keyword">else</span> {
+    Uint8Array.prototype.set.call(
+      target,
+      <span class="keyword">this</span>.subarray(start, end),
+      targetStart
+    )
+  }
+
+  <span class="keyword">return</span> len
+}
+
+<span class="comment">// Usage:</span>
+<span class="comment">//    buffer.fill(number[, offset[, end]])</span>
+<span class="comment">//    buffer.fill(buffer[, offset[, end]])</span>
+<span class="comment">//    buffer.fill(string[, offset[, end]][, encoding])</span>
+Buffer.prototype.fill = <span class="function"><span class="keyword">function</span> <span class="title">fill</span> <span class="params">(val, start, end, encoding)</span> {</span>
+  <span class="comment">// Handle string cases:</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> val === <span class="string">'string'</span>) {
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> start === <span class="string">'string'</span>) {
+      encoding = start
+      start = <span class="number">0</span>
+      end = <span class="keyword">this</span>.length
+    } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">typeof</span> end === <span class="string">'string'</span>) {
+      encoding = end
+      end = <span class="keyword">this</span>.length
+    }
+    <span class="keyword">if</span> (encoding !== <span class="literal">undefined</span> &amp;&amp; <span class="keyword">typeof</span> encoding !== <span class="string">'string'</span>) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'encoding must be a string'</span>)
+    }
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> encoding === <span class="string">'string'</span> &amp;&amp; !Buffer.isEncoding(encoding)) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Unknown encoding: '</span> + encoding)
+    }
+    <span class="keyword">if</span> (val.length === <span class="number">1</span>) {
+      <span class="keyword">var</span> code = val.charCodeAt(<span class="number">0</span>)
+      <span class="keyword">if</span> ((encoding === <span class="string">'utf8'</span> &amp;&amp; code &lt; <span class="number">128</span>) ||
+          encoding === <span class="string">'latin1'</span>) {
+        <span class="comment">// Fast path: If `val` fits into a single byte, use that numeric value.</span>
+        val = code
+      }
+    }
+  } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">typeof</span> val === <span class="string">'number'</span>) {
+    val = val &amp; <span class="number">255</span>
+  }
+
+  <span class="comment">// Invalid ranges are not set to a default, so can range check early.</span>
+  <span class="keyword">if</span> (start &lt; <span class="number">0</span> || <span class="keyword">this</span>.length &lt; start || <span class="keyword">this</span>.length &lt; end) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">'Out of range index'</span>)
+  }
+
+  <span class="keyword">if</span> (end &lt;= start) {
+    <span class="keyword">return</span> <span class="keyword">this</span>
+  }
+
+  start = start >>> <span class="number">0</span>
+  end = end === <span class="literal">undefined</span> ? <span class="keyword">this</span>.length : end >>> <span class="number">0</span>
+
+  <span class="keyword">if</span> (!val) val = <span class="number">0</span>
+
+  <span class="keyword">var</span> i
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> val === <span class="string">'number'</span>) {
+    <span class="keyword">for</span> (i = start; i &lt; end; ++i) {
+      <span class="keyword">this</span>[i] = val
+    }
+  } <span class="keyword">else</span> {
+    <span class="keyword">var</span> bytes = Buffer.isBuffer(val)
+      ? val
+      : Buffer.from(val, encoding)
+    <span class="keyword">var</span> len = bytes.length
+    <span class="keyword">if</span> (len === <span class="number">0</span>) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'The value "'</span> + val +
+        <span class="string">'" is invalid for argument "value"'</span>)
+    }
+    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; end - start; ++i) {
+      <span class="keyword">this</span>[i + start] = bytes[i % len]
+    }
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+<span class="comment">// HELPER FUNCTIONS</span>
+<span class="comment">// ================</span>
+
+<span class="keyword">var</span> INVALID_BASE64_RE = <span class="regexp">/[^+/</span><span class="number">0</span>-<span class="number">9</span>A-Za-z-_]/g
+
+<span class="function"><span class="keyword">function</span> <span class="title">base64clean</span> <span class="params">(str)</span> {</span>
+  <span class="comment">// Node takes equal signs as end of the Base64 encoding</span>
+  str = str.split(<span class="string">'='</span>)[<span class="number">0</span>]
+  <span class="comment">// Node strips out invalid characters like \n and \t from the string, base64-js does not</span>
+  str = str.trim().replace(INVALID_BASE64_RE, <span class="string">''</span>)
+  <span class="comment">// Node converts strings with length &lt; 2 to ''</span>
+  <span class="keyword">if</span> (str.length &lt; <span class="number">2</span>) <span class="keyword">return</span> <span class="string">''</span>
+  <span class="comment">// Node allows for non-padded base64 strings (missing trailing ===), base64-js does not</span>
+  <span class="keyword">while</span> (str.length % <span class="number">4</span> !== <span class="number">0</span>) {
+    str = str + <span class="string">'='</span>
+  }
+  <span class="keyword">return</span> str
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">toHex</span> <span class="params">(n)</span> {</span>
+  <span class="keyword">if</span> (n &lt; <span class="number">16</span>) <span class="keyword">return</span> <span class="string">'0'</span> + n.toString(<span class="number">16</span>)
+  <span class="keyword">return</span> n.toString(<span class="number">16</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">utf8ToBytes</span> <span class="params">(string, units)</span> {</span>
+  units = units || <span class="literal">Infinity</span>
+  <span class="keyword">var</span> codePoint
+  <span class="keyword">var</span> length = string.length
+  <span class="keyword">var</span> leadSurrogate = <span class="literal">null</span>
+  <span class="keyword">var</span> bytes = []
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; length; ++i) {
+    codePoint = string.charCodeAt(i)
+
+    <span class="comment">// is surrogate component</span>
+    <span class="keyword">if</span> (codePoint > <span class="number">0xD7FF</span> &amp;&amp; codePoint &lt; <span class="number">0xE000</span>) {
+      <span class="comment">// last char was a lead</span>
+      <span class="keyword">if</span> (!leadSurrogate) {
+        <span class="comment">// no lead yet</span>
+        <span class="keyword">if</span> (codePoint > <span class="number">0xDBFF</span>) {
+          <span class="comment">// unexpected trail</span>
+          <span class="keyword">if</span> ((units -= <span class="number">3</span>) > -<span class="number">1</span>) bytes.push(<span class="number">0xEF</span>, <span class="number">0xBF</span>, <span class="number">0xBD</span>)
+          <span class="keyword">continue</span>
+        } <span class="keyword">else</span> <span class="keyword">if</span> (i + <span class="number">1</span> === length) {
+          <span class="comment">// unpaired lead</span>
+          <span class="keyword">if</span> ((units -= <span class="number">3</span>) > -<span class="number">1</span>) bytes.push(<span class="number">0xEF</span>, <span class="number">0xBF</span>, <span class="number">0xBD</span>)
+          <span class="keyword">continue</span>
+        }
+
+        <span class="comment">// valid lead</span>
+        leadSurrogate = codePoint
+
+        <span class="keyword">continue</span>
+      }
+
+      <span class="comment">// 2 leads in a row</span>
+      <span class="keyword">if</span> (codePoint &lt; <span class="number">0xDC00</span>) {
+        <span class="keyword">if</span> ((units -= <span class="number">3</span>) > -<span class="number">1</span>) bytes.push(<span class="number">0xEF</span>, <span class="number">0xBF</span>, <span class="number">0xBD</span>)
+        leadSurrogate = codePoint
+        <span class="keyword">continue</span>
+      }
+
+      <span class="comment">// valid surrogate pair</span>
+      codePoint = (leadSurrogate - <span class="number">0xD800</span> &lt;&lt; <span class="number">10</span> | codePoint - <span class="number">0xDC00</span>) + <span class="number">0x10000</span>
+    } <span class="keyword">else</span> <span class="keyword">if</span> (leadSurrogate) {
+      <span class="comment">// valid bmp char, but last char was a lead</span>
+      <span class="keyword">if</span> ((units -= <span class="number">3</span>) > -<span class="number">1</span>) bytes.push(<span class="number">0xEF</span>, <span class="number">0xBF</span>, <span class="number">0xBD</span>)
+    }
+
+    leadSurrogate = <span class="literal">null</span>
+
+    <span class="comment">// encode utf8</span>
+    <span class="keyword">if</span> (codePoint &lt; <span class="number">0x80</span>) {
+      <span class="keyword">if</span> ((units -= <span class="number">1</span>) &lt; <span class="number">0</span>) <span class="keyword">break</span>
+      bytes.push(codePoint)
+    } <span class="keyword">else</span> <span class="keyword">if</span> (codePoint &lt; <span class="number">0x800</span>) {
+      <span class="keyword">if</span> ((units -= <span class="number">2</span>) &lt; <span class="number">0</span>) <span class="keyword">break</span>
+      bytes.push(
+        codePoint >> <span class="number">0x6</span> | <span class="number">0xC0</span>,
+        codePoint &amp; <span class="number">0x3F</span> | <span class="number">0x80</span>
+      )
+    } <span class="keyword">else</span> <span class="keyword">if</span> (codePoint &lt; <span class="number">0x10000</span>) {
+      <span class="keyword">if</span> ((units -= <span class="number">3</span>) &lt; <span class="number">0</span>) <span class="keyword">break</span>
+      bytes.push(
+        codePoint >> <span class="number">0xC</span> | <span class="number">0xE0</span>,
+        codePoint >> <span class="number">0x6</span> &amp; <span class="number">0x3F</span> | <span class="number">0x80</span>,
+        codePoint &amp; <span class="number">0x3F</span> | <span class="number">0x80</span>
+      )
+    } <span class="keyword">else</span> <span class="keyword">if</span> (codePoint &lt; <span class="number">0x110000</span>) {
+      <span class="keyword">if</span> ((units -= <span class="number">4</span>) &lt; <span class="number">0</span>) <span class="keyword">break</span>
+      bytes.push(
+        codePoint >> <span class="number">0x12</span> | <span class="number">0xF0</span>,
+        codePoint >> <span class="number">0xC</span> &amp; <span class="number">0x3F</span> | <span class="number">0x80</span>,
+        codePoint >> <span class="number">0x6</span> &amp; <span class="number">0x3F</span> | <span class="number">0x80</span>,
+        codePoint &amp; <span class="number">0x3F</span> | <span class="number">0x80</span>
+      )
+    } <span class="keyword">else</span> {
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Invalid code point'</span>)
+    }
+  }
+
+  <span class="keyword">return</span> bytes
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">asciiToBytes</span> <span class="params">(str)</span> {</span>
+  <span class="keyword">var</span> byteArray = []
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; str.length; ++i) {
+    <span class="comment">// Node's code seems to be doing this and not &amp; 0x7F..</span>
+    byteArray.push(str.charCodeAt(i) &amp; <span class="number">0xFF</span>)
+  }
+  <span class="keyword">return</span> byteArray
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">utf16leToBytes</span> <span class="params">(str, units)</span> {</span>
+  <span class="keyword">var</span> c, hi, lo
+  <span class="keyword">var</span> byteArray = []
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; str.length; ++i) {
+    <span class="keyword">if</span> ((units -= <span class="number">2</span>) &lt; <span class="number">0</span>) <span class="keyword">break</span>
+
+    c = str.charCodeAt(i)
+    hi = c >> <span class="number">8</span>
+    lo = c % <span class="number">256</span>
+    byteArray.push(lo)
+    byteArray.push(hi)
+  }
+
+  <span class="keyword">return</span> byteArray
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">base64ToBytes</span> <span class="params">(str)</span> {</span>
+  <span class="keyword">return</span> base64.toByteArray(base64clean(str))
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">blitBuffer</span> <span class="params">(src, dst, offset, length)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; length; ++i) {
+    <span class="keyword">if</span> ((i + offset >= dst.length) || (i >= src.length)) <span class="keyword">break</span>
+    dst[i + offset] = src[i]
+  }
+  <span class="keyword">return</span> i
+}
+
+<span class="comment">// ArrayBuffer or Uint8Array objects from other contexts (i.e. iframes) do not pass</span>
+<span class="comment">// the `instanceof` check but they should be treated as of that type.</span>
+<span class="comment">// See: https://github.com/feross/buffer/issues/166</span>
+<span class="function"><span class="keyword">function</span> <span class="title">isInstance</span> <span class="params">(obj, type)</span> {</span>
+  <span class="keyword">return</span> obj <span class="keyword">instanceof</span> type ||
+    (obj != <span class="literal">null</span> &amp;&amp; obj.constructor != <span class="literal">null</span> &amp;&amp; obj.constructor.name != <span class="literal">null</span> &amp;&amp;
+      obj.constructor.name === type.name)
+}
+<span class="function"><span class="keyword">function</span> <span class="title">numberIsNaN</span> <span class="params">(obj)</span> {</span>
+  <span class="comment">// For IE11 support</span>
+  <span class="keyword">return</span> obj !== obj <span class="comment">// eslint-disable-line no-self-compare</span>
+}
+</code></pre>

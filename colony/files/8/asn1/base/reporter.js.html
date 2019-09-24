@@ -1,0 +1,123 @@
+<h1>reporter.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>);
+
+<span class="function"><span class="keyword">function</span> <span class="title">Reporter</span><span class="params">(options)</span> {</span>
+  <span class="keyword">this</span>._reporterState = {
+    obj: <span class="literal">null</span>,
+    path: [],
+    options: options || {},
+    errors: []
+  };
+}
+exports.Reporter = Reporter;
+
+Reporter.prototype.isError = <span class="function"><span class="keyword">function</span> <span class="title">isError</span><span class="params">(obj)</span> {</span>
+  <span class="keyword">return</span> obj <span class="keyword">instanceof</span> ReporterError;
+};
+
+Reporter.prototype.save = <span class="function"><span class="keyword">function</span> <span class="title">save</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+
+  <span class="keyword">return</span> { obj: state.obj, pathLen: state.path.length };
+};
+
+Reporter.prototype.restore = <span class="function"><span class="keyword">function</span> <span class="title">restore</span><span class="params">(data)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+
+  state.obj = data.obj;
+  state.path = state.path.slice(<span class="number">0</span>, data.pathLen);
+};
+
+Reporter.prototype.enterKey = <span class="function"><span class="keyword">function</span> <span class="title">enterKey</span><span class="params">(key)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._reporterState.path.push(key);
+};
+
+Reporter.prototype.exitKey = <span class="function"><span class="keyword">function</span> <span class="title">exitKey</span><span class="params">(index)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+
+  state.path = state.path.slice(<span class="number">0</span>, index - <span class="number">1</span>);
+};
+
+Reporter.prototype.leaveKey = <span class="function"><span class="keyword">function</span> <span class="title">leaveKey</span><span class="params">(index, key, value)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+
+  <span class="keyword">this</span>.exitKey(index);
+  <span class="keyword">if</span> (state.obj !== <span class="literal">null</span>)
+    state.obj[key] = value;
+};
+
+Reporter.prototype.path = <span class="function"><span class="keyword">function</span> <span class="title">path</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._reporterState.path.join(<span class="string">'/'</span>);
+};
+
+Reporter.prototype.enterObject = <span class="function"><span class="keyword">function</span> <span class="title">enterObject</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+
+  <span class="keyword">var</span> prev = state.obj;
+  state.obj = {};
+  <span class="keyword">return</span> prev;
+};
+
+Reporter.prototype.leaveObject = <span class="function"><span class="keyword">function</span> <span class="title">leaveObject</span><span class="params">(prev)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+
+  <span class="keyword">var</span> now = state.obj;
+  state.obj = prev;
+  <span class="keyword">return</span> now;
+};
+
+Reporter.prototype.error = <span class="function"><span class="keyword">function</span> <span class="title">error</span><span class="params">(msg)</span> {</span>
+  <span class="keyword">var</span> err;
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+
+  <span class="keyword">var</span> inherited = msg <span class="keyword">instanceof</span> ReporterError;
+  <span class="keyword">if</span> (inherited) {
+    err = msg;
+  } <span class="keyword">else</span> {
+    err = <span class="keyword">new</span> ReporterError(state.path.map(<span class="keyword">function</span>(elem) {
+      <span class="keyword">return</span> <span class="string">'['</span> + JSON.stringify(elem) + <span class="string">']'</span>;
+    }).join(<span class="string">''</span>), msg.message || msg, msg.stack);
+  }
+
+  <span class="keyword">if</span> (!state.options.partial)
+    <span class="keyword">throw</span> err;
+
+  <span class="keyword">if</span> (!inherited)
+    state.errors.push(err);
+
+  <span class="keyword">return</span> err;
+};
+
+Reporter.prototype.wrapResult = <span class="function"><span class="keyword">function</span> <span class="title">wrapResult</span><span class="params">(result)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._reporterState;
+  <span class="keyword">if</span> (!state.options.partial)
+    <span class="keyword">return</span> result;
+
+  <span class="keyword">return</span> {
+    result: <span class="keyword">this</span>.isError(result) ? <span class="literal">null</span> : result,
+    errors: state.errors
+  };
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">ReporterError</span><span class="params">(path, msg)</span> {</span>
+  <span class="keyword">this</span>.path = path;
+  <span class="keyword">this</span>.rethrow(msg);
+};
+inherits(ReporterError, Error);
+
+ReporterError.prototype.rethrow = <span class="function"><span class="keyword">function</span> <span class="title">rethrow</span><span class="params">(msg)</span> {</span>
+  <span class="keyword">this</span>.message = msg + <span class="string">' at: '</span> + (<span class="keyword">this</span>.path || <span class="string">'(shallow)'</span>);
+  <span class="keyword">if</span> (Error.captureStackTrace)
+    Error.captureStackTrace(<span class="keyword">this</span>, ReporterError);
+
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.stack) {
+    <span class="keyword">try</span> {
+      <span class="comment">// IE only adds stack when thrown</span>
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="keyword">this</span>.message);
+    } <span class="keyword">catch</span> (e) {
+      <span class="keyword">this</span>.stack = e.stack;
+    }
+  }
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+</code></pre>

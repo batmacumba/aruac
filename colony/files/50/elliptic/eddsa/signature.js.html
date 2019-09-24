@@ -1,0 +1,68 @@
+<h1>signature.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> BN = require(<span class="string">'bn.js'</span>);
+<span class="keyword">var</span> elliptic = require(<span class="string">'../../elliptic'</span>);
+<span class="keyword">var</span> utils = elliptic.utils;
+<span class="keyword">var</span> assert = utils.assert;
+<span class="keyword">var</span> cachedProperty = utils.cachedProperty;
+<span class="keyword">var</span> parseBytes = utils.parseBytes;
+
+<span class="comment">/**
+* @param {EDDSA} eddsa - eddsa instance
+* @param {Array&lt;Bytes>|Object} sig -
+* @param {Array&lt;Bytes>|Point} [sig.R] - R point as Point or bytes
+* @param {Array&lt;Bytes>|bn} [sig.S] - S scalar as bn or bytes
+* @param {Array&lt;Bytes>} [sig.Rencoded] - R point encoded
+* @param {Array&lt;Bytes>} [sig.Sencoded] - S scalar encoded
+*/</span>
+<span class="function"><span class="keyword">function</span> <span class="title">Signature</span><span class="params">(eddsa, sig)</span> {</span>
+  <span class="keyword">this</span>.eddsa = eddsa;
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> sig !== <span class="string">'object'</span>)
+    sig = parseBytes(sig);
+
+  <span class="keyword">if</span> (Array.isArray(sig)) {
+    sig = {
+      R: sig.slice(<span class="number">0</span>, eddsa.encodingLength),
+      S: sig.slice(eddsa.encodingLength)
+    };
+  }
+
+  assert(sig.R &amp;&amp; sig.S, <span class="string">'Signature without R or S'</span>);
+
+  <span class="keyword">if</span> (eddsa.isPoint(sig.R))
+    <span class="keyword">this</span>._R = sig.R;
+  <span class="keyword">if</span> (sig.S <span class="keyword">instanceof</span> BN)
+    <span class="keyword">this</span>._S = sig.S;
+
+  <span class="keyword">this</span>._Rencoded = Array.isArray(sig.R) ? sig.R : sig.Rencoded;
+  <span class="keyword">this</span>._Sencoded = Array.isArray(sig.S) ? sig.S : sig.Sencoded;
+}
+
+cachedProperty(Signature, <span class="string">'S'</span>, <span class="function"><span class="keyword">function</span> <span class="title">S</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.decodeInt(<span class="keyword">this</span>.Sencoded());
+});
+
+cachedProperty(Signature, <span class="string">'R'</span>, <span class="function"><span class="keyword">function</span> <span class="title">R</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.decodePoint(<span class="keyword">this</span>.Rencoded());
+});
+
+cachedProperty(Signature, <span class="string">'Rencoded'</span>, <span class="function"><span class="keyword">function</span> <span class="title">Rencoded</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.encodePoint(<span class="keyword">this</span>.R());
+});
+
+cachedProperty(Signature, <span class="string">'Sencoded'</span>, <span class="function"><span class="keyword">function</span> <span class="title">Sencoded</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.encodeInt(<span class="keyword">this</span>.S());
+});
+
+Signature.prototype.toBytes = <span class="function"><span class="keyword">function</span> <span class="title">toBytes</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.Rencoded().concat(<span class="keyword">this</span>.Sencoded());
+};
+
+Signature.prototype.toHex = <span class="function"><span class="keyword">function</span> <span class="title">toHex</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> utils.encode(<span class="keyword">this</span>.toBytes(), <span class="string">'hex'</span>).toUpperCase();
+};
+
+module.exports = Signature;
+</code></pre>

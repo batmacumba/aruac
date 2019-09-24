@@ -1,0 +1,132 @@
+<h1>_stream_duplex.js</h1>
+<pre><code class="lang-js"><span class="comment">// Copyright Joyent, Inc. and other Node contributors.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is hereby granted, free of charge, to any person obtaining a</span>
+<span class="comment">// copy of this software and associated documentation files (the</span>
+<span class="comment">// "Software"), to deal in the Software without restriction, including</span>
+<span class="comment">// without limitation the rights to use, copy, modify, merge, publish,</span>
+<span class="comment">// distribute, sublicense, and/or sell copies of the Software, and to permit</span>
+<span class="comment">// persons to whom the Software is furnished to do so, subject to the</span>
+<span class="comment">// following conditions:</span>
+<span class="comment">//</span>
+<span class="comment">// The above copyright notice and this permission notice shall be included</span>
+<span class="comment">// in all copies or substantial portions of the Software.</span>
+<span class="comment">//</span>
+<span class="comment">// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS</span>
+<span class="comment">// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF</span>
+<span class="comment">// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN</span>
+<span class="comment">// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,</span>
+<span class="comment">// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR</span>
+<span class="comment">// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE</span>
+<span class="comment">// USE OR OTHER DEALINGS IN THE SOFTWARE.</span>
+
+<span class="comment">// a duplex stream is just a stream that is both readable and writable.</span>
+<span class="comment">// Since JS doesn't have multiple prototypal inheritance, this class</span>
+<span class="comment">// prototypally inherits from Readable, and then parasitically from</span>
+<span class="comment">// Writable.</span>
+
+<span class="string">'use strict'</span>;
+
+<span class="comment">/*&lt;replacement>*/</span>
+
+<span class="keyword">var</span> pna = require(<span class="string">'process-nextick-args'</span>);
+<span class="comment">/*&lt;/replacement>*/</span>
+
+<span class="comment">/*&lt;replacement>*/</span>
+<span class="keyword">var</span> objectKeys = Object.keys || <span class="function"><span class="keyword">function</span> <span class="params">(obj)</span> {</span>
+  <span class="keyword">var</span> keys = [];
+  <span class="keyword">for</span> (<span class="keyword">var</span> key <span class="keyword">in</span> obj) {
+    keys.push(key);
+  }<span class="keyword">return</span> keys;
+};
+<span class="comment">/*&lt;/replacement>*/</span>
+
+module.exports = Duplex;
+
+<span class="comment">/*&lt;replacement>*/</span>
+<span class="keyword">var</span> util = require(<span class="string">'core-util-is'</span>);
+util.inherits = require(<span class="string">'inherits'</span>);
+<span class="comment">/*&lt;/replacement>*/</span>
+
+<span class="keyword">var</span> Readable = require(<span class="string">'./_stream_readable'</span>);
+<span class="keyword">var</span> Writable = require(<span class="string">'./_stream_writable'</span>);
+
+util.inherits(Duplex, Readable);
+
+{
+  <span class="comment">// avoid scope creep, the keys array can then be collected</span>
+  <span class="keyword">var</span> keys = objectKeys(Writable.prototype);
+  <span class="keyword">for</span> (<span class="keyword">var</span> v = <span class="number">0</span>; v &lt; keys.length; v++) {
+    <span class="keyword">var</span> method = keys[v];
+    <span class="keyword">if</span> (!Duplex.prototype[method]) Duplex.prototype[method] = Writable.prototype[method];
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">Duplex</span><span class="params">(options)</span> {</span>
+  <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> Duplex)) <span class="keyword">return</span> <span class="keyword">new</span> Duplex(options);
+
+  Readable.call(<span class="keyword">this</span>, options);
+  Writable.call(<span class="keyword">this</span>, options);
+
+  <span class="keyword">if</span> (options &amp;&amp; options.readable === <span class="literal">false</span>) <span class="keyword">this</span>.readable = <span class="literal">false</span>;
+
+  <span class="keyword">if</span> (options &amp;&amp; options.writable === <span class="literal">false</span>) <span class="keyword">this</span>.writable = <span class="literal">false</span>;
+
+  <span class="keyword">this</span>.allowHalfOpen = <span class="literal">true</span>;
+  <span class="keyword">if</span> (options &amp;&amp; options.allowHalfOpen === <span class="literal">false</span>) <span class="keyword">this</span>.allowHalfOpen = <span class="literal">false</span>;
+
+  <span class="keyword">this</span>.once(<span class="string">'end'</span>, onend);
+}
+
+Object.defineProperty(Duplex.prototype, <span class="string">'writableHighWaterMark'</span>, {
+  <span class="comment">// making it explicit this property is not enumerable</span>
+  <span class="comment">// because otherwise some prototype manipulation in</span>
+  <span class="comment">// userland will fail</span>
+  enumerable: <span class="literal">false</span>,
+  get: <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>._writableState.highWaterMark;
+  }
+});
+
+<span class="comment">// the no-half-open enforcer</span>
+<span class="function"><span class="keyword">function</span> <span class="title">onend</span><span class="params">()</span> {</span>
+  <span class="comment">// if we allow half-open state, or if the writable side ended,</span>
+  <span class="comment">// then we're ok.</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.allowHalfOpen || <span class="keyword">this</span>._writableState.ended) <span class="keyword">return</span>;
+
+  <span class="comment">// no more data can be written.</span>
+  <span class="comment">// But allow more writes to happen in this tick.</span>
+  pna.nextTick(onEndNT, <span class="keyword">this</span>);
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">onEndNT</span><span class="params">(self)</span> {</span>
+  self.end();
+}
+
+Object.defineProperty(Duplex.prototype, <span class="string">'destroyed'</span>, {
+  get: <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">if</span> (<span class="keyword">this</span>._readableState === <span class="literal">undefined</span> || <span class="keyword">this</span>._writableState === <span class="literal">undefined</span>) {
+      <span class="keyword">return</span> <span class="literal">false</span>;
+    }
+    <span class="keyword">return</span> <span class="keyword">this</span>._readableState.destroyed &amp;&amp; <span class="keyword">this</span>._writableState.destroyed;
+  },
+  set: <span class="function"><span class="keyword">function</span> <span class="params">(value)</span> {</span>
+    <span class="comment">// we ignore the value if the stream</span>
+    <span class="comment">// has not been initialized yet</span>
+    <span class="keyword">if</span> (<span class="keyword">this</span>._readableState === <span class="literal">undefined</span> || <span class="keyword">this</span>._writableState === <span class="literal">undefined</span>) {
+      <span class="keyword">return</span>;
+    }
+
+    <span class="comment">// backward compatibility, the user is explicitly</span>
+    <span class="comment">// managing destroyed</span>
+    <span class="keyword">this</span>._readableState.destroyed = value;
+    <span class="keyword">this</span>._writableState.destroyed = value;
+  }
+});
+
+Duplex.prototype._destroy = <span class="function"><span class="keyword">function</span> <span class="params">(err, cb)</span> {</span>
+  <span class="keyword">this</span>.push(<span class="literal">null</span>);
+  <span class="keyword">this</span>.end();
+
+  pna.nextTick(cb, err);
+};</code></pre>

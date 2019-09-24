@@ -1,0 +1,23 @@
+<h1>pem.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>);
+
+<span class="keyword">var</span> DEREncoder = require(<span class="string">'./der'</span>);
+
+<span class="function"><span class="keyword">function</span> <span class="title">PEMEncoder</span><span class="params">(entity)</span> {</span>
+  DEREncoder.call(<span class="keyword">this</span>, entity);
+  <span class="keyword">this</span>.enc = <span class="string">'pem'</span>;
+};
+inherits(PEMEncoder, DEREncoder);
+module.exports = PEMEncoder;
+
+PEMEncoder.prototype.encode = <span class="function"><span class="keyword">function</span> <span class="title">encode</span><span class="params">(data, options)</span> {</span>
+  <span class="keyword">var</span> buf = DEREncoder.prototype.encode.call(<span class="keyword">this</span>, data);
+
+  <span class="keyword">var</span> p = buf.toString(<span class="string">'base64'</span>);
+  <span class="keyword">var</span> out = [ <span class="string">'-----BEGIN '</span> + options.label + <span class="string">'-----'</span> ];
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; p.length; i += <span class="number">64</span>)
+    out.push(p.slice(i, i + <span class="number">64</span>));
+  out.push(<span class="string">'-----END '</span> + options.label + <span class="string">'-----'</span>);
+  <span class="keyword">return</span> out.join(<span class="string">'\n'</span>);
+};
+</code></pre>

@@ -1,0 +1,418 @@
+<h1>source-map-generator.js</h1>
+<pre><code class="lang-js"><span class="comment">/* -*- Mode: js; js-indent-level: 2; -*- */</span>
+<span class="comment">/*
+ * Copyright 2011 Mozilla Foundation and contributors
+ * Licensed under the New BSD license. See LICENSE or:
+ * http://opensource.org/licenses/BSD-3-Clause
+ */</span>
+
+<span class="keyword">var</span> base64VLQ = require(<span class="string">'./base64-vlq'</span>);
+<span class="keyword">var</span> util = require(<span class="string">'./util'</span>);
+<span class="keyword">var</span> ArraySet = require(<span class="string">'./array-set'</span>).ArraySet;
+<span class="keyword">var</span> MappingList = require(<span class="string">'./mapping-list'</span>).MappingList;
+
+<span class="comment">/**
+ * An instance of the SourceMapGenerator represents a source map which is
+ * being built incrementally. You may pass an object with the following
+ * properties:
+ *
+ *   - file: The filename of the generated source.
+ *   - sourceRoot: A root for all relative URLs in this source map.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator</span><span class="params">(aArgs)</span> {</span>
+  <span class="keyword">if</span> (!aArgs) {
+    aArgs = {};
+  }
+  <span class="keyword">this</span>._file = util.getArg(aArgs, <span class="string">'file'</span>, <span class="literal">null</span>);
+  <span class="keyword">this</span>._sourceRoot = util.getArg(aArgs, <span class="string">'sourceRoot'</span>, <span class="literal">null</span>);
+  <span class="keyword">this</span>._skipValidation = util.getArg(aArgs, <span class="string">'skipValidation'</span>, <span class="literal">false</span>);
+  <span class="keyword">this</span>._sources = <span class="keyword">new</span> ArraySet();
+  <span class="keyword">this</span>._names = <span class="keyword">new</span> ArraySet();
+  <span class="keyword">this</span>._mappings = <span class="keyword">new</span> MappingList();
+  <span class="keyword">this</span>._sourcesContents = <span class="literal">null</span>;
+}
+
+SourceMapGenerator.prototype._version = <span class="number">3</span>;
+
+<span class="comment">/**
+ * Creates a new SourceMapGenerator based on a SourceMapConsumer
+ *
+ * @param aSourceMapConsumer The SourceMap.
+ */</span>
+SourceMapGenerator.fromSourceMap =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_fromSourceMap</span><span class="params">(aSourceMapConsumer)</span> {</span>
+    <span class="keyword">var</span> sourceRoot = aSourceMapConsumer.sourceRoot;
+    <span class="keyword">var</span> generator = <span class="keyword">new</span> SourceMapGenerator({
+      file: aSourceMapConsumer.file,
+      sourceRoot: sourceRoot
+    });
+    aSourceMapConsumer.eachMapping(<span class="function"><span class="keyword">function</span> <span class="params">(mapping)</span> {</span>
+      <span class="keyword">var</span> newMapping = {
+        generated: {
+          line: mapping.generatedLine,
+          column: mapping.generatedColumn
+        }
+      };
+
+      <span class="keyword">if</span> (mapping.source != <span class="literal">null</span>) {
+        newMapping.source = mapping.source;
+        <span class="keyword">if</span> (sourceRoot != <span class="literal">null</span>) {
+          newMapping.source = util.relative(sourceRoot, newMapping.source);
+        }
+
+        newMapping.original = {
+          line: mapping.originalLine,
+          column: mapping.originalColumn
+        };
+
+        <span class="keyword">if</span> (mapping.name != <span class="literal">null</span>) {
+          newMapping.name = mapping.name;
+        }
+      }
+
+      generator.addMapping(newMapping);
+    });
+    aSourceMapConsumer.sources.forEach(<span class="function"><span class="keyword">function</span> <span class="params">(sourceFile)</span> {</span>
+      <span class="keyword">var</span> content = aSourceMapConsumer.sourceContentFor(sourceFile);
+      <span class="keyword">if</span> (content != <span class="literal">null</span>) {
+        generator.setSourceContent(sourceFile, content);
+      }
+    });
+    <span class="keyword">return</span> generator;
+  };
+
+<span class="comment">/**
+ * Add a single mapping from original source line and column to the generated
+ * source's line and column for this source map being created. The mapping
+ * object should have the following properties:
+ *
+ *   - generated: An object with the generated line and column positions.
+ *   - original: An object with the original line and column positions.
+ *   - source: The original source file (relative to the sourceRoot).
+ *   - name: An optional original token name for this mapping.
+ */</span>
+SourceMapGenerator.prototype.addMapping =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_addMapping</span><span class="params">(aArgs)</span> {</span>
+    <span class="keyword">var</span> generated = util.getArg(aArgs, <span class="string">'generated'</span>);
+    <span class="keyword">var</span> original = util.getArg(aArgs, <span class="string">'original'</span>, <span class="literal">null</span>);
+    <span class="keyword">var</span> source = util.getArg(aArgs, <span class="string">'source'</span>, <span class="literal">null</span>);
+    <span class="keyword">var</span> name = util.getArg(aArgs, <span class="string">'name'</span>, <span class="literal">null</span>);
+
+    <span class="keyword">if</span> (!<span class="keyword">this</span>._skipValidation) {
+      <span class="keyword">this</span>._validateMapping(generated, original, source, name);
+    }
+
+    <span class="keyword">if</span> (source != <span class="literal">null</span>) {
+      source = String(source);
+      <span class="keyword">if</span> (!<span class="keyword">this</span>._sources.has(source)) {
+        <span class="keyword">this</span>._sources.add(source);
+      }
+    }
+
+    <span class="keyword">if</span> (name != <span class="literal">null</span>) {
+      name = String(name);
+      <span class="keyword">if</span> (!<span class="keyword">this</span>._names.has(name)) {
+        <span class="keyword">this</span>._names.add(name);
+      }
+    }
+
+    <span class="keyword">this</span>._mappings.add({
+      generatedLine: generated.line,
+      generatedColumn: generated.column,
+      originalLine: original != <span class="literal">null</span> &amp;&amp; original.line,
+      originalColumn: original != <span class="literal">null</span> &amp;&amp; original.column,
+      source: source,
+      name: name
+    });
+  };
+
+<span class="comment">/**
+ * Set the source content for a source file.
+ */</span>
+SourceMapGenerator.prototype.setSourceContent =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_setSourceContent</span><span class="params">(aSourceFile, aSourceContent)</span> {</span>
+    <span class="keyword">var</span> source = aSourceFile;
+    <span class="keyword">if</span> (<span class="keyword">this</span>._sourceRoot != <span class="literal">null</span>) {
+      source = util.relative(<span class="keyword">this</span>._sourceRoot, source);
+    }
+
+    <span class="keyword">if</span> (aSourceContent != <span class="literal">null</span>) {
+      <span class="comment">// Add the source content to the _sourcesContents map.</span>
+      <span class="comment">// Create a new _sourcesContents map if the property is null.</span>
+      <span class="keyword">if</span> (!<span class="keyword">this</span>._sourcesContents) {
+        <span class="keyword">this</span>._sourcesContents = Object.create(<span class="literal">null</span>);
+      }
+      <span class="keyword">this</span>._sourcesContents[util.toSetString(source)] = aSourceContent;
+    } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>._sourcesContents) {
+      <span class="comment">// Remove the source file from the _sourcesContents map.</span>
+      <span class="comment">// If the _sourcesContents map is empty, set the property to null.</span>
+      <span class="keyword">delete</span> <span class="keyword">this</span>._sourcesContents[util.toSetString(source)];
+      <span class="keyword">if</span> (Object.keys(<span class="keyword">this</span>._sourcesContents).length === <span class="number">0</span>) {
+        <span class="keyword">this</span>._sourcesContents = <span class="literal">null</span>;
+      }
+    }
+  };
+
+<span class="comment">/**
+ * Applies the mappings of a sub-source-map for a specific source file to the
+ * source map being generated. Each mapping to the supplied source file is
+ * rewritten using the supplied source map. Note: The resolution for the
+ * resulting mappings is the minimium of this map and the supplied map.
+ *
+ * @param aSourceMapConsumer The source map to be applied.
+ * @param aSourceFile Optional. The filename of the source file.
+ *        If omitted, SourceMapConsumer's file property will be used.
+ * @param aSourceMapPath Optional. The dirname of the path to the source map
+ *        to be applied. If relative, it is relative to the SourceMapConsumer.
+ *        This parameter is needed when the two source maps aren't in the same
+ *        directory, and the source map to be applied contains relative source
+ *        paths. If so, those relative source paths need to be rewritten
+ *        relative to the SourceMapGenerator.
+ */</span>
+SourceMapGenerator.prototype.applySourceMap =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_applySourceMap</span><span class="params">(aSourceMapConsumer, aSourceFile, aSourceMapPath)</span> {</span>
+    <span class="keyword">var</span> sourceFile = aSourceFile;
+    <span class="comment">// If aSourceFile is omitted, we will use the file property of the SourceMap</span>
+    <span class="keyword">if</span> (aSourceFile == <span class="literal">null</span>) {
+      <span class="keyword">if</span> (aSourceMapConsumer.file == <span class="literal">null</span>) {
+        <span class="keyword">throw</span> <span class="keyword">new</span> Error(
+          <span class="string">'SourceMapGenerator.prototype.applySourceMap requires either an explicit source file, '</span> +
+          <span class="string">'or the source map\'s "file" property. Both were omitted.'</span>
+        );
+      }
+      sourceFile = aSourceMapConsumer.file;
+    }
+    <span class="keyword">var</span> sourceRoot = <span class="keyword">this</span>._sourceRoot;
+    <span class="comment">// Make "sourceFile" relative if an absolute Url is passed.</span>
+    <span class="keyword">if</span> (sourceRoot != <span class="literal">null</span>) {
+      sourceFile = util.relative(sourceRoot, sourceFile);
+    }
+    <span class="comment">// Applying the SourceMap can add and remove items from the sources and</span>
+    <span class="comment">// the names array.</span>
+    <span class="keyword">var</span> newSources = <span class="keyword">new</span> ArraySet();
+    <span class="keyword">var</span> newNames = <span class="keyword">new</span> ArraySet();
+
+    <span class="comment">// Find mappings for the "sourceFile"</span>
+    <span class="keyword">this</span>._mappings.unsortedForEach(<span class="function"><span class="keyword">function</span> <span class="params">(mapping)</span> {</span>
+      <span class="keyword">if</span> (mapping.source === sourceFile &amp;&amp; mapping.originalLine != <span class="literal">null</span>) {
+        <span class="comment">// Check if it can be mapped by the source map, then update the mapping.</span>
+        <span class="keyword">var</span> original = aSourceMapConsumer.originalPositionFor({
+          line: mapping.originalLine,
+          column: mapping.originalColumn
+        });
+        <span class="keyword">if</span> (original.source != <span class="literal">null</span>) {
+          <span class="comment">// Copy mapping</span>
+          mapping.source = original.source;
+          <span class="keyword">if</span> (aSourceMapPath != <span class="literal">null</span>) {
+            mapping.source = util.join(aSourceMapPath, mapping.source)
+          }
+          <span class="keyword">if</span> (sourceRoot != <span class="literal">null</span>) {
+            mapping.source = util.relative(sourceRoot, mapping.source);
+          }
+          mapping.originalLine = original.line;
+          mapping.originalColumn = original.column;
+          <span class="keyword">if</span> (original.name != <span class="literal">null</span>) {
+            mapping.name = original.name;
+          }
+        }
+      }
+
+      <span class="keyword">var</span> source = mapping.source;
+      <span class="keyword">if</span> (source != <span class="literal">null</span> &amp;&amp; !newSources.has(source)) {
+        newSources.add(source);
+      }
+
+      <span class="keyword">var</span> name = mapping.name;
+      <span class="keyword">if</span> (name != <span class="literal">null</span> &amp;&amp; !newNames.has(name)) {
+        newNames.add(name);
+      }
+
+    }, <span class="keyword">this</span>);
+    <span class="keyword">this</span>._sources = newSources;
+    <span class="keyword">this</span>._names = newNames;
+
+    <span class="comment">// Copy sourcesContents of applied map.</span>
+    aSourceMapConsumer.sources.forEach(<span class="function"><span class="keyword">function</span> <span class="params">(sourceFile)</span> {</span>
+      <span class="keyword">var</span> content = aSourceMapConsumer.sourceContentFor(sourceFile);
+      <span class="keyword">if</span> (content != <span class="literal">null</span>) {
+        <span class="keyword">if</span> (aSourceMapPath != <span class="literal">null</span>) {
+          sourceFile = util.join(aSourceMapPath, sourceFile);
+        }
+        <span class="keyword">if</span> (sourceRoot != <span class="literal">null</span>) {
+          sourceFile = util.relative(sourceRoot, sourceFile);
+        }
+        <span class="keyword">this</span>.setSourceContent(sourceFile, content);
+      }
+    }, <span class="keyword">this</span>);
+  };
+
+<span class="comment">/**
+ * A mapping can have one of the three levels of data:
+ *
+ *   1. Just the generated position.
+ *   2. The Generated position, original position, and original source.
+ *   3. Generated and original position, original source, as well as a name
+ *      token.
+ *
+ * To maintain consistency, we validate that any new mapping being added falls
+ * in to one of these categories.
+ */</span>
+SourceMapGenerator.prototype._validateMapping =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_validateMapping</span><span class="params">(aGenerated, aOriginal, aSource,
+                                              aName)</span> {</span>
+    <span class="comment">// When aOriginal is truthy but has empty values for .line and .column,</span>
+    <span class="comment">// it is most likely a programmer error. In this case we throw a very</span>
+    <span class="comment">// specific error message to try to guide them the right way.</span>
+    <span class="comment">// For example: https://github.com/Polymer/polymer-bundler/pull/519</span>
+    <span class="keyword">if</span> (aOriginal &amp;&amp; <span class="keyword">typeof</span> aOriginal.line !== <span class="string">'number'</span> &amp;&amp; <span class="keyword">typeof</span> aOriginal.column !== <span class="string">'number'</span>) {
+        <span class="keyword">throw</span> <span class="keyword">new</span> Error(
+            <span class="string">'original.line and original.column are not numbers -- you probably meant to omit '</span> +
+            <span class="string">'the original mapping entirely and only map the generated position. If so, pass '</span> +
+            <span class="string">'null for the original mapping instead of an object with empty or null values.'</span>
+        );
+    }
+
+    <span class="keyword">if</span> (aGenerated &amp;&amp; <span class="string">'line'</span> <span class="keyword">in</span> aGenerated &amp;&amp; <span class="string">'column'</span> <span class="keyword">in</span> aGenerated
+        &amp;&amp; aGenerated.line > <span class="number">0</span> &amp;&amp; aGenerated.column >= <span class="number">0</span>
+        &amp;&amp; !aOriginal &amp;&amp; !aSource &amp;&amp; !aName) {
+      <span class="comment">// Case 1.</span>
+      <span class="keyword">return</span>;
+    }
+    <span class="keyword">else</span> <span class="keyword">if</span> (aGenerated &amp;&amp; <span class="string">'line'</span> <span class="keyword">in</span> aGenerated &amp;&amp; <span class="string">'column'</span> <span class="keyword">in</span> aGenerated
+             &amp;&amp; aOriginal &amp;&amp; <span class="string">'line'</span> <span class="keyword">in</span> aOriginal &amp;&amp; <span class="string">'column'</span> <span class="keyword">in</span> aOriginal
+             &amp;&amp; aGenerated.line > <span class="number">0</span> &amp;&amp; aGenerated.column >= <span class="number">0</span>
+             &amp;&amp; aOriginal.line > <span class="number">0</span> &amp;&amp; aOriginal.column >= <span class="number">0</span>
+             &amp;&amp; aSource) {
+      <span class="comment">// Cases 2 and 3.</span>
+      <span class="keyword">return</span>;
+    }
+    <span class="keyword">else</span> {
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Invalid mapping: '</span> + JSON.stringify({
+        generated: aGenerated,
+        source: aSource,
+        original: aOriginal,
+        name: aName
+      }));
+    }
+  };
+
+<span class="comment">/**
+ * Serialize the accumulated mappings in to the stream of base 64 VLQs
+ * specified by the source map format.
+ */</span>
+SourceMapGenerator.prototype._serializeMappings =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_serializeMappings</span><span class="params">()</span> {</span>
+    <span class="keyword">var</span> previousGeneratedColumn = <span class="number">0</span>;
+    <span class="keyword">var</span> previousGeneratedLine = <span class="number">1</span>;
+    <span class="keyword">var</span> previousOriginalColumn = <span class="number">0</span>;
+    <span class="keyword">var</span> previousOriginalLine = <span class="number">0</span>;
+    <span class="keyword">var</span> previousName = <span class="number">0</span>;
+    <span class="keyword">var</span> previousSource = <span class="number">0</span>;
+    <span class="keyword">var</span> result = <span class="string">''</span>;
+    <span class="keyword">var</span> next;
+    <span class="keyword">var</span> mapping;
+    <span class="keyword">var</span> nameIdx;
+    <span class="keyword">var</span> sourceIdx;
+
+    <span class="keyword">var</span> mappings = <span class="keyword">this</span>._mappings.toArray();
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, len = mappings.length; i &lt; len; i++) {
+      mapping = mappings[i];
+      next = <span class="string">''</span>
+
+      <span class="keyword">if</span> (mapping.generatedLine !== previousGeneratedLine) {
+        previousGeneratedColumn = <span class="number">0</span>;
+        <span class="keyword">while</span> (mapping.generatedLine !== previousGeneratedLine) {
+          next += <span class="string">';'</span>;
+          previousGeneratedLine++;
+        }
+      }
+      <span class="keyword">else</span> {
+        <span class="keyword">if</span> (i > <span class="number">0</span>) {
+          <span class="keyword">if</span> (!util.compareByGeneratedPositionsInflated(mapping, mappings[i - <span class="number">1</span>])) {
+            <span class="keyword">continue</span>;
+          }
+          next += <span class="string">','</span>;
+        }
+      }
+
+      next += base64VLQ.encode(mapping.generatedColumn
+                                 - previousGeneratedColumn);
+      previousGeneratedColumn = mapping.generatedColumn;
+
+      <span class="keyword">if</span> (mapping.source != <span class="literal">null</span>) {
+        sourceIdx = <span class="keyword">this</span>._sources.indexOf(mapping.source);
+        next += base64VLQ.encode(sourceIdx - previousSource);
+        previousSource = sourceIdx;
+
+        <span class="comment">// lines are stored 0-based in SourceMap spec version 3</span>
+        next += base64VLQ.encode(mapping.originalLine - <span class="number">1</span>
+                                   - previousOriginalLine);
+        previousOriginalLine = mapping.originalLine - <span class="number">1</span>;
+
+        next += base64VLQ.encode(mapping.originalColumn
+                                   - previousOriginalColumn);
+        previousOriginalColumn = mapping.originalColumn;
+
+        <span class="keyword">if</span> (mapping.name != <span class="literal">null</span>) {
+          nameIdx = <span class="keyword">this</span>._names.indexOf(mapping.name);
+          next += base64VLQ.encode(nameIdx - previousName);
+          previousName = nameIdx;
+        }
+      }
+
+      result += next;
+    }
+
+    <span class="keyword">return</span> result;
+  };
+
+SourceMapGenerator.prototype._generateSourcesContent =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_generateSourcesContent</span><span class="params">(aSources, aSourceRoot)</span> {</span>
+    <span class="keyword">return</span> aSources.map(<span class="function"><span class="keyword">function</span> <span class="params">(source)</span> {</span>
+      <span class="keyword">if</span> (!<span class="keyword">this</span>._sourcesContents) {
+        <span class="keyword">return</span> <span class="literal">null</span>;
+      }
+      <span class="keyword">if</span> (aSourceRoot != <span class="literal">null</span>) {
+        source = util.relative(aSourceRoot, source);
+      }
+      <span class="keyword">var</span> key = util.toSetString(source);
+      <span class="keyword">return</span> Object.prototype.hasOwnProperty.call(<span class="keyword">this</span>._sourcesContents, key)
+        ? <span class="keyword">this</span>._sourcesContents[key]
+        : <span class="literal">null</span>;
+    }, <span class="keyword">this</span>);
+  };
+
+<span class="comment">/**
+ * Externalize the source map.
+ */</span>
+SourceMapGenerator.prototype.toJSON =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_toJSON</span><span class="params">()</span> {</span>
+    <span class="keyword">var</span> map = {
+      version: <span class="keyword">this</span>._version,
+      sources: <span class="keyword">this</span>._sources.toArray(),
+      names: <span class="keyword">this</span>._names.toArray(),
+      mappings: <span class="keyword">this</span>._serializeMappings()
+    };
+    <span class="keyword">if</span> (<span class="keyword">this</span>._file != <span class="literal">null</span>) {
+      map.file = <span class="keyword">this</span>._file;
+    }
+    <span class="keyword">if</span> (<span class="keyword">this</span>._sourceRoot != <span class="literal">null</span>) {
+      map.sourceRoot = <span class="keyword">this</span>._sourceRoot;
+    }
+    <span class="keyword">if</span> (<span class="keyword">this</span>._sourcesContents) {
+      map.sourcesContent = <span class="keyword">this</span>._generateSourcesContent(map.sources, map.sourceRoot);
+    }
+
+    <span class="keyword">return</span> map;
+  };
+
+<span class="comment">/**
+ * Render the source map being generated to a string.
+ */</span>
+SourceMapGenerator.prototype.toString =
+  <span class="function"><span class="keyword">function</span> <span class="title">SourceMapGenerator_toString</span><span class="params">()</span> {</span>
+    <span class="keyword">return</span> JSON.stringify(<span class="keyword">this</span>.toJSON());
+  };
+
+exports.SourceMapGenerator = SourceMapGenerator;
+</code></pre>

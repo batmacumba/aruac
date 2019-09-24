@@ -1,0 +1,153 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>
+
+exports.byteLength = byteLength
+exports.toByteArray = toByteArray
+exports.fromByteArray = fromByteArray
+
+<span class="keyword">var</span> lookup = []
+<span class="keyword">var</span> revLookup = []
+<span class="keyword">var</span> Arr = <span class="keyword">typeof</span> Uint8Array !== <span class="string">'undefined'</span> ? Uint8Array : Array
+
+<span class="keyword">var</span> code = <span class="string">'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'</span>
+<span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, len = code.length; i &lt; len; ++i) {
+  lookup[i] = code[i]
+  revLookup[code.charCodeAt(i)] = i
+}
+
+<span class="comment">// Support decoding URL-safe base64 strings, as Node.js does.</span>
+<span class="comment">// See: https://en.wikipedia.org/wiki/Base64#URL_applications</span>
+revLookup[<span class="string">'-'</span>.charCodeAt(<span class="number">0</span>)] = <span class="number">62</span>
+revLookup[<span class="string">'_'</span>.charCodeAt(<span class="number">0</span>)] = <span class="number">63</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">getLens</span> <span class="params">(b64)</span> {</span>
+  <span class="keyword">var</span> len = b64.length
+
+  <span class="keyword">if</span> (len % <span class="number">4</span> > <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Invalid string. Length must be a multiple of 4'</span>)
+  }
+
+  <span class="comment">// Trim off extra bytes after placeholder bytes are found</span>
+  <span class="comment">// See: https://github.com/beatgammit/base64-js/issues/42</span>
+  <span class="keyword">var</span> validLen = b64.indexOf(<span class="string">'='</span>)
+  <span class="keyword">if</span> (validLen === -<span class="number">1</span>) validLen = len
+
+  <span class="keyword">var</span> placeHoldersLen = validLen === len
+    ? <span class="number">0</span>
+    : <span class="number">4</span> - (validLen % <span class="number">4</span>)
+
+  <span class="keyword">return</span> [validLen, placeHoldersLen]
+}
+
+<span class="comment">// base64 is 4/3 + up to two characters of the original data</span>
+<span class="function"><span class="keyword">function</span> <span class="title">byteLength</span> <span class="params">(b64)</span> {</span>
+  <span class="keyword">var</span> lens = getLens(b64)
+  <span class="keyword">var</span> validLen = lens[<span class="number">0</span>]
+  <span class="keyword">var</span> placeHoldersLen = lens[<span class="number">1</span>]
+  <span class="keyword">return</span> ((validLen + placeHoldersLen) * <span class="number">3</span> / <span class="number">4</span>) - placeHoldersLen
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">_byteLength</span> <span class="params">(b64, validLen, placeHoldersLen)</span> {</span>
+  <span class="keyword">return</span> ((validLen + placeHoldersLen) * <span class="number">3</span> / <span class="number">4</span>) - placeHoldersLen
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">toByteArray</span> <span class="params">(b64)</span> {</span>
+  <span class="keyword">var</span> tmp
+  <span class="keyword">var</span> lens = getLens(b64)
+  <span class="keyword">var</span> validLen = lens[<span class="number">0</span>]
+  <span class="keyword">var</span> placeHoldersLen = lens[<span class="number">1</span>]
+
+  <span class="keyword">var</span> arr = <span class="keyword">new</span> Arr(_byteLength(b64, validLen, placeHoldersLen))
+
+  <span class="keyword">var</span> curByte = <span class="number">0</span>
+
+  <span class="comment">// if there are placeholders, only get up to the last complete 4 chars</span>
+  <span class="keyword">var</span> len = placeHoldersLen > <span class="number">0</span>
+    ? validLen - <span class="number">4</span>
+    : validLen
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; i += <span class="number">4</span>) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] &lt;&lt; <span class="number">18</span>) |
+      (revLookup[b64.charCodeAt(i + <span class="number">1</span>)] &lt;&lt; <span class="number">12</span>) |
+      (revLookup[b64.charCodeAt(i + <span class="number">2</span>)] &lt;&lt; <span class="number">6</span>) |
+      revLookup[b64.charCodeAt(i + <span class="number">3</span>)]
+    arr[curByte++] = (tmp >> <span class="number">16</span>) &amp; <span class="number">0xFF</span>
+    arr[curByte++] = (tmp >> <span class="number">8</span>) &amp; <span class="number">0xFF</span>
+    arr[curByte++] = tmp &amp; <span class="number">0xFF</span>
+  }
+
+  <span class="keyword">if</span> (placeHoldersLen === <span class="number">2</span>) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] &lt;&lt; <span class="number">2</span>) |
+      (revLookup[b64.charCodeAt(i + <span class="number">1</span>)] >> <span class="number">4</span>)
+    arr[curByte++] = tmp &amp; <span class="number">0xFF</span>
+  }
+
+  <span class="keyword">if</span> (placeHoldersLen === <span class="number">1</span>) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] &lt;&lt; <span class="number">10</span>) |
+      (revLookup[b64.charCodeAt(i + <span class="number">1</span>)] &lt;&lt; <span class="number">4</span>) |
+      (revLookup[b64.charCodeAt(i + <span class="number">2</span>)] >> <span class="number">2</span>)
+    arr[curByte++] = (tmp >> <span class="number">8</span>) &amp; <span class="number">0xFF</span>
+    arr[curByte++] = tmp &amp; <span class="number">0xFF</span>
+  }
+
+  <span class="keyword">return</span> arr
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">tripletToBase64</span> <span class="params">(num)</span> {</span>
+  <span class="keyword">return</span> lookup[num >> <span class="number">18</span> &amp; <span class="number">0x3F</span>] +
+    lookup[num >> <span class="number">12</span> &amp; <span class="number">0x3F</span>] +
+    lookup[num >> <span class="number">6</span> &amp; <span class="number">0x3F</span>] +
+    lookup[num &amp; <span class="number">0x3F</span>]
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">encodeChunk</span> <span class="params">(uint8, start, end)</span> {</span>
+  <span class="keyword">var</span> tmp
+  <span class="keyword">var</span> output = []
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = start; i &lt; end; i += <span class="number">3</span>) {
+    tmp =
+      ((uint8[i] &lt;&lt; <span class="number">16</span>) &amp; <span class="number">0xFF0000</span>) +
+      ((uint8[i + <span class="number">1</span>] &lt;&lt; <span class="number">8</span>) &amp; <span class="number">0xFF00</span>) +
+      (uint8[i + <span class="number">2</span>] &amp; <span class="number">0xFF</span>)
+    output.push(tripletToBase64(tmp))
+  }
+  <span class="keyword">return</span> output.join(<span class="string">''</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromByteArray</span> <span class="params">(uint8)</span> {</span>
+  <span class="keyword">var</span> tmp
+  <span class="keyword">var</span> len = uint8.length
+  <span class="keyword">var</span> extraBytes = len % <span class="number">3</span> <span class="comment">// if we have 1 byte left, pad 2 bytes</span>
+  <span class="keyword">var</span> parts = []
+  <span class="keyword">var</span> maxChunkLength = <span class="number">16383</span> <span class="comment">// must be multiple of 3</span>
+
+  <span class="comment">// go through the array every three bytes, we'll deal with trailing stuff later</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, len2 = len - extraBytes; i &lt; len2; i += maxChunkLength) {
+    parts.push(encodeChunk(
+      uint8, i, (i + maxChunkLength) > len2 ? len2 : (i + maxChunkLength)
+    ))
+  }
+
+  <span class="comment">// pad the end with zeros, but make sure to not forget the extra bytes</span>
+  <span class="keyword">if</span> (extraBytes === <span class="number">1</span>) {
+    tmp = uint8[len - <span class="number">1</span>]
+    parts.push(
+      lookup[tmp >> <span class="number">2</span>] +
+      lookup[(tmp &lt;&lt; <span class="number">4</span>) &amp; <span class="number">0x3F</span>] +
+      <span class="string">'=='</span>
+    )
+  } <span class="keyword">else</span> <span class="keyword">if</span> (extraBytes === <span class="number">2</span>) {
+    tmp = (uint8[len - <span class="number">2</span>] &lt;&lt; <span class="number">8</span>) + uint8[len - <span class="number">1</span>]
+    parts.push(
+      lookup[tmp >> <span class="number">10</span>] +
+      lookup[(tmp >> <span class="number">4</span>) &amp; <span class="number">0x3F</span>] +
+      lookup[(tmp &lt;&lt; <span class="number">2</span>) &amp; <span class="number">0x3F</span>] +
+      <span class="string">'='</span>
+    )
+  }
+
+  <span class="keyword">return</span> parts.join(<span class="string">''</span>)
+}
+</code></pre>

@@ -1,0 +1,13 @@
+<h1>index.js</h1>
+<pre><code class="lang-js">module.exports = <span class="function"><span class="keyword">function</span> <span class="params">(xs, f)</span> {</span>
+    <span class="keyword">if</span> (xs.map) <span class="keyword">return</span> xs.map(f);
+    <span class="keyword">var</span> res = [];
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; xs.length; i++) {
+        <span class="keyword">var</span> x = xs[i];
+        <span class="keyword">if</span> (hasOwn.call(xs, i)) res.push(f(x, i, xs));
+    }
+    <span class="keyword">return</span> res;
+};
+
+<span class="keyword">var</span> hasOwn = Object.prototype.hasOwnProperty;
+</code></pre>

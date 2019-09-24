@@ -1,0 +1,76 @@
+<h1>1.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> utils = require(<span class="string">'../utils'</span>);
+<span class="keyword">var</span> common = require(<span class="string">'../common'</span>);
+<span class="keyword">var</span> shaCommon = require(<span class="string">'./common'</span>);
+
+<span class="keyword">var</span> rotl32 = utils.rotl32;
+<span class="keyword">var</span> sum32 = utils.sum32;
+<span class="keyword">var</span> sum32_5 = utils.sum32_5;
+<span class="keyword">var</span> ft_1 = shaCommon.ft_1;
+<span class="keyword">var</span> BlockHash = common.BlockHash;
+
+<span class="keyword">var</span> sha1_K = [
+  <span class="number">0x5A827999</span>, <span class="number">0x6ED9EBA1</span>,
+  <span class="number">0x8F1BBCDC</span>, <span class="number">0xCA62C1D6</span>
+];
+
+<span class="function"><span class="keyword">function</span> <span class="title">SHA1</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> SHA1))
+    <span class="keyword">return</span> <span class="keyword">new</span> SHA1();
+
+  BlockHash.call(<span class="keyword">this</span>);
+  <span class="keyword">this</span>.h = [
+    <span class="number">0x67452301</span>, <span class="number">0xefcdab89</span>, <span class="number">0x98badcfe</span>,
+    <span class="number">0x10325476</span>, <span class="number">0xc3d2e1f0</span> ];
+  <span class="keyword">this</span>.W = <span class="keyword">new</span> Array(<span class="number">80</span>);
+}
+
+utils.inherits(SHA1, BlockHash);
+module.exports = SHA1;
+
+SHA1.blockSize = <span class="number">512</span>;
+SHA1.outSize = <span class="number">160</span>;
+SHA1.hmacStrength = <span class="number">80</span>;
+SHA1.padLength = <span class="number">64</span>;
+
+SHA1.prototype._update = <span class="function"><span class="keyword">function</span> <span class="title">_update</span><span class="params">(msg, start)</span> {</span>
+  <span class="keyword">var</span> W = <span class="keyword">this</span>.W;
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">16</span>; i++)
+    W[i] = msg[start + i];
+
+  <span class="keyword">for</span>(; i &lt; W.length; i++)
+    W[i] = rotl32(W[i - <span class="number">3</span>] ^ W[i - <span class="number">8</span>] ^ W[i - <span class="number">14</span>] ^ W[i - <span class="number">16</span>], <span class="number">1</span>);
+
+  <span class="keyword">var</span> a = <span class="keyword">this</span>.h[<span class="number">0</span>];
+  <span class="keyword">var</span> b = <span class="keyword">this</span>.h[<span class="number">1</span>];
+  <span class="keyword">var</span> c = <span class="keyword">this</span>.h[<span class="number">2</span>];
+  <span class="keyword">var</span> d = <span class="keyword">this</span>.h[<span class="number">3</span>];
+  <span class="keyword">var</span> e = <span class="keyword">this</span>.h[<span class="number">4</span>];
+
+  <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; W.length; i++) {
+    <span class="keyword">var</span> s = ~~(i / <span class="number">20</span>);
+    <span class="keyword">var</span> t = sum32_5(rotl32(a, <span class="number">5</span>), ft_1(s, b, c, d), e, W[i], sha1_K[s]);
+    e = d;
+    d = c;
+    c = rotl32(b, <span class="number">30</span>);
+    b = a;
+    a = t;
+  }
+
+  <span class="keyword">this</span>.h[<span class="number">0</span>] = sum32(<span class="keyword">this</span>.h[<span class="number">0</span>], a);
+  <span class="keyword">this</span>.h[<span class="number">1</span>] = sum32(<span class="keyword">this</span>.h[<span class="number">1</span>], b);
+  <span class="keyword">this</span>.h[<span class="number">2</span>] = sum32(<span class="keyword">this</span>.h[<span class="number">2</span>], c);
+  <span class="keyword">this</span>.h[<span class="number">3</span>] = sum32(<span class="keyword">this</span>.h[<span class="number">3</span>], d);
+  <span class="keyword">this</span>.h[<span class="number">4</span>] = sum32(<span class="keyword">this</span>.h[<span class="number">4</span>], e);
+};
+
+SHA1.prototype._digest = <span class="function"><span class="keyword">function</span> <span class="title">digest</span><span class="params">(enc)</span> {</span>
+  <span class="keyword">if</span> (enc === <span class="string">'hex'</span>)
+    <span class="keyword">return</span> utils.toHex32(<span class="keyword">this</span>.h, <span class="string">'big'</span>);
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> utils.split32(<span class="keyword">this</span>.h, <span class="string">'big'</span>);
+};
+</code></pre>

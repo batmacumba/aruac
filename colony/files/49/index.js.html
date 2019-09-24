@@ -1,0 +1,78 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">"use strict"</span>;
+
+<span class="keyword">var</span> stream = require(<span class="string">"readable-stream"</span>);
+
+<span class="function"><span class="keyword">function</span> <span class="title">DuplexWrapper</span><span class="params">(options, writable, readable)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> readable === <span class="string">"undefined"</span>) {
+    readable = writable;
+    writable = options;
+    options = <span class="literal">null</span>;
+  }
+
+  stream.Duplex.call(<span class="keyword">this</span>, options);
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> readable.read !== <span class="string">"function"</span>) {
+    readable = (<span class="keyword">new</span> stream.Readable(options)).wrap(readable);
+  }
+
+  <span class="keyword">this</span>._writable = writable;
+  <span class="keyword">this</span>._readable = readable;
+  <span class="keyword">this</span>._waiting = <span class="literal">false</span>;
+
+  <span class="keyword">var</span> self = <span class="keyword">this</span>;
+
+  writable.once(<span class="string">"finish"</span>, <span class="keyword">function</span>() {
+    self.end();
+  });
+
+  <span class="keyword">this</span>.once(<span class="string">"finish"</span>, <span class="keyword">function</span>() {
+    writable.end();
+  });
+
+  readable.on(<span class="string">"readable"</span>, <span class="keyword">function</span>() {
+    <span class="keyword">if</span> (self._waiting) {
+      self._waiting = <span class="literal">false</span>;
+      self._read();
+    }
+  });
+
+  readable.once(<span class="string">"end"</span>, <span class="keyword">function</span>() {
+    self.push(<span class="literal">null</span>);
+  });
+
+  <span class="keyword">if</span> (!options || <span class="keyword">typeof</span> options.bubbleErrors === <span class="string">"undefined"</span> || options.bubbleErrors) {
+    writable.on(<span class="string">"error"</span>, <span class="keyword">function</span>(err) {
+      self.emit(<span class="string">"error"</span>, err);
+    });
+
+    readable.on(<span class="string">"error"</span>, <span class="keyword">function</span>(err) {
+      self.emit(<span class="string">"error"</span>, err);
+    });
+  }
+}
+
+DuplexWrapper.prototype = Object.create(stream.Duplex.prototype, {constructor: {value: DuplexWrapper}});
+
+DuplexWrapper.prototype._write = <span class="function"><span class="keyword">function</span> <span class="title">_write</span><span class="params">(input, encoding, done)</span> {</span>
+  <span class="keyword">this</span>._writable.write(input, encoding, done);
+};
+
+DuplexWrapper.prototype._read = <span class="function"><span class="keyword">function</span> <span class="title">_read</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> buf;
+  <span class="keyword">var</span> reads = <span class="number">0</span>;
+  <span class="keyword">while</span> ((buf = <span class="keyword">this</span>._readable.read()) !== <span class="literal">null</span>) {
+    <span class="keyword">this</span>.push(buf);
+    reads++;
+  }
+  <span class="keyword">if</span> (reads === <span class="number">0</span>) {
+    <span class="keyword">this</span>._waiting = <span class="literal">true</span>;
+  }
+};
+
+module.exports = <span class="function"><span class="keyword">function</span> <span class="title">duplex2</span><span class="params">(options, writable, readable)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">new</span> DuplexWrapper(options, writable, readable);
+};
+
+module.exports.DuplexWrapper = DuplexWrapper;
+</code></pre>

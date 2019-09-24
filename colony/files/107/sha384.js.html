@@ -1,0 +1,59 @@
+<h1>sha384.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>)
+<span class="keyword">var</span> SHA512 = require(<span class="string">'./sha512'</span>)
+<span class="keyword">var</span> Hash = require(<span class="string">'./hash'</span>)
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+
+<span class="keyword">var</span> W = <span class="keyword">new</span> Array(<span class="number">160</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">Sha384</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.init()
+  <span class="keyword">this</span>._w = W
+
+  Hash.call(<span class="keyword">this</span>, <span class="number">128</span>, <span class="number">112</span>)
+}
+
+inherits(Sha384, SHA512)
+
+Sha384.prototype.init = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>._ah = <span class="number">0xcbbb9d5d</span>
+  <span class="keyword">this</span>._bh = <span class="number">0x629a292a</span>
+  <span class="keyword">this</span>._ch = <span class="number">0x9159015a</span>
+  <span class="keyword">this</span>._dh = <span class="number">0x152fecd8</span>
+  <span class="keyword">this</span>._eh = <span class="number">0x67332667</span>
+  <span class="keyword">this</span>._fh = <span class="number">0x8eb44a87</span>
+  <span class="keyword">this</span>._gh = <span class="number">0xdb0c2e0d</span>
+  <span class="keyword">this</span>._hh = <span class="number">0x47b5481d</span>
+
+  <span class="keyword">this</span>._al = <span class="number">0xc1059ed8</span>
+  <span class="keyword">this</span>._bl = <span class="number">0x367cd507</span>
+  <span class="keyword">this</span>._cl = <span class="number">0x3070dd17</span>
+  <span class="keyword">this</span>._dl = <span class="number">0xf70e5939</span>
+  <span class="keyword">this</span>._el = <span class="number">0xffc00b31</span>
+  <span class="keyword">this</span>._fl = <span class="number">0x68581511</span>
+  <span class="keyword">this</span>._gl = <span class="number">0x64f98fa7</span>
+  <span class="keyword">this</span>._hl = <span class="number">0xbefa4fa4</span>
+
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+Sha384.prototype._hash = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> H = Buffer.allocUnsafe(<span class="number">48</span>)
+
+  <span class="function"><span class="keyword">function</span> <span class="title">writeInt64BE</span> <span class="params">(h, l, offset)</span> {</span>
+    H.writeInt32BE(h, offset)
+    H.writeInt32BE(l, offset + <span class="number">4</span>)
+  }
+
+  writeInt64BE(<span class="keyword">this</span>._ah, <span class="keyword">this</span>._al, <span class="number">0</span>)
+  writeInt64BE(<span class="keyword">this</span>._bh, <span class="keyword">this</span>._bl, <span class="number">8</span>)
+  writeInt64BE(<span class="keyword">this</span>._ch, <span class="keyword">this</span>._cl, <span class="number">16</span>)
+  writeInt64BE(<span class="keyword">this</span>._dh, <span class="keyword">this</span>._dl, <span class="number">24</span>)
+  writeInt64BE(<span class="keyword">this</span>._eh, <span class="keyword">this</span>._el, <span class="number">32</span>)
+  writeInt64BE(<span class="keyword">this</span>._fh, <span class="keyword">this</span>._fl, <span class="number">40</span>)
+
+  <span class="keyword">return</span> H
+}
+
+module.exports = Sha384
+</code></pre>

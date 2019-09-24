@@ -1,0 +1,100 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> path = require(<span class="string">'path'</span>);
+<span class="keyword">var</span> fs = require(<span class="string">'fs'</span>);
+<span class="keyword">var</span> _0777 = parseInt(<span class="string">'0777'</span>, <span class="number">8</span>);
+
+module.exports = mkdirP.mkdirp = mkdirP.mkdirP = mkdirP;
+
+<span class="function"><span class="keyword">function</span> <span class="title">mkdirP</span> <span class="params">(p, opts, f, made)</span> {</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> opts === <span class="string">'function'</span>) {
+        f = opts;
+        opts = {};
+    }
+    <span class="keyword">else</span> <span class="keyword">if</span> (!opts || <span class="keyword">typeof</span> opts !== <span class="string">'object'</span>) {
+        opts = { mode: opts };
+    }
+    
+    <span class="keyword">var</span> mode = opts.mode;
+    <span class="keyword">var</span> xfs = opts.fs || fs;
+    
+    <span class="keyword">if</span> (mode === <span class="literal">undefined</span>) {
+        mode = _0777 &amp; (~process.umask());
+    }
+    <span class="keyword">if</span> (!made) made = <span class="literal">null</span>;
+    
+    <span class="keyword">var</span> cb = f || <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>};
+    p = path.resolve(p);
+    
+    xfs.mkdir(p, mode, <span class="function"><span class="keyword">function</span> <span class="params">(er)</span> {</span>
+        <span class="keyword">if</span> (!er) {
+            made = made || p;
+            <span class="keyword">return</span> cb(<span class="literal">null</span>, made);
+        }
+        <span class="keyword">switch</span> (er.code) {
+            <span class="keyword">case</span> <span class="string">'ENOENT'</span>:
+                mkdirP(path.dirname(p), opts, <span class="function"><span class="keyword">function</span> <span class="params">(er, made)</span> {</span>
+                    <span class="keyword">if</span> (er) cb(er, made);
+                    <span class="keyword">else</span> mkdirP(p, opts, cb, made);
+                });
+                <span class="keyword">break</span>;
+
+            <span class="comment">// In the case of any other error, just see if there's a dir</span>
+            <span class="comment">// there already.  If so, then hooray!  If not, then something</span>
+            <span class="comment">// is borked.</span>
+            <span class="keyword">default</span>:
+                xfs.stat(p, <span class="function"><span class="keyword">function</span> <span class="params">(er2, stat)</span> {</span>
+                    <span class="comment">// if the stat fails, then that's super weird.</span>
+                    <span class="comment">// let the original error be the failure reason.</span>
+                    <span class="keyword">if</span> (er2 || !stat.isDirectory()) cb(er, made)
+                    <span class="keyword">else</span> cb(<span class="literal">null</span>, made);
+                });
+                <span class="keyword">break</span>;
+        }
+    });
+}
+
+mkdirP.sync = <span class="function"><span class="keyword">function</span> <span class="title">sync</span> <span class="params">(p, opts, made)</span> {</span>
+    <span class="keyword">if</span> (!opts || <span class="keyword">typeof</span> opts !== <span class="string">'object'</span>) {
+        opts = { mode: opts };
+    }
+    
+    <span class="keyword">var</span> mode = opts.mode;
+    <span class="keyword">var</span> xfs = opts.fs || fs;
+    
+    <span class="keyword">if</span> (mode === <span class="literal">undefined</span>) {
+        mode = _0777 &amp; (~process.umask());
+    }
+    <span class="keyword">if</span> (!made) made = <span class="literal">null</span>;
+
+    p = path.resolve(p);
+
+    <span class="keyword">try</span> {
+        xfs.mkdirSync(p, mode);
+        made = made || p;
+    }
+    <span class="keyword">catch</span> (err0) {
+        <span class="keyword">switch</span> (err0.code) {
+            <span class="keyword">case</span> <span class="string">'ENOENT'</span> :
+                made = sync(path.dirname(p), opts, made);
+                sync(p, opts, made);
+                <span class="keyword">break</span>;
+
+            <span class="comment">// In the case of any other error, just see if there's a dir</span>
+            <span class="comment">// there already.  If so, then hooray!  If not, then something</span>
+            <span class="comment">// is borked.</span>
+            <span class="keyword">default</span>:
+                <span class="keyword">var</span> stat;
+                <span class="keyword">try</span> {
+                    stat = xfs.statSync(p);
+                }
+                <span class="keyword">catch</span> (err1) {
+                    <span class="keyword">throw</span> err0;
+                }
+                <span class="keyword">if</span> (!stat.isDirectory()) <span class="keyword">throw</span> err0;
+                <span class="keyword">break</span>;
+        }
+    }
+
+    <span class="keyword">return</span> made;
+};
+</code></pre>

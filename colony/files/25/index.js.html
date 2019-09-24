@@ -1,0 +1,71 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> toString = Object.prototype.toString
+
+<span class="keyword">var</span> isModern = (
+  <span class="keyword">typeof</span> Buffer.alloc === <span class="string">'function'</span> &amp;&amp;
+  <span class="keyword">typeof</span> Buffer.allocUnsafe === <span class="string">'function'</span> &amp;&amp;
+  <span class="keyword">typeof</span> Buffer.from === <span class="string">'function'</span>
+)
+
+<span class="function"><span class="keyword">function</span> <span class="title">isArrayBuffer</span> <span class="params">(input)</span> {</span>
+  <span class="keyword">return</span> toString.call(input).slice(<span class="number">8</span>, -<span class="number">1</span>) === <span class="string">'ArrayBuffer'</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromArrayBuffer</span> <span class="params">(obj, byteOffset, length)</span> {</span>
+  byteOffset >>>= <span class="number">0</span>
+
+  <span class="keyword">var</span> maxLength = obj.byteLength - byteOffset
+
+  <span class="keyword">if</span> (maxLength &lt; <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">"'offset' is out of bounds"</span>)
+  }
+
+  <span class="keyword">if</span> (length === <span class="literal">undefined</span>) {
+    length = maxLength
+  } <span class="keyword">else</span> {
+    length >>>= <span class="number">0</span>
+
+    <span class="keyword">if</span> (length > maxLength) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> RangeError(<span class="string">"'length' is out of bounds"</span>)
+    }
+  }
+
+  <span class="keyword">return</span> isModern
+    ? Buffer.from(obj.slice(byteOffset, byteOffset + length))
+    : <span class="keyword">new</span> Buffer(<span class="keyword">new</span> Uint8Array(obj.slice(byteOffset, byteOffset + length)))
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromString</span> <span class="params">(string, encoding)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> encoding !== <span class="string">'string'</span> || encoding === <span class="string">''</span>) {
+    encoding = <span class="string">'utf8'</span>
+  }
+
+  <span class="keyword">if</span> (!Buffer.isEncoding(encoding)) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"encoding" must be a valid string encoding'</span>)
+  }
+
+  <span class="keyword">return</span> isModern
+    ? Buffer.from(string, encoding)
+    : <span class="keyword">new</span> Buffer(string, encoding)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">bufferFrom</span> <span class="params">(value, encodingOrOffset, length)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> value === <span class="string">'number'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"value" argument must not be a number'</span>)
+  }
+
+  <span class="keyword">if</span> (isArrayBuffer(value)) {
+    <span class="keyword">return</span> fromArrayBuffer(value, encodingOrOffset, length)
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> value === <span class="string">'string'</span>) {
+    <span class="keyword">return</span> fromString(value, encodingOrOffset)
+  }
+
+  <span class="keyword">return</span> isModern
+    ? Buffer.from(value)
+    : <span class="keyword">new</span> Buffer(value)
+}
+
+module.exports = bufferFrom
+</code></pre>

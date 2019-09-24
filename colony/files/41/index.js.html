@@ -1,0 +1,86 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> assert = require(<span class="string">'assert'</span>)
+
+module.exports = dashAst
+
+<span class="comment">/**
+ * Call `cb` on each node in `ast`. If `cb` is an object, `cb.enter` is called before processing a Node's children,
+ * and `cb.leave` is called after processing a Node's children.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">dashAst</span> <span class="params">(ast, cb)</span> {</span>
+  assert(ast &amp;&amp; <span class="keyword">typeof</span> ast === <span class="string">'object'</span> &amp;&amp; <span class="keyword">typeof</span> ast.type === <span class="string">'string'</span>,
+    <span class="string">'dash-ast: ast must be an AST node'</span>)
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> cb === <span class="string">'object'</span>) {
+    assert(<span class="keyword">typeof</span> cb.enter === <span class="string">'function'</span> || <span class="keyword">typeof</span> cb.leave === <span class="string">'function'</span>,
+      <span class="string">'dash-ast: visitor must be an object with enter/leave functions'</span>)
+
+    walk(ast, <span class="literal">null</span>, cb.enter || <span class="literal">undefined</span>, cb.leave || <span class="literal">undefined</span>)
+  } <span class="keyword">else</span> {
+    assert(cb &amp;&amp; <span class="keyword">typeof</span> cb === <span class="string">'function'</span>,
+      <span class="string">'dash-ast: callback must be a function'</span>)
+
+    walk(ast, <span class="literal">null</span>, cb, <span class="literal">undefined</span>)
+  }
+}
+
+<span class="comment">/**
+ * Call `cb` on each node in `ast`. Each node will have a `.parent` property.
+ */</span>
+dashAst.withParent = <span class="function"><span class="keyword">function</span> <span class="title">dashAstParent</span> <span class="params">(ast, cb)</span> {</span>
+  assert(ast &amp;&amp; <span class="keyword">typeof</span> ast === <span class="string">'object'</span> &amp;&amp; <span class="keyword">typeof</span> ast.type === <span class="string">'string'</span>,
+    <span class="string">'dash-ast.withParent: ast must be an AST node'</span>)
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> cb === <span class="string">'object'</span>) {
+    assert(<span class="keyword">typeof</span> cb.enter === <span class="string">'function'</span> || <span class="keyword">typeof</span> cb.leave === <span class="string">'function'</span>,
+      <span class="string">'dash-ast.withParent: visitor must be an object with enter/leave functions'</span>)
+
+    <span class="keyword">var</span> enter = cb.enter
+    <span class="keyword">var</span> leave = cb.leave
+    walk(ast, <span class="literal">null</span>, <span class="function"><span class="keyword">function</span> <span class="params">(node, parent)</span> {</span>
+      node.parent = parent
+      <span class="keyword">if</span> (enter !== <span class="literal">undefined</span>) <span class="keyword">return</span> enter(node)
+    }, leave ? <span class="function"><span class="keyword">function</span> <span class="params">(node)</span> {</span> leave(node) } : <span class="literal">undefined</span>)
+  } <span class="keyword">else</span> {
+    assert(cb &amp;&amp; <span class="keyword">typeof</span> cb === <span class="string">'function'</span>,
+      <span class="string">'dash-ast.withParent: callback must be a function'</span>)
+
+    walk(ast, <span class="literal">null</span>, <span class="function"><span class="keyword">function</span> <span class="params">(node, parent)</span> {</span>
+      node.parent = parent
+      <span class="keyword">return</span> cb(node)
+    }, <span class="literal">undefined</span>)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">walk</span> <span class="params">(node, parent, enter, leave)</span> {</span>
+  <span class="keyword">var</span> cont = enter !== <span class="literal">undefined</span> ? enter(node, parent) : <span class="literal">undefined</span>
+  <span class="keyword">if</span> (cont === <span class="literal">false</span>) <span class="keyword">return</span>
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> k <span class="keyword">in</span> node) {
+    <span class="keyword">if</span> (has(node, k)) {
+      <span class="keyword">if</span> (k === <span class="string">'parent'</span>) <span class="keyword">continue</span>
+      <span class="keyword">if</span> (isNode(node[k])) {
+        walk(node[k], node, enter, leave)
+      } <span class="keyword">else</span> <span class="keyword">if</span> (Array.isArray(node[k])) {
+        walkArray(node[k], node, enter, leave)
+      }
+    }
+  }
+
+  <span class="keyword">if</span> (leave !== <span class="literal">undefined</span>) leave(node, parent)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">walkArray</span> <span class="params">(nodes, parent, enter, leave)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; nodes.length; i++) {
+    <span class="keyword">if</span> (isNode(nodes[i])) walk(nodes[i], parent, enter, leave)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">isNode</span> <span class="params">(node)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">typeof</span> node === <span class="string">'object'</span> &amp;&amp; node &amp;&amp; <span class="keyword">typeof</span> node.type === <span class="string">'string'</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">has</span> <span class="params">(obj, prop)</span> {</span>
+  <span class="keyword">return</span> Object.prototype.hasOwnProperty.call(obj, prop)
+}
+</code></pre>

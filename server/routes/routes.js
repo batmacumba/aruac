@@ -95,8 +95,8 @@ router.route('/insert')
         rimraf('./server/public/images/tmp/*', function () { console.log('tmp clean'); });
 
         project.save(function(err) {
-        if (err) res.send(err);
-        else res.send('Project successfully added!');
+            if (err) res.send(err);
+            else res.send('Project successfully added!');
         });
     });
 });
@@ -178,7 +178,7 @@ router.route('/delete')
 });
 
 router.get('/getAll',function(req, res) {
-    Project.find(function(err, projects) {
+    Project.find().sort('-year').find(function(err, projects) {
         if (err) res.send(err);
         res.json(projects);
     });

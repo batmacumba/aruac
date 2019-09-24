@@ -1,0 +1,86 @@
+<h1>index.js</h1>
+<pre><code class="lang-js">exports.read = <span class="function"><span class="keyword">function</span> <span class="params">(buffer, offset, isLE, mLen, nBytes)</span> {</span>
+  <span class="keyword">var</span> e, m
+  <span class="keyword">var</span> eLen = (nBytes * <span class="number">8</span>) - mLen - <span class="number">1</span>
+  <span class="keyword">var</span> eMax = (<span class="number">1</span> &lt;&lt; eLen) - <span class="number">1</span>
+  <span class="keyword">var</span> eBias = eMax >> <span class="number">1</span>
+  <span class="keyword">var</span> nBits = -<span class="number">7</span>
+  <span class="keyword">var</span> i = isLE ? (nBytes - <span class="number">1</span>) : <span class="number">0</span>
+  <span class="keyword">var</span> d = isLE ? -<span class="number">1</span> : <span class="number">1</span>
+  <span class="keyword">var</span> s = buffer[offset + i]
+
+  i += d
+
+  e = s &amp; ((<span class="number">1</span> &lt;&lt; (-nBits)) - <span class="number">1</span>)
+  s >>= (-nBits)
+  nBits += eLen
+  <span class="keyword">for</span> (; nBits > <span class="number">0</span>; e = (e * <span class="number">256</span>) + buffer[offset + i], i += d, nBits -= <span class="number">8</span>) {}
+
+  m = e &amp; ((<span class="number">1</span> &lt;&lt; (-nBits)) - <span class="number">1</span>)
+  e >>= (-nBits)
+  nBits += mLen
+  <span class="keyword">for</span> (; nBits > <span class="number">0</span>; m = (m * <span class="number">256</span>) + buffer[offset + i], i += d, nBits -= <span class="number">8</span>) {}
+
+  <span class="keyword">if</span> (e === <span class="number">0</span>) {
+    e = <span class="number">1</span> - eBias
+  } <span class="keyword">else</span> <span class="keyword">if</span> (e === eMax) {
+    <span class="keyword">return</span> m ? <span class="literal">NaN</span> : ((s ? -<span class="number">1</span> : <span class="number">1</span>) * <span class="literal">Infinity</span>)
+  } <span class="keyword">else</span> {
+    m = m + Math.pow(<span class="number">2</span>, mLen)
+    e = e - eBias
+  }
+  <span class="keyword">return</span> (s ? -<span class="number">1</span> : <span class="number">1</span>) * m * Math.pow(<span class="number">2</span>, e - mLen)
+}
+
+exports.write = <span class="function"><span class="keyword">function</span> <span class="params">(buffer, value, offset, isLE, mLen, nBytes)</span> {</span>
+  <span class="keyword">var</span> e, m, c
+  <span class="keyword">var</span> eLen = (nBytes * <span class="number">8</span>) - mLen - <span class="number">1</span>
+  <span class="keyword">var</span> eMax = (<span class="number">1</span> &lt;&lt; eLen) - <span class="number">1</span>
+  <span class="keyword">var</span> eBias = eMax >> <span class="number">1</span>
+  <span class="keyword">var</span> rt = (mLen === <span class="number">23</span> ? Math.pow(<span class="number">2</span>, -<span class="number">24</span>) - Math.pow(<span class="number">2</span>, -<span class="number">77</span>) : <span class="number">0</span>)
+  <span class="keyword">var</span> i = isLE ? <span class="number">0</span> : (nBytes - <span class="number">1</span>)
+  <span class="keyword">var</span> d = isLE ? <span class="number">1</span> : -<span class="number">1</span>
+  <span class="keyword">var</span> s = value &lt; <span class="number">0</span> || (value === <span class="number">0</span> &amp;&amp; <span class="number">1</span> / value &lt; <span class="number">0</span>) ? <span class="number">1</span> : <span class="number">0</span>
+
+  value = Math.abs(value)
+
+  <span class="keyword">if</span> (isNaN(value) || value === <span class="literal">Infinity</span>) {
+    m = isNaN(value) ? <span class="number">1</span> : <span class="number">0</span>
+    e = eMax
+  } <span class="keyword">else</span> {
+    e = Math.floor(Math.log(value) / Math.LN2)
+    <span class="keyword">if</span> (value * (c = Math.pow(<span class="number">2</span>, -e)) &lt; <span class="number">1</span>) {
+      e--
+      c *= <span class="number">2</span>
+    }
+    <span class="keyword">if</span> (e + eBias >= <span class="number">1</span>) {
+      value += rt / c
+    } <span class="keyword">else</span> {
+      value += rt * Math.pow(<span class="number">2</span>, <span class="number">1</span> - eBias)
+    }
+    <span class="keyword">if</span> (value * c >= <span class="number">2</span>) {
+      e++
+      c /= <span class="number">2</span>
+    }
+
+    <span class="keyword">if</span> (e + eBias >= eMax) {
+      m = <span class="number">0</span>
+      e = eMax
+    } <span class="keyword">else</span> <span class="keyword">if</span> (e + eBias >= <span class="number">1</span>) {
+      m = ((value * c) - <span class="number">1</span>) * Math.pow(<span class="number">2</span>, mLen)
+      e = e + eBias
+    } <span class="keyword">else</span> {
+      m = value * Math.pow(<span class="number">2</span>, eBias - <span class="number">1</span>) * Math.pow(<span class="number">2</span>, mLen)
+      e = <span class="number">0</span>
+    }
+  }
+
+  <span class="keyword">for</span> (; mLen >= <span class="number">8</span>; buffer[offset + i] = m &amp; <span class="number">0xff</span>, i += d, m /= <span class="number">256</span>, mLen -= <span class="number">8</span>) {}
+
+  e = (e &lt;&lt; mLen) | m
+  eLen += mLen
+  <span class="keyword">for</span> (; eLen > <span class="number">0</span>; buffer[offset + i] = e &amp; <span class="number">0xff</span>, i += d, e /= <span class="number">256</span>, eLen -= <span class="number">8</span>) {}
+
+  buffer[offset + i - d] |= s * <span class="number">128</span>
+}
+</code></pre>

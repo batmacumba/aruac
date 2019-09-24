@@ -1,0 +1,59 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> aparse = require(<span class="string">'acorn-node'</span>).parse;
+<span class="function"><span class="keyword">function</span> <span class="title">parse</span> <span class="params">(src, opts)</span> {</span>
+    <span class="keyword">if</span> (!opts) opts = {}
+    <span class="keyword">return</span> aparse(src, opts);
+}
+
+module.exports = <span class="function"><span class="keyword">function</span> <span class="params">(src, file,opts)</span> {</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> src !== <span class="string">'string'</span>) src = String(src);
+    
+    <span class="keyword">try</span> {
+        eval(<span class="string">'throw "STOP"; (function () { '</span> + src + <span class="string">'\n})()'</span>);
+        <span class="keyword">return</span>;
+    }
+    <span class="keyword">catch</span> (err) {
+        <span class="keyword">if</span> (err === <span class="string">'STOP'</span>) <span class="keyword">return</span> <span class="literal">undefined</span>;
+        <span class="keyword">if</span> (err.constructor.name !== <span class="string">'SyntaxError'</span>) <span class="keyword">return</span> err;
+        <span class="keyword">return</span> errorInfo(src, file, opts);
+    }
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">errorInfo</span> <span class="params">(src, file, opts)</span> {</span>
+    <span class="keyword">try</span> { parse(src,opts) }
+    <span class="keyword">catch</span> (err) {
+        <span class="keyword">return</span> <span class="keyword">new</span> ParseError(err, src, file);
+    }
+    <span class="keyword">return</span> <span class="literal">undefined</span>;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">ParseError</span> <span class="params">(err, src, file)</span> {</span>
+    SyntaxError.call(<span class="keyword">this</span>);
+    
+    <span class="keyword">this</span>.message = err.message.replace(<span class="regexp">/\s+\(\d+:\d+\)$/</span>, <span class="string">''</span>);
+    
+    <span class="keyword">this</span>.line = err.loc.line;
+    <span class="keyword">this</span>.column = err.loc.column + <span class="number">1</span>;
+    
+    <span class="keyword">this</span>.annotated = <span class="string">'\n'</span>
+        + (file || <span class="string">'(anonymous file)'</span>)
+        + <span class="string">':'</span> + <span class="keyword">this</span>.line
+        + <span class="string">'\n'</span>
+        + src.split(<span class="string">'\n'</span>)[<span class="keyword">this</span>.line - <span class="number">1</span>]
+        + <span class="string">'\n'</span>
+        + Array(<span class="keyword">this</span>.column).join(<span class="string">' '</span>) + <span class="string">'^'</span>
+        + <span class="string">'\n'</span>
+        + <span class="string">'ParseError: '</span> + <span class="keyword">this</span>.message
+    ;
+}
+
+ParseError.prototype = Object.create(SyntaxError.prototype);
+
+ParseError.prototype.toString = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.annotated;
+};
+
+ParseError.prototype.inspect = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.annotated;
+};
+</code></pre>

@@ -1,0 +1,458 @@
+<h1>walk.js</h1>
+<pre><code class="lang-js">(<span class="function"><span class="keyword">function</span> <span class="params">(global, factory)</span> {</span>
+	<span class="keyword">typeof</span> exports === <span class="string">'object'</span> &amp;&amp; <span class="keyword">typeof</span> module !== <span class="string">'undefined'</span> ? factory(exports) :
+	<span class="keyword">typeof</span> define === <span class="string">'function'</span> &amp;&amp; define.amd ? define([<span class="string">'exports'</span>], factory) :
+	(factory((global.acorn = global.acorn || {}, global.acorn.walk = {})));
+}(<span class="keyword">this</span>, (<span class="function"><span class="keyword">function</span> <span class="params">(exports)</span> {</span> <span class="string">'use strict'</span>;
+
+<span class="comment">// AST walker module for Mozilla Parser API compatible trees</span>
+
+<span class="comment">// A simple walk is one where you simply specify callbacks to be</span>
+<span class="comment">// called on specific nodes. The last two arguments are optional. A</span>
+<span class="comment">// simple use would be</span>
+<span class="comment">//</span>
+<span class="comment">//     walk.simple(myTree, {</span>
+<span class="comment">//         Expression: function(node) { ... }</span>
+<span class="comment">//     });</span>
+<span class="comment">//</span>
+<span class="comment">// to do something with all expressions. All Parser API node types</span>
+<span class="comment">// can be used to identify node types, as well as Expression and</span>
+<span class="comment">// Statement, which denote categories of nodes.</span>
+<span class="comment">//</span>
+<span class="comment">// The base argument can be used to pass a custom (recursive)</span>
+<span class="comment">// walker, and state can be used to give this walked an initial</span>
+<span class="comment">// state.</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">simple</span><span class="params">(node, visitors, baseVisitor, state, override)</span> {</span>
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base
+  ; }(<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+    <span class="keyword">var</span> type = override || node.type, found = visitors[type];
+    baseVisitor[type](node, st, c);
+    <span class="keyword">if</span> (found) { found(node, st); }
+  })(node, state, override);
+}
+
+<span class="comment">// An ancestor walk keeps an array of ancestor nodes (including the</span>
+<span class="comment">// current node) and passes them to the callback as third parameter</span>
+<span class="comment">// (and also as state parameter when no other state is present).</span>
+<span class="function"><span class="keyword">function</span> <span class="title">ancestor</span><span class="params">(node, visitors, baseVisitor, state)</span> {</span>
+  <span class="keyword">var</span> ancestors = [];
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base
+  ; }(<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+    <span class="keyword">var</span> type = override || node.type, found = visitors[type];
+    <span class="keyword">var</span> isNew = node !== ancestors[ancestors.length - <span class="number">1</span>];
+    <span class="keyword">if</span> (isNew) { ancestors.push(node); }
+    baseVisitor[type](node, st, c);
+    <span class="keyword">if</span> (found) { found(node, st || ancestors, ancestors); }
+    <span class="keyword">if</span> (isNew) { ancestors.pop(); }
+  })(node, state);
+}
+
+<span class="comment">// A recursive walk is one where your functions override the default</span>
+<span class="comment">// walkers. They can modify and replace the state parameter that's</span>
+<span class="comment">// threaded through the walk, and can opt how and whether to walk</span>
+<span class="comment">// their child nodes (by calling their third argument on these</span>
+<span class="comment">// nodes).</span>
+<span class="function"><span class="keyword">function</span> <span class="title">recursive</span><span class="params">(node, state, funcs, baseVisitor, override)</span> {</span>
+  <span class="keyword">var</span> visitor = funcs ? make(funcs, baseVisitor || <span class="literal">undefined</span>) : baseVisitor;(<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+    visitor[override || node.type](node, st, c);
+  })(node, state, override);
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">makeTest</span><span class="params">(test)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> test === <span class="string">"string"</span>)
+    { <span class="keyword">return</span> <span class="function"><span class="keyword">function</span> <span class="params">(type)</span> {</span> <span class="keyword">return</span> type === test; } }
+  <span class="keyword">else</span> <span class="keyword">if</span> (!test)
+    { <span class="keyword">return</span> <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span> <span class="keyword">return</span> <span class="literal">true</span>; } }
+  <span class="keyword">else</span>
+    { <span class="keyword">return</span> test }
+}
+
+<span class="keyword">var</span> Found = <span class="function"><span class="keyword">function</span> <span class="title">Found</span><span class="params">(node, state)</span> {</span> <span class="keyword">this</span>.node = node; <span class="keyword">this</span>.state = state; };
+
+<span class="comment">// A full walk triggers the callback on each node</span>
+<span class="function"><span class="keyword">function</span> <span class="title">full</span><span class="params">(node, callback, baseVisitor, state, override)</span> {</span>
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base
+  ; }(<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+    <span class="keyword">var</span> type = override || node.type;
+    baseVisitor[type](node, st, c);
+    <span class="keyword">if</span> (!override) { callback(node, st, type); }
+  })(node, state, override);
+}
+
+<span class="comment">// An fullAncestor walk is like an ancestor walk, but triggers</span>
+<span class="comment">// the callback on each node</span>
+<span class="function"><span class="keyword">function</span> <span class="title">fullAncestor</span><span class="params">(node, callback, baseVisitor, state)</span> {</span>
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base; }
+  <span class="keyword">var</span> ancestors = [];(<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+    <span class="keyword">var</span> type = override || node.type;
+    <span class="keyword">var</span> isNew = node !== ancestors[ancestors.length - <span class="number">1</span>];
+    <span class="keyword">if</span> (isNew) { ancestors.push(node); }
+    baseVisitor[type](node, st, c);
+    <span class="keyword">if</span> (!override) { callback(node, st || ancestors, ancestors, type); }
+    <span class="keyword">if</span> (isNew) { ancestors.pop(); }
+  })(node, state);
+}
+
+<span class="comment">// Find a node with a given start, end, and type (all are optional,</span>
+<span class="comment">// null can be used as wildcard). Returns a {node, state} object, or</span>
+<span class="comment">// undefined when it doesn't find a matching node.</span>
+<span class="function"><span class="keyword">function</span> <span class="title">findNodeAt</span><span class="params">(node, start, end, test, baseVisitor, state)</span> {</span>
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base; }
+  test = makeTest(test);
+  <span class="keyword">try</span> {
+    (<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+      <span class="keyword">var</span> type = override || node.type;
+      <span class="keyword">if</span> ((start == <span class="literal">null</span> || node.start &lt;= start) &amp;&amp;
+          (end == <span class="literal">null</span> || node.end >= end))
+        { baseVisitor[type](node, st, c); }
+      <span class="keyword">if</span> ((start == <span class="literal">null</span> || node.start === start) &amp;&amp;
+          (end == <span class="literal">null</span> || node.end === end) &amp;&amp;
+          test(type, node))
+        { <span class="keyword">throw</span> <span class="keyword">new</span> Found(node, st) }
+    })(node, state);
+  } <span class="keyword">catch</span> (e) {
+    <span class="keyword">if</span> (e <span class="keyword">instanceof</span> Found) { <span class="keyword">return</span> e }
+    <span class="keyword">throw</span> e
+  }
+}
+
+<span class="comment">// Find the innermost node of a given type that contains the given</span>
+<span class="comment">// position. Interface similar to findNodeAt.</span>
+<span class="function"><span class="keyword">function</span> <span class="title">findNodeAround</span><span class="params">(node, pos, test, baseVisitor, state)</span> {</span>
+  test = makeTest(test);
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base; }
+  <span class="keyword">try</span> {
+    (<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+      <span class="keyword">var</span> type = override || node.type;
+      <span class="keyword">if</span> (node.start > pos || node.end &lt; pos) { <span class="keyword">return</span> }
+      baseVisitor[type](node, st, c);
+      <span class="keyword">if</span> (test(type, node)) { <span class="keyword">throw</span> <span class="keyword">new</span> Found(node, st) }
+    })(node, state);
+  } <span class="keyword">catch</span> (e) {
+    <span class="keyword">if</span> (e <span class="keyword">instanceof</span> Found) { <span class="keyword">return</span> e }
+    <span class="keyword">throw</span> e
+  }
+}
+
+<span class="comment">// Find the outermost matching node after a given position.</span>
+<span class="function"><span class="keyword">function</span> <span class="title">findNodeAfter</span><span class="params">(node, pos, test, baseVisitor, state)</span> {</span>
+  test = makeTest(test);
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base; }
+  <span class="keyword">try</span> {
+    (<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+      <span class="keyword">if</span> (node.end &lt; pos) { <span class="keyword">return</span> }
+      <span class="keyword">var</span> type = override || node.type;
+      <span class="keyword">if</span> (node.start >= pos &amp;&amp; test(type, node)) { <span class="keyword">throw</span> <span class="keyword">new</span> Found(node, st) }
+      baseVisitor[type](node, st, c);
+    })(node, state);
+  } <span class="keyword">catch</span> (e) {
+    <span class="keyword">if</span> (e <span class="keyword">instanceof</span> Found) { <span class="keyword">return</span> e }
+    <span class="keyword">throw</span> e
+  }
+}
+
+<span class="comment">// Find the outermost matching node before a given position.</span>
+<span class="function"><span class="keyword">function</span> <span class="title">findNodeBefore</span><span class="params">(node, pos, test, baseVisitor, state)</span> {</span>
+  test = makeTest(test);
+  <span class="keyword">if</span> (!baseVisitor) { baseVisitor = base; }
+  <span class="keyword">var</span> max;(<span class="function"><span class="keyword">function</span> <span class="title">c</span><span class="params">(node, st, override)</span> {</span>
+    <span class="keyword">if</span> (node.start > pos) { <span class="keyword">return</span> }
+    <span class="keyword">var</span> type = override || node.type;
+    <span class="keyword">if</span> (node.end &lt;= pos &amp;&amp; (!max || max.node.end &lt; node.end) &amp;&amp; test(type, node))
+      { max = <span class="keyword">new</span> Found(node, st); }
+    baseVisitor[type](node, st, c);
+  })(node, state);
+  <span class="keyword">return</span> max
+}
+
+<span class="comment">// Fallback to an Object.create polyfill for older environments.</span>
+<span class="keyword">var</span> create = Object.create || <span class="keyword">function</span>(proto) {
+  <span class="function"><span class="keyword">function</span> <span class="title">Ctor</span><span class="params">()</span> {</span>}
+  Ctor.prototype = proto;
+  <span class="keyword">return</span> <span class="keyword">new</span> Ctor
+};
+
+<span class="comment">// Used to create a custom walker. Will fill in all missing node</span>
+<span class="comment">// type properties with the defaults.</span>
+<span class="function"><span class="keyword">function</span> <span class="title">make</span><span class="params">(funcs, baseVisitor)</span> {</span>
+  <span class="keyword">var</span> visitor = create(baseVisitor || base);
+  <span class="keyword">for</span> (<span class="keyword">var</span> type <span class="keyword">in</span> funcs) { visitor[type] = funcs[type]; }
+  <span class="keyword">return</span> visitor
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">skipThrough</span><span class="params">(node, st, c)</span> {</span> c(node, st); }
+<span class="function"><span class="keyword">function</span> <span class="title">ignore</span><span class="params">(_node, _st, _c)</span> {</span>}
+
+<span class="comment">// Node walkers.</span>
+
+<span class="keyword">var</span> base = {};
+
+base.Program = base.BlockStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.body; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> stmt = list[i];
+
+    c(stmt, st, <span class="string">"Statement"</span>);
+  }
+};
+base.Statement = skipThrough;
+base.EmptyStatement = ignore;
+base.ExpressionStatement = base.ParenthesizedExpression =
+  <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span> <span class="keyword">return</span> c(node.expression, st, <span class="string">"Expression"</span>); };
+base.IfStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.test, st, <span class="string">"Expression"</span>);
+  c(node.consequent, st, <span class="string">"Statement"</span>);
+  <span class="keyword">if</span> (node.alternate) { c(node.alternate, st, <span class="string">"Statement"</span>); }
+};
+base.LabeledStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span> <span class="keyword">return</span> c(node.body, st, <span class="string">"Statement"</span>); };
+base.BreakStatement = base.ContinueStatement = ignore;
+base.WithStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.object, st, <span class="string">"Expression"</span>);
+  c(node.body, st, <span class="string">"Statement"</span>);
+};
+base.SwitchStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.discriminant, st, <span class="string">"Expression"</span>);
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.cases; i &lt; list.length; i += <span class="number">1</span>) {
+    <span class="keyword">var</span> cs = list[i];
+
+    <span class="keyword">if</span> (cs.test) { c(cs.test, st, <span class="string">"Expression"</span>); }
+    <span class="keyword">for</span> (<span class="keyword">var</span> i$<span class="number">1</span> = <span class="number">0</span>, list$<span class="number">1</span> = cs.consequent; i$<span class="number">1</span> &lt; list$<span class="number">1.</span>length; i$<span class="number">1</span> += <span class="number">1</span>)
+      {
+      <span class="keyword">var</span> cons = list$<span class="number">1</span>[i$<span class="number">1</span>];
+
+      c(cons, st, <span class="string">"Statement"</span>);
+    }
+  }
+};
+base.SwitchCase = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.test) { c(node.test, st, <span class="string">"Expression"</span>); }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.consequent; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> cons = list[i];
+
+    c(cons, st, <span class="string">"Statement"</span>);
+  }
+};
+base.ReturnStatement = base.YieldExpression = base.AwaitExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.argument) { c(node.argument, st, <span class="string">"Expression"</span>); }
+};
+base.ThrowStatement = base.SpreadElement =
+  <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span> <span class="keyword">return</span> c(node.argument, st, <span class="string">"Expression"</span>); };
+base.TryStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.block, st, <span class="string">"Statement"</span>);
+  <span class="keyword">if</span> (node.handler) { c(node.handler, st); }
+  <span class="keyword">if</span> (node.finalizer) { c(node.finalizer, st, <span class="string">"Statement"</span>); }
+};
+base.CatchClause = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.param) { c(node.param, st, <span class="string">"Pattern"</span>); }
+  c(node.body, st, <span class="string">"Statement"</span>);
+};
+base.WhileStatement = base.DoWhileStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.test, st, <span class="string">"Expression"</span>);
+  c(node.body, st, <span class="string">"Statement"</span>);
+};
+base.ForStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.init) { c(node.init, st, <span class="string">"ForInit"</span>); }
+  <span class="keyword">if</span> (node.test) { c(node.test, st, <span class="string">"Expression"</span>); }
+  <span class="keyword">if</span> (node.update) { c(node.update, st, <span class="string">"Expression"</span>); }
+  c(node.body, st, <span class="string">"Statement"</span>);
+};
+base.ForInStatement = base.ForOfStatement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.left, st, <span class="string">"ForInit"</span>);
+  c(node.right, st, <span class="string">"Expression"</span>);
+  c(node.body, st, <span class="string">"Statement"</span>);
+};
+base.ForInit = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.type === <span class="string">"VariableDeclaration"</span>) { c(node, st); }
+  <span class="keyword">else</span> { c(node, st, <span class="string">"Expression"</span>); }
+};
+base.DebuggerStatement = ignore;
+
+base.FunctionDeclaration = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span> <span class="keyword">return</span> c(node, st, <span class="string">"Function"</span>); };
+base.VariableDeclaration = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.declarations; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> decl = list[i];
+
+    c(decl, st);
+  }
+};
+base.VariableDeclarator = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.id, st, <span class="string">"Pattern"</span>);
+  <span class="keyword">if</span> (node.init) { c(node.init, st, <span class="string">"Expression"</span>); }
+};
+
+base.Function = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.id) { c(node.id, st, <span class="string">"Pattern"</span>); }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.params; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> param = list[i];
+
+    c(param, st, <span class="string">"Pattern"</span>);
+  }
+  c(node.body, st, node.expression ? <span class="string">"Expression"</span> : <span class="string">"Statement"</span>);
+};
+
+base.Pattern = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.type === <span class="string">"Identifier"</span>)
+    { c(node, st, <span class="string">"VariablePattern"</span>); }
+  <span class="keyword">else</span> <span class="keyword">if</span> (node.type === <span class="string">"MemberExpression"</span>)
+    { c(node, st, <span class="string">"MemberPattern"</span>); }
+  <span class="keyword">else</span>
+    { c(node, st); }
+};
+base.VariablePattern = ignore;
+base.MemberPattern = skipThrough;
+base.RestElement = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span> <span class="keyword">return</span> c(node.argument, st, <span class="string">"Pattern"</span>); };
+base.ArrayPattern = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.elements; i &lt; list.length; i += <span class="number">1</span>) {
+    <span class="keyword">var</span> elt = list[i];
+
+    <span class="keyword">if</span> (elt) { c(elt, st, <span class="string">"Pattern"</span>); }
+  }
+};
+base.ObjectPattern = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.properties; i &lt; list.length; i += <span class="number">1</span>) {
+    <span class="keyword">var</span> prop = list[i];
+
+    <span class="keyword">if</span> (prop.type === <span class="string">"Property"</span>) {
+      <span class="keyword">if</span> (prop.computed) { c(prop.key, st, <span class="string">"Expression"</span>); }
+      c(prop.value, st, <span class="string">"Pattern"</span>);
+    } <span class="keyword">else</span> <span class="keyword">if</span> (prop.type === <span class="string">"RestElement"</span>) {
+      c(prop.argument, st, <span class="string">"Pattern"</span>);
+    }
+  }
+};
+
+base.Expression = skipThrough;
+base.ThisExpression = base.Super = base.MetaProperty = ignore;
+base.ArrayExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.elements; i &lt; list.length; i += <span class="number">1</span>) {
+    <span class="keyword">var</span> elt = list[i];
+
+    <span class="keyword">if</span> (elt) { c(elt, st, <span class="string">"Expression"</span>); }
+  }
+};
+base.ObjectExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.properties; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> prop = list[i];
+
+    c(prop, st);
+  }
+};
+base.FunctionExpression = base.ArrowFunctionExpression = base.FunctionDeclaration;
+base.SequenceExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.expressions; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> expr = list[i];
+
+    c(expr, st, <span class="string">"Expression"</span>);
+  }
+};
+base.TemplateLiteral = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.quasis; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> quasi = list[i];
+
+    c(quasi, st);
+  }
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i$<span class="number">1</span> = <span class="number">0</span>, list$<span class="number">1</span> = node.expressions; i$<span class="number">1</span> &lt; list$<span class="number">1.</span>length; i$<span class="number">1</span> += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> expr = list$<span class="number">1</span>[i$<span class="number">1</span>];
+
+    c(expr, st, <span class="string">"Expression"</span>);
+  }
+};
+base.TemplateElement = ignore;
+base.UnaryExpression = base.UpdateExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.argument, st, <span class="string">"Expression"</span>);
+};
+base.BinaryExpression = base.LogicalExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.left, st, <span class="string">"Expression"</span>);
+  c(node.right, st, <span class="string">"Expression"</span>);
+};
+base.AssignmentExpression = base.AssignmentPattern = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.left, st, <span class="string">"Pattern"</span>);
+  c(node.right, st, <span class="string">"Expression"</span>);
+};
+base.ConditionalExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.test, st, <span class="string">"Expression"</span>);
+  c(node.consequent, st, <span class="string">"Expression"</span>);
+  c(node.alternate, st, <span class="string">"Expression"</span>);
+};
+base.NewExpression = base.CallExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.callee, st, <span class="string">"Expression"</span>);
+  <span class="keyword">if</span> (node.arguments)
+    { <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.arguments; i &lt; list.length; i += <span class="number">1</span>)
+      {
+        <span class="keyword">var</span> arg = list[i];
+
+        c(arg, st, <span class="string">"Expression"</span>);
+      } }
+};
+base.MemberExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.object, st, <span class="string">"Expression"</span>);
+  <span class="keyword">if</span> (node.computed) { c(node.property, st, <span class="string">"Expression"</span>); }
+};
+base.ExportNamedDeclaration = base.ExportDefaultDeclaration = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.declaration)
+    { c(node.declaration, st, node.type === <span class="string">"ExportNamedDeclaration"</span> || node.declaration.id ? <span class="string">"Statement"</span> : <span class="string">"Expression"</span>); }
+  <span class="keyword">if</span> (node.source) { c(node.source, st, <span class="string">"Expression"</span>); }
+};
+base.ExportAllDeclaration = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.source, st, <span class="string">"Expression"</span>);
+};
+base.ImportDeclaration = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.specifiers; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> spec = list[i];
+
+    c(spec, st);
+  }
+  c(node.source, st, <span class="string">"Expression"</span>);
+};
+base.ImportSpecifier = base.ImportDefaultSpecifier = base.ImportNamespaceSpecifier = base.Identifier = base.Literal = ignore;
+
+base.TaggedTemplateExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  c(node.tag, st, <span class="string">"Expression"</span>);
+  c(node.quasi, st, <span class="string">"Expression"</span>);
+};
+base.ClassDeclaration = base.ClassExpression = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span> <span class="keyword">return</span> c(node, st, <span class="string">"Class"</span>); };
+base.Class = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.id) { c(node.id, st, <span class="string">"Pattern"</span>); }
+  <span class="keyword">if</span> (node.superClass) { c(node.superClass, st, <span class="string">"Expression"</span>); }
+  c(node.body, st);
+};
+base.ClassBody = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, list = node.body; i &lt; list.length; i += <span class="number">1</span>)
+    {
+    <span class="keyword">var</span> elt = list[i];
+
+    c(elt, st);
+  }
+};
+base.MethodDefinition = base.Property = <span class="function"><span class="keyword">function</span> <span class="params">(node, st, c)</span> {</span>
+  <span class="keyword">if</span> (node.computed) { c(node.key, st, <span class="string">"Expression"</span>); }
+  c(node.value, st, <span class="string">"Expression"</span>);
+};
+
+exports.simple = simple;
+exports.ancestor = ancestor;
+exports.recursive = recursive;
+exports.full = full;
+exports.fullAncestor = fullAncestor;
+exports.findNodeAt = findNodeAt;
+exports.findNodeAround = findNodeAround;
+exports.findNodeAfter = findNodeAfter;
+exports.findNodeBefore = findNodeBefore;
+exports.make = make;
+exports.base = base;
+
+Object.defineProperty(exports, <span class="string">'__esModule'</span>, { value: <span class="literal">true</span> });
+
+})));
+<span class="comment">//# sourceMappingURL=walk.js.map</span>
+</code></pre>

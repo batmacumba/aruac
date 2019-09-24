@@ -1,0 +1,53 @@
+<h1>sync.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> sizes = {
+  md5: <span class="number">16</span>,
+  sha1: <span class="number">20</span>,
+  sha224: <span class="number">28</span>,
+  sha256: <span class="number">32</span>,
+  sha384: <span class="number">48</span>,
+  sha512: <span class="number">64</span>,
+  rmd160: <span class="number">20</span>,
+  ripemd160: <span class="number">20</span>
+}
+
+<span class="keyword">var</span> createHmac = require(<span class="string">'create-hmac'</span>)
+<span class="keyword">var</span> checkParameters = require(<span class="string">'../lib/precondition'</span>)
+<span class="keyword">var</span> defaultEncoding = require(<span class="string">'../lib/default-encoding'</span>)
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+
+<span class="function"><span class="keyword">function</span> <span class="title">pbkdf2</span> <span class="params">(password, salt, iterations, keylen, digest)</span> {</span>
+  checkParameters(password, salt, iterations, keylen)
+
+  <span class="keyword">if</span> (!Buffer.isBuffer(password)) password = Buffer.from(password, defaultEncoding)
+  <span class="keyword">if</span> (!Buffer.isBuffer(salt)) salt = Buffer.from(salt, defaultEncoding)
+
+  digest = digest || <span class="string">'sha1'</span>
+
+  <span class="keyword">var</span> DK = Buffer.allocUnsafe(keylen)
+  <span class="keyword">var</span> block1 = Buffer.allocUnsafe(salt.length + <span class="number">4</span>)
+  salt.copy(block1, <span class="number">0</span>, <span class="number">0</span>, salt.length)
+
+  <span class="keyword">var</span> destPos = <span class="number">0</span>
+  <span class="keyword">var</span> hLen = sizes[digest]
+  <span class="keyword">var</span> l = Math.ceil(keylen / hLen)
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">1</span>; i &lt;= l; i++) {
+    block1.writeUInt32BE(i, salt.length)
+
+    <span class="keyword">var</span> T = createHmac(digest, password).update(block1).digest()
+    <span class="keyword">var</span> U = T
+
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">1</span>; j &lt; iterations; j++) {
+      U = createHmac(digest, password).update(U).digest()
+      <span class="keyword">for</span> (<span class="keyword">var</span> k = <span class="number">0</span>; k &lt; hLen; k++) T[k] ^= U[k]
+    }
+
+    T.copy(DK, destPos)
+    destPos += hLen
+  }
+
+  <span class="keyword">return</span> DK
+}
+
+module.exports = pbkdf2
+</code></pre>

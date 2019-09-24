@@ -1,0 +1,12 @@
+<h1>default-encoding.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> defaultEncoding
+<span class="comment">/* istanbul ignore next */</span>
+<span class="keyword">if</span> (process.browser) {
+  defaultEncoding = <span class="string">'utf-8'</span>
+} <span class="keyword">else</span> {
+  <span class="keyword">var</span> pVersionMajor = parseInt(process.version.split(<span class="string">'.'</span>)[<span class="number">0</span>].slice(<span class="number">1</span>), <span class="number">10</span>)
+
+  defaultEncoding = pVersionMajor >= <span class="number">6</span> ? <span class="string">'utf-8'</span> : <span class="string">'binary'</span>
+}
+module.exports = defaultEncoding
+</code></pre>

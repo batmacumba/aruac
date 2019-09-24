@@ -54,7 +54,7 @@ export default class Home extends React.Component {
             case "producao":
                 this.setState({filterColor: "switch-toggle switch-candy-red"});
                 break;
-            case "longas":
+            case "cinema":
                 this.setState({filterColor: "switch-toggle switch-candy-green"});
                 break;
             case "tv":
@@ -74,19 +74,37 @@ export default class Home extends React.Component {
                     {/* FILTER */}
                     <div class="masonry filter-menu">
                         <div class={this.state.filterColor} id="filter">
-                            <fieldset>
-                                <input id="tudo" name="view" type="radio"/>
-                                <label for="tudo" onClick={this.filterGrid.bind(this, 'tudo')}>tudo</label>
-                                <input id="producao" name="view" type="radio"/>
-                                <label for="producao" onClick={this.filterGrid.bind(this, 'producao')}>produção</label>
-                                <input id="longas" name="view" type="radio"/>
-                                <label for="longas" onClick={this.filterGrid.bind(this, 'longas')}>longas</label>
-                                <input id="tv" name="view" type="radio"/>
-                                <label for="tv" onClick={this.filterGrid.bind(this, 'tv')}>tv</label>
-                                <input id="teatro" name="view" type="radio"/>
-                                <label for="teatro" onClick={this.filterGrid.bind(this, 'teatro')}>teatro</label>
-                                <a></a>
-                            </fieldset>
+                            {this.props.lang == 'pt' &&
+                                <fieldset>
+                                    <input id="tudo" name="view" type="radio"/>
+                                    <label for="tudo" onClick={this.filterGrid.bind(this, 'tudo')}>tudo</label>
+                                    <input id="producao" name="view" type="radio"/>
+                                    <label for="producao" onClick={this.filterGrid.bind(this, 'producao')}>produção</label>
+                                    <input id="cinema" name="view" type="radio"/>
+                                    <label for="cinema" onClick={this.filterGrid.bind(this, 'cinema')}>cinema</label>
+                                    <input id="tv" name="view" type="radio"/>
+                                    <label for="tv" onClick={this.filterGrid.bind(this, 'tv')}>tv</label>
+                                    <input id="teatro" name="view" type="radio"/>
+                                    <label for="teatro" onClick={this.filterGrid.bind(this, 'teatro')}>teatro</label>
+                                    <a></a>
+                                </fieldset>
+                            }
+                            {this.props.lang == 'en' &&
+                                <fieldset>
+                                    <input id="tudo" name="view" type="radio"/>
+                                    <label for="tudo" onClick={this.filterGrid.bind(this, 'tudo')}>all</label>
+                                    <input id="producao" name="view" type="radio"/>
+                                    <label for="producao" onClick={this.filterGrid.bind(this, 'producao')}>in production</label>
+                                    <input id="cinema" name="view" type="radio"/>
+                                    <label for="cinema" onClick={this.filterGrid.bind(this, 'cinema')}>films</label>
+                                    <input id="tv" name="view" type="radio"/>
+                                    <label for="tv" onClick={this.filterGrid.bind(this, 'tv')}>tv</label>
+                                    <input id="teatro" name="view" type="radio"/>
+                                    <label for="teatro" onClick={this.filterGrid.bind(this, 'teatro')}>theater</label>
+                                    <a></a>
+                                </fieldset>
+                            }
+                
                         </div>
                     </div>
                     {/* MASONRY GRID */}

@@ -1,0 +1,15 @@
+<h1>elliptic.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> elliptic = exports;
+
+elliptic.version = require(<span class="string">'../package.json'</span>).version;
+elliptic.utils = require(<span class="string">'./elliptic/utils'</span>);
+elliptic.rand = require(<span class="string">'brorand'</span>);
+elliptic.curve = require(<span class="string">'./elliptic/curve'</span>);
+elliptic.curves = require(<span class="string">'./elliptic/curves'</span>);
+
+<span class="comment">// Protocols</span>
+elliptic.ec = require(<span class="string">'./elliptic/ec'</span>);
+elliptic.eddsa = require(<span class="string">'./elliptic/eddsa'</span>);
+</code></pre>

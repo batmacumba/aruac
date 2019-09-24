@@ -1,0 +1,410 @@
+<h1>binding.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+<span class="comment">/* eslint camelcase: "off" */</span>
+
+<span class="keyword">var</span> assert = require(<span class="string">'assert'</span>);
+
+<span class="keyword">var</span> Zstream = require(<span class="string">'pako/lib/zlib/zstream'</span>);
+<span class="keyword">var</span> zlib_deflate = require(<span class="string">'pako/lib/zlib/deflate.js'</span>);
+<span class="keyword">var</span> zlib_inflate = require(<span class="string">'pako/lib/zlib/inflate.js'</span>);
+<span class="keyword">var</span> constants = require(<span class="string">'pako/lib/zlib/constants'</span>);
+
+<span class="keyword">for</span> (<span class="keyword">var</span> key <span class="keyword">in</span> constants) {
+  exports[key] = constants[key];
+}
+
+<span class="comment">// zlib modes</span>
+exports.NONE = <span class="number">0</span>;
+exports.DEFLATE = <span class="number">1</span>;
+exports.INFLATE = <span class="number">2</span>;
+exports.GZIP = <span class="number">3</span>;
+exports.GUNZIP = <span class="number">4</span>;
+exports.DEFLATERAW = <span class="number">5</span>;
+exports.INFLATERAW = <span class="number">6</span>;
+exports.UNZIP = <span class="number">7</span>;
+
+<span class="keyword">var</span> GZIP_HEADER_ID1 = <span class="number">0x1f</span>;
+<span class="keyword">var</span> GZIP_HEADER_ID2 = <span class="number">0x8b</span>;
+
+<span class="comment">/**
+ * Emulate Node's zlib C++ layer for use by the JS layer in index.js
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">Zlib</span><span class="params">(mode)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> mode !== <span class="string">'number'</span> || mode &lt; exports.DEFLATE || mode > exports.UNZIP) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Bad argument'</span>);
+  }
+
+  <span class="keyword">this</span>.dictionary = <span class="literal">null</span>;
+  <span class="keyword">this</span>.err = <span class="number">0</span>;
+  <span class="keyword">this</span>.flush = <span class="number">0</span>;
+  <span class="keyword">this</span>.init_done = <span class="literal">false</span>;
+  <span class="keyword">this</span>.level = <span class="number">0</span>;
+  <span class="keyword">this</span>.memLevel = <span class="number">0</span>;
+  <span class="keyword">this</span>.mode = mode;
+  <span class="keyword">this</span>.strategy = <span class="number">0</span>;
+  <span class="keyword">this</span>.windowBits = <span class="number">0</span>;
+  <span class="keyword">this</span>.write_in_progress = <span class="literal">false</span>;
+  <span class="keyword">this</span>.pending_close = <span class="literal">false</span>;
+  <span class="keyword">this</span>.gzip_id_bytes_read = <span class="number">0</span>;
+}
+
+Zlib.prototype.close = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.write_in_progress) {
+    <span class="keyword">this</span>.pending_close = <span class="literal">true</span>;
+    <span class="keyword">return</span>;
+  }
+
+  <span class="keyword">this</span>.pending_close = <span class="literal">false</span>;
+
+  assert(<span class="keyword">this</span>.init_done, <span class="string">'close before init'</span>);
+  assert(<span class="keyword">this</span>.mode &lt;= exports.UNZIP);
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.mode === exports.DEFLATE || <span class="keyword">this</span>.mode === exports.GZIP || <span class="keyword">this</span>.mode === exports.DEFLATERAW) {
+    zlib_deflate.deflateEnd(<span class="keyword">this</span>.strm);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.mode === exports.INFLATE || <span class="keyword">this</span>.mode === exports.GUNZIP || <span class="keyword">this</span>.mode === exports.INFLATERAW || <span class="keyword">this</span>.mode === exports.UNZIP) {
+    zlib_inflate.inflateEnd(<span class="keyword">this</span>.strm);
+  }
+
+  <span class="keyword">this</span>.mode = exports.NONE;
+
+  <span class="keyword">this</span>.dictionary = <span class="literal">null</span>;
+};
+
+Zlib.prototype.write = <span class="function"><span class="keyword">function</span> <span class="params">(flush, input, in_off, in_len, out, out_off, out_len)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._write(<span class="literal">true</span>, flush, input, in_off, in_len, out, out_off, out_len);
+};
+
+Zlib.prototype.writeSync = <span class="function"><span class="keyword">function</span> <span class="params">(flush, input, in_off, in_len, out, out_off, out_len)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._write(<span class="literal">false</span>, flush, input, in_off, in_len, out, out_off, out_len);
+};
+
+Zlib.prototype._write = <span class="function"><span class="keyword">function</span> <span class="params">(async, flush, input, in_off, in_len, out, out_off, out_len)</span> {</span>
+  assert.equal(arguments.length, <span class="number">8</span>);
+
+  assert(<span class="keyword">this</span>.init_done, <span class="string">'write before init'</span>);
+  assert(<span class="keyword">this</span>.mode !== exports.NONE, <span class="string">'already finalized'</span>);
+  assert.equal(<span class="literal">false</span>, <span class="keyword">this</span>.write_in_progress, <span class="string">'write already in progress'</span>);
+  assert.equal(<span class="literal">false</span>, <span class="keyword">this</span>.pending_close, <span class="string">'close is pending'</span>);
+
+  <span class="keyword">this</span>.write_in_progress = <span class="literal">true</span>;
+
+  assert.equal(<span class="literal">false</span>, flush === <span class="literal">undefined</span>, <span class="string">'must provide flush value'</span>);
+
+  <span class="keyword">this</span>.write_in_progress = <span class="literal">true</span>;
+
+  <span class="keyword">if</span> (flush !== exports.Z_NO_FLUSH &amp;&amp; flush !== exports.Z_PARTIAL_FLUSH &amp;&amp; flush !== exports.Z_SYNC_FLUSH &amp;&amp; flush !== exports.Z_FULL_FLUSH &amp;&amp; flush !== exports.Z_FINISH &amp;&amp; flush !== exports.Z_BLOCK) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Invalid flush value'</span>);
+  }
+
+  <span class="keyword">if</span> (input == <span class="literal">null</span>) {
+    input = Buffer.alloc(<span class="number">0</span>);
+    in_len = <span class="number">0</span>;
+    in_off = <span class="number">0</span>;
+  }
+
+  <span class="keyword">this</span>.strm.avail_in = in_len;
+  <span class="keyword">this</span>.strm.input = input;
+  <span class="keyword">this</span>.strm.next_in = in_off;
+  <span class="keyword">this</span>.strm.avail_out = out_len;
+  <span class="keyword">this</span>.strm.output = out;
+  <span class="keyword">this</span>.strm.next_out = out_off;
+  <span class="keyword">this</span>.flush = flush;
+
+  <span class="keyword">if</span> (!async) {
+    <span class="comment">// sync version</span>
+    <span class="keyword">this</span>._process();
+
+    <span class="keyword">if</span> (<span class="keyword">this</span>._checkError()) {
+      <span class="keyword">return</span> <span class="keyword">this</span>._afterSync();
+    }
+    <span class="keyword">return</span>;
+  }
+
+  <span class="comment">// async version</span>
+  <span class="keyword">var</span> self = <span class="keyword">this</span>;
+  process.nextTick(<span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    self._process();
+    self._after();
+  });
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Zlib.prototype._afterSync = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> avail_out = <span class="keyword">this</span>.strm.avail_out;
+  <span class="keyword">var</span> avail_in = <span class="keyword">this</span>.strm.avail_in;
+
+  <span class="keyword">this</span>.write_in_progress = <span class="literal">false</span>;
+
+  <span class="keyword">return</span> [avail_in, avail_out];
+};
+
+Zlib.prototype._process = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> next_expected_header_byte = <span class="literal">null</span>;
+
+  <span class="comment">// If the avail_out is left at 0, then it means that it ran out</span>
+  <span class="comment">// of room.  If there was avail_out left over, then it means</span>
+  <span class="comment">// that all of the input was consumed.</span>
+  <span class="keyword">switch</span> (<span class="keyword">this</span>.mode) {
+    <span class="keyword">case</span> exports.DEFLATE:
+    <span class="keyword">case</span> exports.GZIP:
+    <span class="keyword">case</span> exports.DEFLATERAW:
+      <span class="keyword">this</span>.err = zlib_deflate.deflate(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.flush);
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> exports.UNZIP:
+      <span class="keyword">if</span> (<span class="keyword">this</span>.strm.avail_in > <span class="number">0</span>) {
+        next_expected_header_byte = <span class="keyword">this</span>.strm.next_in;
+      }
+
+      <span class="keyword">switch</span> (<span class="keyword">this</span>.gzip_id_bytes_read) {
+        <span class="keyword">case</span> <span class="number">0</span>:
+          <span class="keyword">if</span> (next_expected_header_byte === <span class="literal">null</span>) {
+            <span class="keyword">break</span>;
+          }
+
+          <span class="keyword">if</span> (<span class="keyword">this</span>.strm.input[next_expected_header_byte] === GZIP_HEADER_ID1) {
+            <span class="keyword">this</span>.gzip_id_bytes_read = <span class="number">1</span>;
+            next_expected_header_byte++;
+
+            <span class="keyword">if</span> (<span class="keyword">this</span>.strm.avail_in === <span class="number">1</span>) {
+              <span class="comment">// The only available byte was already read.</span>
+              <span class="keyword">break</span>;
+            }
+          } <span class="keyword">else</span> {
+            <span class="keyword">this</span>.mode = exports.INFLATE;
+            <span class="keyword">break</span>;
+          }
+
+        <span class="comment">// fallthrough</span>
+        <span class="keyword">case</span> <span class="number">1</span>:
+          <span class="keyword">if</span> (next_expected_header_byte === <span class="literal">null</span>) {
+            <span class="keyword">break</span>;
+          }
+
+          <span class="keyword">if</span> (<span class="keyword">this</span>.strm.input[next_expected_header_byte] === GZIP_HEADER_ID2) {
+            <span class="keyword">this</span>.gzip_id_bytes_read = <span class="number">2</span>;
+            <span class="keyword">this</span>.mode = exports.GUNZIP;
+          } <span class="keyword">else</span> {
+            <span class="comment">// There is no actual difference between INFLATE and INFLATERAW</span>
+            <span class="comment">// (after initialization).</span>
+            <span class="keyword">this</span>.mode = exports.INFLATE;
+          }
+
+          <span class="keyword">break</span>;
+        <span class="keyword">default</span>:
+          <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'invalid number of gzip magic number bytes read'</span>);
+      }
+
+    <span class="comment">// fallthrough</span>
+    <span class="keyword">case</span> exports.INFLATE:
+    <span class="keyword">case</span> exports.GUNZIP:
+    <span class="keyword">case</span> exports.INFLATERAW:
+      <span class="keyword">this</span>.err = zlib_inflate.inflate(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.flush
+
+      <span class="comment">// If data was encoded with dictionary</span>
+      );<span class="keyword">if</span> (<span class="keyword">this</span>.err === exports.Z_NEED_DICT &amp;&amp; <span class="keyword">this</span>.dictionary) {
+        <span class="comment">// Load it</span>
+        <span class="keyword">this</span>.err = zlib_inflate.inflateSetDictionary(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.dictionary);
+        <span class="keyword">if</span> (<span class="keyword">this</span>.err === exports.Z_OK) {
+          <span class="comment">// And try to decode again</span>
+          <span class="keyword">this</span>.err = zlib_inflate.inflate(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.flush);
+        } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.err === exports.Z_DATA_ERROR) {
+          <span class="comment">// Both inflateSetDictionary() and inflate() return Z_DATA_ERROR.</span>
+          <span class="comment">// Make it possible for After() to tell a bad dictionary from bad</span>
+          <span class="comment">// input.</span>
+          <span class="keyword">this</span>.err = exports.Z_NEED_DICT;
+        }
+      }
+      <span class="keyword">while</span> (<span class="keyword">this</span>.strm.avail_in > <span class="number">0</span> &amp;&amp; <span class="keyword">this</span>.mode === exports.GUNZIP &amp;&amp; <span class="keyword">this</span>.err === exports.Z_STREAM_END &amp;&amp; <span class="keyword">this</span>.strm.next_in[<span class="number">0</span>] !== <span class="number">0x00</span>) {
+        <span class="comment">// Bytes remain in input buffer. Perhaps this is another compressed</span>
+        <span class="comment">// member in the same archive, or just trailing garbage.</span>
+        <span class="comment">// Trailing zero bytes are okay, though, since they are frequently</span>
+        <span class="comment">// used for padding.</span>
+
+        <span class="keyword">this</span>.reset();
+        <span class="keyword">this</span>.err = zlib_inflate.inflate(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.flush);
+      }
+      <span class="keyword">break</span>;
+    <span class="keyword">default</span>:
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Unknown mode '</span> + <span class="keyword">this</span>.mode);
+  }
+};
+
+Zlib.prototype._checkError = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="comment">// Acceptable error states depend on the type of zlib stream.</span>
+  <span class="keyword">switch</span> (<span class="keyword">this</span>.err) {
+    <span class="keyword">case</span> exports.Z_OK:
+    <span class="keyword">case</span> exports.Z_BUF_ERROR:
+      <span class="keyword">if</span> (<span class="keyword">this</span>.strm.avail_out !== <span class="number">0</span> &amp;&amp; <span class="keyword">this</span>.flush === exports.Z_FINISH) {
+        <span class="keyword">this</span>._error(<span class="string">'unexpected end of file'</span>);
+        <span class="keyword">return</span> <span class="literal">false</span>;
+      }
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> exports.Z_STREAM_END:
+      <span class="comment">// normal statuses, not fatal</span>
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> exports.Z_NEED_DICT:
+      <span class="keyword">if</span> (<span class="keyword">this</span>.dictionary == <span class="literal">null</span>) {
+        <span class="keyword">this</span>._error(<span class="string">'Missing dictionary'</span>);
+      } <span class="keyword">else</span> {
+        <span class="keyword">this</span>._error(<span class="string">'Bad dictionary'</span>);
+      }
+      <span class="keyword">return</span> <span class="literal">false</span>;
+    <span class="keyword">default</span>:
+      <span class="comment">// something else.</span>
+      <span class="keyword">this</span>._error(<span class="string">'Zlib error'</span>);
+      <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  <span class="keyword">return</span> <span class="literal">true</span>;
+};
+
+Zlib.prototype._after = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>._checkError()) {
+    <span class="keyword">return</span>;
+  }
+
+  <span class="keyword">var</span> avail_out = <span class="keyword">this</span>.strm.avail_out;
+  <span class="keyword">var</span> avail_in = <span class="keyword">this</span>.strm.avail_in;
+
+  <span class="keyword">this</span>.write_in_progress = <span class="literal">false</span>;
+
+  <span class="comment">// call the write() cb</span>
+  <span class="keyword">this</span>.callback(avail_in, avail_out);
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.pending_close) {
+    <span class="keyword">this</span>.close();
+  }
+};
+
+Zlib.prototype._error = <span class="function"><span class="keyword">function</span> <span class="params">(message)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.strm.msg) {
+    message = <span class="keyword">this</span>.strm.msg;
+  }
+  <span class="keyword">this</span>.onerror(message, <span class="keyword">this</span>.err
+
+  <span class="comment">// no hope of rescue.</span>
+  );<span class="keyword">this</span>.write_in_progress = <span class="literal">false</span>;
+  <span class="keyword">if</span> (<span class="keyword">this</span>.pending_close) {
+    <span class="keyword">this</span>.close();
+  }
+};
+
+Zlib.prototype.init = <span class="function"><span class="keyword">function</span> <span class="params">(windowBits, level, memLevel, strategy, dictionary)</span> {</span>
+  assert(arguments.length === <span class="number">4</span> || arguments.length === <span class="number">5</span>, <span class="string">'init(windowBits, level, memLevel, strategy, [dictionary])'</span>);
+
+  assert(windowBits >= <span class="number">8</span> &amp;&amp; windowBits &lt;= <span class="number">15</span>, <span class="string">'invalid windowBits'</span>);
+  assert(level >= -<span class="number">1</span> &amp;&amp; level &lt;= <span class="number">9</span>, <span class="string">'invalid compression level'</span>);
+
+  assert(memLevel >= <span class="number">1</span> &amp;&amp; memLevel &lt;= <span class="number">9</span>, <span class="string">'invalid memlevel'</span>);
+
+  assert(strategy === exports.Z_FILTERED || strategy === exports.Z_HUFFMAN_ONLY || strategy === exports.Z_RLE || strategy === exports.Z_FIXED || strategy === exports.Z_DEFAULT_STRATEGY, <span class="string">'invalid strategy'</span>);
+
+  <span class="keyword">this</span>._init(level, windowBits, memLevel, strategy, dictionary);
+  <span class="keyword">this</span>._setDictionary();
+};
+
+Zlib.prototype.params = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'deflateParams Not supported'</span>);
+};
+
+Zlib.prototype.reset = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>._reset();
+  <span class="keyword">this</span>._setDictionary();
+};
+
+Zlib.prototype._init = <span class="function"><span class="keyword">function</span> <span class="params">(level, windowBits, memLevel, strategy, dictionary)</span> {</span>
+  <span class="keyword">this</span>.level = level;
+  <span class="keyword">this</span>.windowBits = windowBits;
+  <span class="keyword">this</span>.memLevel = memLevel;
+  <span class="keyword">this</span>.strategy = strategy;
+
+  <span class="keyword">this</span>.flush = exports.Z_NO_FLUSH;
+
+  <span class="keyword">this</span>.err = exports.Z_OK;
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.mode === exports.GZIP || <span class="keyword">this</span>.mode === exports.GUNZIP) {
+    <span class="keyword">this</span>.windowBits += <span class="number">16</span>;
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.mode === exports.UNZIP) {
+    <span class="keyword">this</span>.windowBits += <span class="number">32</span>;
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.mode === exports.DEFLATERAW || <span class="keyword">this</span>.mode === exports.INFLATERAW) {
+    <span class="keyword">this</span>.windowBits = -<span class="number">1</span> * <span class="keyword">this</span>.windowBits;
+  }
+
+  <span class="keyword">this</span>.strm = <span class="keyword">new</span> Zstream();
+
+  <span class="keyword">switch</span> (<span class="keyword">this</span>.mode) {
+    <span class="keyword">case</span> exports.DEFLATE:
+    <span class="keyword">case</span> exports.GZIP:
+    <span class="keyword">case</span> exports.DEFLATERAW:
+      <span class="keyword">this</span>.err = zlib_deflate.deflateInit2(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.level, exports.Z_DEFLATED, <span class="keyword">this</span>.windowBits, <span class="keyword">this</span>.memLevel, <span class="keyword">this</span>.strategy);
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> exports.INFLATE:
+    <span class="keyword">case</span> exports.GUNZIP:
+    <span class="keyword">case</span> exports.INFLATERAW:
+    <span class="keyword">case</span> exports.UNZIP:
+      <span class="keyword">this</span>.err = zlib_inflate.inflateInit2(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.windowBits);
+      <span class="keyword">break</span>;
+    <span class="keyword">default</span>:
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Unknown mode '</span> + <span class="keyword">this</span>.mode);
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.err !== exports.Z_OK) {
+    <span class="keyword">this</span>._error(<span class="string">'Init error'</span>);
+  }
+
+  <span class="keyword">this</span>.dictionary = dictionary;
+
+  <span class="keyword">this</span>.write_in_progress = <span class="literal">false</span>;
+  <span class="keyword">this</span>.init_done = <span class="literal">true</span>;
+};
+
+Zlib.prototype._setDictionary = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.dictionary == <span class="literal">null</span>) {
+    <span class="keyword">return</span>;
+  }
+
+  <span class="keyword">this</span>.err = exports.Z_OK;
+
+  <span class="keyword">switch</span> (<span class="keyword">this</span>.mode) {
+    <span class="keyword">case</span> exports.DEFLATE:
+    <span class="keyword">case</span> exports.DEFLATERAW:
+      <span class="keyword">this</span>.err = zlib_deflate.deflateSetDictionary(<span class="keyword">this</span>.strm, <span class="keyword">this</span>.dictionary);
+      <span class="keyword">break</span>;
+    <span class="keyword">default</span>:
+      <span class="keyword">break</span>;
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.err !== exports.Z_OK) {
+    <span class="keyword">this</span>._error(<span class="string">'Failed to set dictionary'</span>);
+  }
+};
+
+Zlib.prototype._reset = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.err = exports.Z_OK;
+
+  <span class="keyword">switch</span> (<span class="keyword">this</span>.mode) {
+    <span class="keyword">case</span> exports.DEFLATE:
+    <span class="keyword">case</span> exports.DEFLATERAW:
+    <span class="keyword">case</span> exports.GZIP:
+      <span class="keyword">this</span>.err = zlib_deflate.deflateReset(<span class="keyword">this</span>.strm);
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> exports.INFLATE:
+    <span class="keyword">case</span> exports.INFLATERAW:
+    <span class="keyword">case</span> exports.GUNZIP:
+      <span class="keyword">this</span>.err = zlib_inflate.inflateReset(<span class="keyword">this</span>.strm);
+      <span class="keyword">break</span>;
+    <span class="keyword">default</span>:
+      <span class="keyword">break</span>;
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.err !== exports.Z_OK) {
+    <span class="keyword">this</span>._error(<span class="string">'Failed to reset stream'</span>);
+  }
+};
+
+exports.Zlib = Zlib;</code></pre>

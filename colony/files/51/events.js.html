@@ -1,0 +1,525 @@
+<h1>events.js</h1>
+<pre><code class="lang-js"><span class="comment">// Copyright Joyent, Inc. and other Node contributors.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is hereby granted, free of charge, to any person obtaining a</span>
+<span class="comment">// copy of this software and associated documentation files (the</span>
+<span class="comment">// "Software"), to deal in the Software without restriction, including</span>
+<span class="comment">// without limitation the rights to use, copy, modify, merge, publish,</span>
+<span class="comment">// distribute, sublicense, and/or sell copies of the Software, and to permit</span>
+<span class="comment">// persons to whom the Software is furnished to do so, subject to the</span>
+<span class="comment">// following conditions:</span>
+<span class="comment">//</span>
+<span class="comment">// The above copyright notice and this permission notice shall be included</span>
+<span class="comment">// in all copies or substantial portions of the Software.</span>
+<span class="comment">//</span>
+<span class="comment">// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS</span>
+<span class="comment">// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF</span>
+<span class="comment">// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN</span>
+<span class="comment">// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,</span>
+<span class="comment">// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR</span>
+<span class="comment">// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE</span>
+<span class="comment">// USE OR OTHER DEALINGS IN THE SOFTWARE.</span>
+
+<span class="keyword">var</span> objectCreate = Object.create || objectCreatePolyfill
+<span class="keyword">var</span> objectKeys = Object.keys || objectKeysPolyfill
+<span class="keyword">var</span> bind = Function.prototype.bind || functionBindPolyfill
+
+<span class="function"><span class="keyword">function</span> <span class="title">EventEmitter</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>._events || !Object.prototype.hasOwnProperty.call(<span class="keyword">this</span>, <span class="string">'_events'</span>)) {
+    <span class="keyword">this</span>._events = objectCreate(<span class="literal">null</span>);
+    <span class="keyword">this</span>._eventsCount = <span class="number">0</span>;
+  }
+
+  <span class="keyword">this</span>._maxListeners = <span class="keyword">this</span>._maxListeners || <span class="literal">undefined</span>;
+}
+module.exports = EventEmitter;
+
+<span class="comment">// Backwards-compat with node 0.10.x</span>
+EventEmitter.EventEmitter = EventEmitter;
+
+EventEmitter.prototype._events = <span class="literal">undefined</span>;
+EventEmitter.prototype._maxListeners = <span class="literal">undefined</span>;
+
+<span class="comment">// By default EventEmitters will print a warning if more than 10 listeners are</span>
+<span class="comment">// added to it. This is a useful default which helps finding memory leaks.</span>
+<span class="keyword">var</span> defaultMaxListeners = <span class="number">10</span>;
+
+<span class="keyword">var</span> hasDefineProperty;
+<span class="keyword">try</span> {
+  <span class="keyword">var</span> o = {};
+  <span class="keyword">if</span> (Object.defineProperty) Object.defineProperty(o, <span class="string">'x'</span>, { value: <span class="number">0</span> });
+  hasDefineProperty = o.x === <span class="number">0</span>;
+} <span class="keyword">catch</span> (err) { hasDefineProperty = <span class="literal">false</span> }
+<span class="keyword">if</span> (hasDefineProperty) {
+  Object.defineProperty(EventEmitter, <span class="string">'defaultMaxListeners'</span>, {
+    enumerable: <span class="literal">true</span>,
+    get: <span class="keyword">function</span>() {
+      <span class="keyword">return</span> defaultMaxListeners;
+    },
+    set: <span class="keyword">function</span>(arg) {
+      <span class="comment">// check whether the input is a positive number (whose value is zero or</span>
+      <span class="comment">// greater and not a NaN).</span>
+      <span class="keyword">if</span> (<span class="keyword">typeof</span> arg !== <span class="string">'number'</span> || arg &lt; <span class="number">0</span> || arg !== arg)
+        <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"defaultMaxListeners" must be a positive number'</span>);
+      defaultMaxListeners = arg;
+    }
+  });
+} <span class="keyword">else</span> {
+  EventEmitter.defaultMaxListeners = defaultMaxListeners;
+}
+
+<span class="comment">// Obviously not all Emitters should be limited to 10. This function allows</span>
+<span class="comment">// that to be increased. Set to zero for unlimited.</span>
+EventEmitter.prototype.setMaxListeners = <span class="function"><span class="keyword">function</span> <span class="title">setMaxListeners</span><span class="params">(n)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> n !== <span class="string">'number'</span> || n &lt; <span class="number">0</span> || isNaN(n))
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"n" argument must be a positive number'</span>);
+  <span class="keyword">this</span>._maxListeners = n;
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">$getMaxListeners</span><span class="params">(that)</span> {</span>
+  <span class="keyword">if</span> (that._maxListeners === <span class="literal">undefined</span>)
+    <span class="keyword">return</span> EventEmitter.defaultMaxListeners;
+  <span class="keyword">return</span> that._maxListeners;
+}
+
+EventEmitter.prototype.getMaxListeners = <span class="function"><span class="keyword">function</span> <span class="title">getMaxListeners</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> $getMaxListeners(<span class="keyword">this</span>);
+};
+
+<span class="comment">// These standalone emit* functions are used to optimize calling of event</span>
+<span class="comment">// handlers for fast cases because emit() itself often has a variable number of</span>
+<span class="comment">// arguments and can be deoptimized because of that. These functions always have</span>
+<span class="comment">// the same number of arguments and thus do not get deoptimized, so the code</span>
+<span class="comment">// inside them can execute faster.</span>
+<span class="function"><span class="keyword">function</span> <span class="title">emitNone</span><span class="params">(handler, isFn, self)</span> {</span>
+  <span class="keyword">if</span> (isFn)
+    handler.call(self);
+  <span class="keyword">else</span> {
+    <span class="keyword">var</span> len = handler.length;
+    <span class="keyword">var</span> listeners = arrayClone(handler, len);
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; ++i)
+      listeners[i].call(self);
+  }
+}
+<span class="function"><span class="keyword">function</span> <span class="title">emitOne</span><span class="params">(handler, isFn, self, arg1)</span> {</span>
+  <span class="keyword">if</span> (isFn)
+    handler.call(self, arg1);
+  <span class="keyword">else</span> {
+    <span class="keyword">var</span> len = handler.length;
+    <span class="keyword">var</span> listeners = arrayClone(handler, len);
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; ++i)
+      listeners[i].call(self, arg1);
+  }
+}
+<span class="function"><span class="keyword">function</span> <span class="title">emitTwo</span><span class="params">(handler, isFn, self, arg1, arg2)</span> {</span>
+  <span class="keyword">if</span> (isFn)
+    handler.call(self, arg1, arg2);
+  <span class="keyword">else</span> {
+    <span class="keyword">var</span> len = handler.length;
+    <span class="keyword">var</span> listeners = arrayClone(handler, len);
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; ++i)
+      listeners[i].call(self, arg1, arg2);
+  }
+}
+<span class="function"><span class="keyword">function</span> <span class="title">emitThree</span><span class="params">(handler, isFn, self, arg1, arg2, arg3)</span> {</span>
+  <span class="keyword">if</span> (isFn)
+    handler.call(self, arg1, arg2, arg3);
+  <span class="keyword">else</span> {
+    <span class="keyword">var</span> len = handler.length;
+    <span class="keyword">var</span> listeners = arrayClone(handler, len);
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; ++i)
+      listeners[i].call(self, arg1, arg2, arg3);
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">emitMany</span><span class="params">(handler, isFn, self, args)</span> {</span>
+  <span class="keyword">if</span> (isFn)
+    handler.apply(self, args);
+  <span class="keyword">else</span> {
+    <span class="keyword">var</span> len = handler.length;
+    <span class="keyword">var</span> listeners = arrayClone(handler, len);
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; ++i)
+      listeners[i].apply(self, args);
+  }
+}
+
+EventEmitter.prototype.emit = <span class="function"><span class="keyword">function</span> <span class="title">emit</span><span class="params">(type)</span> {</span>
+  <span class="keyword">var</span> er, handler, len, args, i, events;
+  <span class="keyword">var</span> doError = (type === <span class="string">'error'</span>);
+
+  events = <span class="keyword">this</span>._events;
+  <span class="keyword">if</span> (events)
+    doError = (doError &amp;&amp; events.error == <span class="literal">null</span>);
+  <span class="keyword">else</span> <span class="keyword">if</span> (!doError)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="comment">// If there is no 'error' event listener then throw.</span>
+  <span class="keyword">if</span> (doError) {
+    <span class="keyword">if</span> (arguments.length > <span class="number">1</span>)
+      er = arguments[<span class="number">1</span>];
+    <span class="keyword">if</span> (er <span class="keyword">instanceof</span> Error) {
+      <span class="keyword">throw</span> er; <span class="comment">// Unhandled 'error' event</span>
+    } <span class="keyword">else</span> {
+      <span class="comment">// At least give some kind of context to the user</span>
+      <span class="keyword">var</span> err = <span class="keyword">new</span> Error(<span class="string">'Unhandled "error" event. ('</span> + er + <span class="string">')'</span>);
+      err.context = er;
+      <span class="keyword">throw</span> err;
+    }
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  handler = events[type];
+
+  <span class="keyword">if</span> (!handler)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="keyword">var</span> isFn = <span class="keyword">typeof</span> handler === <span class="string">'function'</span>;
+  len = arguments.length;
+  <span class="keyword">switch</span> (len) {
+      <span class="comment">// fast cases</span>
+    <span class="keyword">case</span> <span class="number">1</span>:
+      emitNone(handler, isFn, <span class="keyword">this</span>);
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> <span class="number">2</span>:
+      emitOne(handler, isFn, <span class="keyword">this</span>, arguments[<span class="number">1</span>]);
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> <span class="number">3</span>:
+      emitTwo(handler, isFn, <span class="keyword">this</span>, arguments[<span class="number">1</span>], arguments[<span class="number">2</span>]);
+      <span class="keyword">break</span>;
+    <span class="keyword">case</span> <span class="number">4</span>:
+      emitThree(handler, isFn, <span class="keyword">this</span>, arguments[<span class="number">1</span>], arguments[<span class="number">2</span>], arguments[<span class="number">3</span>]);
+      <span class="keyword">break</span>;
+      <span class="comment">// slower</span>
+    <span class="keyword">default</span>:
+      args = <span class="keyword">new</span> Array(len - <span class="number">1</span>);
+      <span class="keyword">for</span> (i = <span class="number">1</span>; i &lt; len; i++)
+        args[i - <span class="number">1</span>] = arguments[i];
+      emitMany(handler, isFn, <span class="keyword">this</span>, args);
+  }
+
+  <span class="keyword">return</span> <span class="literal">true</span>;
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">_addListener</span><span class="params">(target, type, listener, prepend)</span> {</span>
+  <span class="keyword">var</span> m;
+  <span class="keyword">var</span> events;
+  <span class="keyword">var</span> existing;
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> listener !== <span class="string">'function'</span>)
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"listener" argument must be a function'</span>);
+
+  events = target._events;
+  <span class="keyword">if</span> (!events) {
+    events = target._events = objectCreate(<span class="literal">null</span>);
+    target._eventsCount = <span class="number">0</span>;
+  } <span class="keyword">else</span> {
+    <span class="comment">// To avoid recursion in the case that type === "newListener"! Before</span>
+    <span class="comment">// adding it to the listeners, first emit "newListener".</span>
+    <span class="keyword">if</span> (events.newListener) {
+      target.emit(<span class="string">'newListener'</span>, type,
+          listener.listener ? listener.listener : listener);
+
+      <span class="comment">// Re-assign `events` because a newListener handler could have caused the</span>
+      <span class="comment">// this._events to be assigned to a new object</span>
+      events = target._events;
+    }
+    existing = events[type];
+  }
+
+  <span class="keyword">if</span> (!existing) {
+    <span class="comment">// Optimize the case of one listener. Don't need the extra array object.</span>
+    existing = events[type] = listener;
+    ++target._eventsCount;
+  } <span class="keyword">else</span> {
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> existing === <span class="string">'function'</span>) {
+      <span class="comment">// Adding the second element, need to change to array.</span>
+      existing = events[type] =
+          prepend ? [listener, existing] : [existing, listener];
+    } <span class="keyword">else</span> {
+      <span class="comment">// If we've already got an array, just append.</span>
+      <span class="keyword">if</span> (prepend) {
+        existing.unshift(listener);
+      } <span class="keyword">else</span> {
+        existing.push(listener);
+      }
+    }
+
+    <span class="comment">// Check for listener leak</span>
+    <span class="keyword">if</span> (!existing.warned) {
+      m = $getMaxListeners(target);
+      <span class="keyword">if</span> (m &amp;&amp; m > <span class="number">0</span> &amp;&amp; existing.length > m) {
+        existing.warned = <span class="literal">true</span>;
+        <span class="keyword">var</span> w = <span class="keyword">new</span> Error(<span class="string">'Possible EventEmitter memory leak detected. '</span> +
+            existing.length + <span class="string">' "'</span> + String(type) + <span class="string">'" listeners '</span> +
+            <span class="string">'added. Use emitter.setMaxListeners() to '</span> +
+            <span class="string">'increase limit.'</span>);
+        w.name = <span class="string">'MaxListenersExceededWarning'</span>;
+        w.emitter = target;
+        w.type = type;
+        w.count = existing.length;
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> console === <span class="string">'object'</span> &amp;&amp; console.warn) {
+          console.warn(<span class="string">'%s: %s'</span>, w.name, w.message);
+        }
+      }
+    }
+  }
+
+  <span class="keyword">return</span> target;
+}
+
+EventEmitter.prototype.addListener = <span class="function"><span class="keyword">function</span> <span class="title">addListener</span><span class="params">(type, listener)</span> {</span>
+  <span class="keyword">return</span> _addListener(<span class="keyword">this</span>, type, listener, <span class="literal">false</span>);
+};
+
+EventEmitter.prototype.on = EventEmitter.prototype.addListener;
+
+EventEmitter.prototype.prependListener =
+    <span class="function"><span class="keyword">function</span> <span class="title">prependListener</span><span class="params">(type, listener)</span> {</span>
+      <span class="keyword">return</span> _addListener(<span class="keyword">this</span>, type, listener, <span class="literal">true</span>);
+    };
+
+<span class="function"><span class="keyword">function</span> <span class="title">onceWrapper</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.fired) {
+    <span class="keyword">this</span>.target.removeListener(<span class="keyword">this</span>.type, <span class="keyword">this</span>.wrapFn);
+    <span class="keyword">this</span>.fired = <span class="literal">true</span>;
+    <span class="keyword">switch</span> (arguments.length) {
+      <span class="keyword">case</span> <span class="number">0</span>:
+        <span class="keyword">return</span> <span class="keyword">this</span>.listener.call(<span class="keyword">this</span>.target);
+      <span class="keyword">case</span> <span class="number">1</span>:
+        <span class="keyword">return</span> <span class="keyword">this</span>.listener.call(<span class="keyword">this</span>.target, arguments[<span class="number">0</span>]);
+      <span class="keyword">case</span> <span class="number">2</span>:
+        <span class="keyword">return</span> <span class="keyword">this</span>.listener.call(<span class="keyword">this</span>.target, arguments[<span class="number">0</span>], arguments[<span class="number">1</span>]);
+      <span class="keyword">case</span> <span class="number">3</span>:
+        <span class="keyword">return</span> <span class="keyword">this</span>.listener.call(<span class="keyword">this</span>.target, arguments[<span class="number">0</span>], arguments[<span class="number">1</span>],
+            arguments[<span class="number">2</span>]);
+      <span class="keyword">default</span>:
+        <span class="keyword">var</span> args = <span class="keyword">new</span> Array(arguments.length);
+        <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; args.length; ++i)
+          args[i] = arguments[i];
+        <span class="keyword">this</span>.listener.apply(<span class="keyword">this</span>.target, args);
+    }
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">_onceWrap</span><span class="params">(target, type, listener)</span> {</span>
+  <span class="keyword">var</span> state = { fired: <span class="literal">false</span>, wrapFn: <span class="literal">undefined</span>, target: target, type: type, listener: listener };
+  <span class="keyword">var</span> wrapped = bind.call(onceWrapper, state);
+  wrapped.listener = listener;
+  state.wrapFn = wrapped;
+  <span class="keyword">return</span> wrapped;
+}
+
+EventEmitter.prototype.once = <span class="function"><span class="keyword">function</span> <span class="title">once</span><span class="params">(type, listener)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> listener !== <span class="string">'function'</span>)
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"listener" argument must be a function'</span>);
+  <span class="keyword">this</span>.on(type, _onceWrap(<span class="keyword">this</span>, type, listener));
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+EventEmitter.prototype.prependOnceListener =
+    <span class="function"><span class="keyword">function</span> <span class="title">prependOnceListener</span><span class="params">(type, listener)</span> {</span>
+      <span class="keyword">if</span> (<span class="keyword">typeof</span> listener !== <span class="string">'function'</span>)
+        <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"listener" argument must be a function'</span>);
+      <span class="keyword">this</span>.prependListener(type, _onceWrap(<span class="keyword">this</span>, type, listener));
+      <span class="keyword">return</span> <span class="keyword">this</span>;
+    };
+
+<span class="comment">// Emits a 'removeListener' event if and only if the listener was removed.</span>
+EventEmitter.prototype.removeListener =
+    <span class="function"><span class="keyword">function</span> <span class="title">removeListener</span><span class="params">(type, listener)</span> {</span>
+      <span class="keyword">var</span> list, events, position, i, originalListener;
+
+      <span class="keyword">if</span> (<span class="keyword">typeof</span> listener !== <span class="string">'function'</span>)
+        <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"listener" argument must be a function'</span>);
+
+      events = <span class="keyword">this</span>._events;
+      <span class="keyword">if</span> (!events)
+        <span class="keyword">return</span> <span class="keyword">this</span>;
+
+      list = events[type];
+      <span class="keyword">if</span> (!list)
+        <span class="keyword">return</span> <span class="keyword">this</span>;
+
+      <span class="keyword">if</span> (list === listener || list.listener === listener) {
+        <span class="keyword">if</span> (--<span class="keyword">this</span>._eventsCount === <span class="number">0</span>)
+          <span class="keyword">this</span>._events = objectCreate(<span class="literal">null</span>);
+        <span class="keyword">else</span> {
+          <span class="keyword">delete</span> events[type];
+          <span class="keyword">if</span> (events.removeListener)
+            <span class="keyword">this</span>.emit(<span class="string">'removeListener'</span>, type, list.listener || listener);
+        }
+      } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">typeof</span> list !== <span class="string">'function'</span>) {
+        position = -<span class="number">1</span>;
+
+        <span class="keyword">for</span> (i = list.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+          <span class="keyword">if</span> (list[i] === listener || list[i].listener === listener) {
+            originalListener = list[i].listener;
+            position = i;
+            <span class="keyword">break</span>;
+          }
+        }
+
+        <span class="keyword">if</span> (position &lt; <span class="number">0</span>)
+          <span class="keyword">return</span> <span class="keyword">this</span>;
+
+        <span class="keyword">if</span> (position === <span class="number">0</span>)
+          list.shift();
+        <span class="keyword">else</span>
+          spliceOne(list, position);
+
+        <span class="keyword">if</span> (list.length === <span class="number">1</span>)
+          events[type] = list[<span class="number">0</span>];
+
+        <span class="keyword">if</span> (events.removeListener)
+          <span class="keyword">this</span>.emit(<span class="string">'removeListener'</span>, type, originalListener || listener);
+      }
+
+      <span class="keyword">return</span> <span class="keyword">this</span>;
+    };
+
+EventEmitter.prototype.removeAllListeners =
+    <span class="function"><span class="keyword">function</span> <span class="title">removeAllListeners</span><span class="params">(type)</span> {</span>
+      <span class="keyword">var</span> listeners, events, i;
+
+      events = <span class="keyword">this</span>._events;
+      <span class="keyword">if</span> (!events)
+        <span class="keyword">return</span> <span class="keyword">this</span>;
+
+      <span class="comment">// not listening for removeListener, no need to emit</span>
+      <span class="keyword">if</span> (!events.removeListener) {
+        <span class="keyword">if</span> (arguments.length === <span class="number">0</span>) {
+          <span class="keyword">this</span>._events = objectCreate(<span class="literal">null</span>);
+          <span class="keyword">this</span>._eventsCount = <span class="number">0</span>;
+        } <span class="keyword">else</span> <span class="keyword">if</span> (events[type]) {
+          <span class="keyword">if</span> (--<span class="keyword">this</span>._eventsCount === <span class="number">0</span>)
+            <span class="keyword">this</span>._events = objectCreate(<span class="literal">null</span>);
+          <span class="keyword">else</span>
+            <span class="keyword">delete</span> events[type];
+        }
+        <span class="keyword">return</span> <span class="keyword">this</span>;
+      }
+
+      <span class="comment">// emit removeListener for all listeners on all events</span>
+      <span class="keyword">if</span> (arguments.length === <span class="number">0</span>) {
+        <span class="keyword">var</span> keys = objectKeys(events);
+        <span class="keyword">var</span> key;
+        <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; keys.length; ++i) {
+          key = keys[i];
+          <span class="keyword">if</span> (key === <span class="string">'removeListener'</span>) <span class="keyword">continue</span>;
+          <span class="keyword">this</span>.removeAllListeners(key);
+        }
+        <span class="keyword">this</span>.removeAllListeners(<span class="string">'removeListener'</span>);
+        <span class="keyword">this</span>._events = objectCreate(<span class="literal">null</span>);
+        <span class="keyword">this</span>._eventsCount = <span class="number">0</span>;
+        <span class="keyword">return</span> <span class="keyword">this</span>;
+      }
+
+      listeners = events[type];
+
+      <span class="keyword">if</span> (<span class="keyword">typeof</span> listeners === <span class="string">'function'</span>) {
+        <span class="keyword">this</span>.removeListener(type, listeners);
+      } <span class="keyword">else</span> <span class="keyword">if</span> (listeners) {
+        <span class="comment">// LIFO order</span>
+        <span class="keyword">for</span> (i = listeners.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+          <span class="keyword">this</span>.removeListener(type, listeners[i]);
+        }
+      }
+
+      <span class="keyword">return</span> <span class="keyword">this</span>;
+    };
+
+<span class="function"><span class="keyword">function</span> <span class="title">_listeners</span><span class="params">(target, type, unwrap)</span> {</span>
+  <span class="keyword">var</span> events = target._events;
+
+  <span class="keyword">if</span> (!events)
+    <span class="keyword">return</span> [];
+
+  <span class="keyword">var</span> evlistener = events[type];
+  <span class="keyword">if</span> (!evlistener)
+    <span class="keyword">return</span> [];
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> evlistener === <span class="string">'function'</span>)
+    <span class="keyword">return</span> unwrap ? [evlistener.listener || evlistener] : [evlistener];
+
+  <span class="keyword">return</span> unwrap ? unwrapListeners(evlistener) : arrayClone(evlistener, evlistener.length);
+}
+
+EventEmitter.prototype.listeners = <span class="function"><span class="keyword">function</span> <span class="title">listeners</span><span class="params">(type)</span> {</span>
+  <span class="keyword">return</span> _listeners(<span class="keyword">this</span>, type, <span class="literal">true</span>);
+};
+
+EventEmitter.prototype.rawListeners = <span class="function"><span class="keyword">function</span> <span class="title">rawListeners</span><span class="params">(type)</span> {</span>
+  <span class="keyword">return</span> _listeners(<span class="keyword">this</span>, type, <span class="literal">false</span>);
+};
+
+EventEmitter.listenerCount = <span class="keyword">function</span>(emitter, type) {
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> emitter.listenerCount === <span class="string">'function'</span>) {
+    <span class="keyword">return</span> emitter.listenerCount(type);
+  } <span class="keyword">else</span> {
+    <span class="keyword">return</span> listenerCount.call(emitter, type);
+  }
+};
+
+EventEmitter.prototype.listenerCount = listenerCount;
+<span class="function"><span class="keyword">function</span> <span class="title">listenerCount</span><span class="params">(type)</span> {</span>
+  <span class="keyword">var</span> events = <span class="keyword">this</span>._events;
+
+  <span class="keyword">if</span> (events) {
+    <span class="keyword">var</span> evlistener = events[type];
+
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> evlistener === <span class="string">'function'</span>) {
+      <span class="keyword">return</span> <span class="number">1</span>;
+    } <span class="keyword">else</span> <span class="keyword">if</span> (evlistener) {
+      <span class="keyword">return</span> evlistener.length;
+    }
+  }
+
+  <span class="keyword">return</span> <span class="number">0</span>;
+}
+
+EventEmitter.prototype.eventNames = <span class="function"><span class="keyword">function</span> <span class="title">eventNames</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._eventsCount > <span class="number">0</span> ? Reflect.ownKeys(<span class="keyword">this</span>._events) : [];
+};
+
+<span class="comment">// About 1.5x faster than the two-arg version of Array#splice().</span>
+<span class="function"><span class="keyword">function</span> <span class="title">spliceOne</span><span class="params">(list, index)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = index, k = i + <span class="number">1</span>, n = list.length; k &lt; n; i += <span class="number">1</span>, k += <span class="number">1</span>)
+    list[i] = list[k];
+  list.pop();
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">arrayClone</span><span class="params">(arr, n)</span> {</span>
+  <span class="keyword">var</span> copy = <span class="keyword">new</span> Array(n);
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; n; ++i)
+    copy[i] = arr[i];
+  <span class="keyword">return</span> copy;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">unwrapListeners</span><span class="params">(arr)</span> {</span>
+  <span class="keyword">var</span> ret = <span class="keyword">new</span> Array(arr.length);
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; ret.length; ++i) {
+    ret[i] = arr[i].listener || arr[i];
+  }
+  <span class="keyword">return</span> ret;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">objectCreatePolyfill</span><span class="params">(proto)</span> {</span>
+  <span class="keyword">var</span> F = <span class="keyword">function</span>() {};
+  F.prototype = proto;
+  <span class="keyword">return</span> <span class="keyword">new</span> F;
+}
+<span class="function"><span class="keyword">function</span> <span class="title">objectKeysPolyfill</span><span class="params">(obj)</span> {</span>
+  <span class="keyword">var</span> keys = [];
+  <span class="keyword">for</span> (<span class="keyword">var</span> k <span class="keyword">in</span> obj) <span class="keyword">if</span> (Object.prototype.hasOwnProperty.call(obj, k)) {
+    keys.push(k);
+  }
+  <span class="keyword">return</span> k;
+}
+<span class="function"><span class="keyword">function</span> <span class="title">functionBindPolyfill</span><span class="params">(context)</span> {</span>
+  <span class="keyword">var</span> fn = <span class="keyword">this</span>;
+  <span class="keyword">return</span> <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">return</span> fn.apply(context, arguments);
+  };
+}
+</code></pre>

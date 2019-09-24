@@ -48,7 +48,7 @@
     margin-right: 3px;
 }
 
-.footer-distributed .footer-icons a{
+.footer-distributed .footer-icons a {
 	width: 30px;
 	height: 30px;
 	cursor: pointer;
@@ -59,6 +59,20 @@
 
 	margin-right: 3px;
 	margin-bottom: 3px;
+}
+
+@media only screen and (max-width:768px) {
+    .footer-distributed .footer-links i {
+        font-size: 15px;
+        width: 25px;
+        height: 25px;
+        line-height: 25px;
+    }
+    
+    .footer-distributed .footer-icons a {
+        width: 22px;
+        height: 22px;
+    }
 }
 
 .footer-icons .fa-youtube {
@@ -84,23 +98,17 @@
 
 /* If you don't want the footer to be responsive, remove these media queries */
 
-@media (max-width: 880px) {
+@media (max-width: 768px) {
 
-	.footer-distributed{
-		font: bold 14px sans-serif;
+	.footer-distributed {
+		font: bold 10px sans-serif;
 	}
 
-	.footer-distributed .footer-left,
-	.footer-distributed .footer-center,
-	.footer-distributed .footer-right{
+    .footer-distributed {
 		display: block;
 		width: 100%;
 		margin-bottom: 40px;
 		text-align: center;
-	}
-
-	.footer-distributed .footer-center i{
-		margin-left: 0;
 	}
 
 }

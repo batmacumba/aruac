@@ -1,0 +1,30 @@
+<h1>precondition.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> MAX_ALLOC = Math.pow(<span class="number">2</span>, <span class="number">30</span>) - <span class="number">1</span> <span class="comment">// default in iojs</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">checkBuffer</span> <span class="params">(buf, name)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> buf !== <span class="string">'string'</span> &amp;&amp; !Buffer.isBuffer(buf)) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(name + <span class="string">' must be a buffer or string'</span>)
+  }
+}
+
+module.exports = <span class="function"><span class="keyword">function</span> <span class="params">(password, salt, iterations, keylen)</span> {</span>
+  checkBuffer(password, <span class="string">'Password'</span>)
+  checkBuffer(salt, <span class="string">'Salt'</span>)
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> iterations !== <span class="string">'number'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Iterations not a number'</span>)
+  }
+
+  <span class="keyword">if</span> (iterations &lt; <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Bad iterations'</span>)
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> keylen !== <span class="string">'number'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Key length not a number'</span>)
+  }
+
+  <span class="keyword">if</span> (keylen &lt; <span class="number">0</span> || keylen > MAX_ALLOC || keylen !== keylen) { <span class="comment">/* eslint no-self-compare: 0 */</span>
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Bad key length'</span>)
+  }
+}
+</code></pre>

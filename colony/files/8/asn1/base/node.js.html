@@ -1,0 +1,636 @@
+<h1>node.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> Reporter = require(<span class="string">'../base'</span>).Reporter;
+<span class="keyword">var</span> EncoderBuffer = require(<span class="string">'../base'</span>).EncoderBuffer;
+<span class="keyword">var</span> DecoderBuffer = require(<span class="string">'../base'</span>).DecoderBuffer;
+<span class="keyword">var</span> assert = require(<span class="string">'minimalistic-assert'</span>);
+
+<span class="comment">// Supported tags</span>
+<span class="keyword">var</span> tags = [
+  <span class="string">'seq'</span>, <span class="string">'seqof'</span>, <span class="string">'set'</span>, <span class="string">'setof'</span>, <span class="string">'objid'</span>, <span class="string">'bool'</span>,
+  <span class="string">'gentime'</span>, <span class="string">'utctime'</span>, <span class="string">'null_'</span>, <span class="string">'enum'</span>, <span class="string">'int'</span>, <span class="string">'objDesc'</span>,
+  <span class="string">'bitstr'</span>, <span class="string">'bmpstr'</span>, <span class="string">'charstr'</span>, <span class="string">'genstr'</span>, <span class="string">'graphstr'</span>, <span class="string">'ia5str'</span>, <span class="string">'iso646str'</span>,
+  <span class="string">'numstr'</span>, <span class="string">'octstr'</span>, <span class="string">'printstr'</span>, <span class="string">'t61str'</span>, <span class="string">'unistr'</span>, <span class="string">'utf8str'</span>, <span class="string">'videostr'</span>
+];
+
+<span class="comment">// Public methods list</span>
+<span class="keyword">var</span> methods = [
+  <span class="string">'key'</span>, <span class="string">'obj'</span>, <span class="string">'use'</span>, <span class="string">'optional'</span>, <span class="string">'explicit'</span>, <span class="string">'implicit'</span>, <span class="string">'def'</span>, <span class="string">'choice'</span>,
+  <span class="string">'any'</span>, <span class="string">'contains'</span>
+].concat(tags);
+
+<span class="comment">// Overrided methods list</span>
+<span class="keyword">var</span> overrided = [
+  <span class="string">'_peekTag'</span>, <span class="string">'_decodeTag'</span>, <span class="string">'_use'</span>,
+  <span class="string">'_decodeStr'</span>, <span class="string">'_decodeObjid'</span>, <span class="string">'_decodeTime'</span>,
+  <span class="string">'_decodeNull'</span>, <span class="string">'_decodeInt'</span>, <span class="string">'_decodeBool'</span>, <span class="string">'_decodeList'</span>,
+
+  <span class="string">'_encodeComposite'</span>, <span class="string">'_encodeStr'</span>, <span class="string">'_encodeObjid'</span>, <span class="string">'_encodeTime'</span>,
+  <span class="string">'_encodeNull'</span>, <span class="string">'_encodeInt'</span>, <span class="string">'_encodeBool'</span>
+];
+
+<span class="function"><span class="keyword">function</span> <span class="title">Node</span><span class="params">(enc, parent)</span> {</span>
+  <span class="keyword">var</span> state = {};
+  <span class="keyword">this</span>._baseState = state;
+
+  state.enc = enc;
+
+  state.parent = parent || <span class="literal">null</span>;
+  state.children = <span class="literal">null</span>;
+
+  <span class="comment">// State</span>
+  state.tag = <span class="literal">null</span>;
+  state.args = <span class="literal">null</span>;
+  state.reverseArgs = <span class="literal">null</span>;
+  state.choice = <span class="literal">null</span>;
+  state.optional = <span class="literal">false</span>;
+  state.any = <span class="literal">false</span>;
+  state.obj = <span class="literal">false</span>;
+  state.use = <span class="literal">null</span>;
+  state.useDecoder = <span class="literal">null</span>;
+  state.key = <span class="literal">null</span>;
+  state[<span class="string">'default'</span>] = <span class="literal">null</span>;
+  state.explicit = <span class="literal">null</span>;
+  state.implicit = <span class="literal">null</span>;
+  state.contains = <span class="literal">null</span>;
+
+  <span class="comment">// Should create new instance on each method</span>
+  <span class="keyword">if</span> (!state.parent) {
+    state.children = [];
+    <span class="keyword">this</span>._wrap();
+  }
+}
+module.exports = Node;
+
+<span class="keyword">var</span> stateProps = [
+  <span class="string">'enc'</span>, <span class="string">'parent'</span>, <span class="string">'children'</span>, <span class="string">'tag'</span>, <span class="string">'args'</span>, <span class="string">'reverseArgs'</span>, <span class="string">'choice'</span>,
+  <span class="string">'optional'</span>, <span class="string">'any'</span>, <span class="string">'obj'</span>, <span class="string">'use'</span>, <span class="string">'alteredUse'</span>, <span class="string">'key'</span>, <span class="string">'default'</span>, <span class="string">'explicit'</span>,
+  <span class="string">'implicit'</span>, <span class="string">'contains'</span>
+];
+
+Node.prototype.clone = <span class="function"><span class="keyword">function</span> <span class="title">clone</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+  <span class="keyword">var</span> cstate = {};
+  stateProps.forEach(<span class="keyword">function</span>(prop) {
+    cstate[prop] = state[prop];
+  });
+  <span class="keyword">var</span> res = <span class="keyword">new</span> <span class="keyword">this</span>.constructor(cstate.parent);
+  res._baseState = cstate;
+  <span class="keyword">return</span> res;
+};
+
+Node.prototype._wrap = <span class="function"><span class="keyword">function</span> <span class="title">wrap</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+  methods.forEach(<span class="keyword">function</span>(method) {
+    <span class="keyword">this</span>[method] = <span class="function"><span class="keyword">function</span> <span class="title">_wrappedMethod</span><span class="params">()</span> {</span>
+      <span class="keyword">var</span> clone = <span class="keyword">new</span> <span class="keyword">this</span>.constructor(<span class="keyword">this</span>);
+      state.children.push(clone);
+      <span class="keyword">return</span> clone[method].apply(clone, arguments);
+    };
+  }, <span class="keyword">this</span>);
+};
+
+Node.prototype._init = <span class="function"><span class="keyword">function</span> <span class="title">init</span><span class="params">(body)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state.parent === <span class="literal">null</span>);
+  body.call(<span class="keyword">this</span>);
+
+  <span class="comment">// Filter children</span>
+  state.children = state.children.filter(<span class="keyword">function</span>(child) {
+    <span class="keyword">return</span> child._baseState.parent === <span class="keyword">this</span>;
+  }, <span class="keyword">this</span>);
+  assert.equal(state.children.length, <span class="number">1</span>, <span class="string">'Root node can have only one child'</span>);
+};
+
+Node.prototype._useArgs = <span class="function"><span class="keyword">function</span> <span class="title">useArgs</span><span class="params">(args)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  <span class="comment">// Filter children and args</span>
+  <span class="keyword">var</span> children = args.filter(<span class="keyword">function</span>(arg) {
+    <span class="keyword">return</span> arg <span class="keyword">instanceof</span> <span class="keyword">this</span>.constructor;
+  }, <span class="keyword">this</span>);
+  args = args.filter(<span class="keyword">function</span>(arg) {
+    <span class="keyword">return</span> !(arg <span class="keyword">instanceof</span> <span class="keyword">this</span>.constructor);
+  }, <span class="keyword">this</span>);
+
+  <span class="keyword">if</span> (children.length !== <span class="number">0</span>) {
+    assert(state.children === <span class="literal">null</span>);
+    state.children = children;
+
+    <span class="comment">// Replace parent to maintain backward link</span>
+    children.forEach(<span class="keyword">function</span>(child) {
+      child._baseState.parent = <span class="keyword">this</span>;
+    }, <span class="keyword">this</span>);
+  }
+  <span class="keyword">if</span> (args.length !== <span class="number">0</span>) {
+    assert(state.args === <span class="literal">null</span>);
+    state.args = args;
+    state.reverseArgs = args.map(<span class="keyword">function</span>(arg) {
+      <span class="keyword">if</span> (<span class="keyword">typeof</span> arg !== <span class="string">'object'</span> || arg.constructor !== Object)
+        <span class="keyword">return</span> arg;
+
+      <span class="keyword">var</span> res = {};
+      Object.keys(arg).forEach(<span class="keyword">function</span>(key) {
+        <span class="keyword">if</span> (key == (key | <span class="number">0</span>))
+          key |= <span class="number">0</span>;
+        <span class="keyword">var</span> value = arg[key];
+        res[value] = key;
+      });
+      <span class="keyword">return</span> res;
+    });
+  }
+};
+
+<span class="comment">//</span>
+<span class="comment">// Overrided methods</span>
+<span class="comment">//</span>
+
+overrided.forEach(<span class="keyword">function</span>(method) {
+  Node.prototype[method] = <span class="function"><span class="keyword">function</span> <span class="title">_overrided</span><span class="params">()</span> {</span>
+    <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(method + <span class="string">' not implemented for encoding: '</span> + state.enc);
+  };
+});
+
+<span class="comment">//</span>
+<span class="comment">// Public methods</span>
+<span class="comment">//</span>
+
+tags.forEach(<span class="keyword">function</span>(tag) {
+  Node.prototype[tag] = <span class="function"><span class="keyword">function</span> <span class="title">_tagMethod</span><span class="params">()</span> {</span>
+    <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+    <span class="keyword">var</span> args = Array.prototype.slice.call(arguments);
+
+    assert(state.tag === <span class="literal">null</span>);
+    state.tag = tag;
+
+    <span class="keyword">this</span>._useArgs(args);
+
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+  };
+});
+
+Node.prototype.use = <span class="function"><span class="keyword">function</span> <span class="title">use</span><span class="params">(item)</span> {</span>
+  assert(item);
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state.use === <span class="literal">null</span>);
+  state.use = item;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.optional = <span class="function"><span class="keyword">function</span> <span class="title">optional</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  state.optional = <span class="literal">true</span>;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.def = <span class="function"><span class="keyword">function</span> <span class="title">def</span><span class="params">(val)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state[<span class="string">'default'</span>] === <span class="literal">null</span>);
+  state[<span class="string">'default'</span>] = val;
+  state.optional = <span class="literal">true</span>;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.explicit = <span class="function"><span class="keyword">function</span> <span class="title">explicit</span><span class="params">(num)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state.explicit === <span class="literal">null</span> &amp;&amp; state.implicit === <span class="literal">null</span>);
+  state.explicit = num;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.implicit = <span class="function"><span class="keyword">function</span> <span class="title">implicit</span><span class="params">(num)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state.explicit === <span class="literal">null</span> &amp;&amp; state.implicit === <span class="literal">null</span>);
+  state.implicit = num;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.obj = <span class="function"><span class="keyword">function</span> <span class="title">obj</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+  <span class="keyword">var</span> args = Array.prototype.slice.call(arguments);
+
+  state.obj = <span class="literal">true</span>;
+
+  <span class="keyword">if</span> (args.length !== <span class="number">0</span>)
+    <span class="keyword">this</span>._useArgs(args);
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.key = <span class="function"><span class="keyword">function</span> <span class="title">key</span><span class="params">(newKey)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state.key === <span class="literal">null</span>);
+  state.key = newKey;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.any = <span class="function"><span class="keyword">function</span> <span class="title">any</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  state.any = <span class="literal">true</span>;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.choice = <span class="function"><span class="keyword">function</span> <span class="title">choice</span><span class="params">(obj)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state.choice === <span class="literal">null</span>);
+  state.choice = obj;
+  <span class="keyword">this</span>._useArgs(Object.keys(obj).map(<span class="keyword">function</span>(key) {
+    <span class="keyword">return</span> obj[key];
+  }));
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+Node.prototype.contains = <span class="function"><span class="keyword">function</span> <span class="title">contains</span><span class="params">(item)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  assert(state.use === <span class="literal">null</span>);
+  state.contains = item;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>;
+};
+
+<span class="comment">//</span>
+<span class="comment">// Decoding</span>
+<span class="comment">//</span>
+
+Node.prototype._decode = <span class="function"><span class="keyword">function</span> <span class="title">decode</span><span class="params">(input, options)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  <span class="comment">// Decode root node</span>
+  <span class="keyword">if</span> (state.parent === <span class="literal">null</span>)
+    <span class="keyword">return</span> input.wrapResult(state.children[<span class="number">0</span>]._decode(input, options));
+
+  <span class="keyword">var</span> result = state[<span class="string">'default'</span>];
+  <span class="keyword">var</span> present = <span class="literal">true</span>;
+
+  <span class="keyword">var</span> prevKey = <span class="literal">null</span>;
+  <span class="keyword">if</span> (state.key !== <span class="literal">null</span>)
+    prevKey = input.enterKey(state.key);
+
+  <span class="comment">// Check if tag is there</span>
+  <span class="keyword">if</span> (state.optional) {
+    <span class="keyword">var</span> tag = <span class="literal">null</span>;
+    <span class="keyword">if</span> (state.explicit !== <span class="literal">null</span>)
+      tag = state.explicit;
+    <span class="keyword">else</span> <span class="keyword">if</span> (state.implicit !== <span class="literal">null</span>)
+      tag = state.implicit;
+    <span class="keyword">else</span> <span class="keyword">if</span> (state.tag !== <span class="literal">null</span>)
+      tag = state.tag;
+
+    <span class="keyword">if</span> (tag === <span class="literal">null</span> &amp;&amp; !state.any) {
+      <span class="comment">// Trial and Error</span>
+      <span class="keyword">var</span> save = input.save();
+      <span class="keyword">try</span> {
+        <span class="keyword">if</span> (state.choice === <span class="literal">null</span>)
+          <span class="keyword">this</span>._decodeGeneric(state.tag, input, options);
+        <span class="keyword">else</span>
+          <span class="keyword">this</span>._decodeChoice(input, options);
+        present = <span class="literal">true</span>;
+      } <span class="keyword">catch</span> (e) {
+        present = <span class="literal">false</span>;
+      }
+      input.restore(save);
+    } <span class="keyword">else</span> {
+      present = <span class="keyword">this</span>._peekTag(input, tag, state.any);
+
+      <span class="keyword">if</span> (input.isError(present))
+        <span class="keyword">return</span> present;
+    }
+  }
+
+  <span class="comment">// Push object on stack</span>
+  <span class="keyword">var</span> prevObj;
+  <span class="keyword">if</span> (state.obj &amp;&amp; present)
+    prevObj = input.enterObject();
+
+  <span class="keyword">if</span> (present) {
+    <span class="comment">// Unwrap explicit values</span>
+    <span class="keyword">if</span> (state.explicit !== <span class="literal">null</span>) {
+      <span class="keyword">var</span> explicit = <span class="keyword">this</span>._decodeTag(input, state.explicit);
+      <span class="keyword">if</span> (input.isError(explicit))
+        <span class="keyword">return</span> explicit;
+      input = explicit;
+    }
+
+    <span class="keyword">var</span> start = input.offset;
+
+    <span class="comment">// Unwrap implicit and normal values</span>
+    <span class="keyword">if</span> (state.use === <span class="literal">null</span> &amp;&amp; state.choice === <span class="literal">null</span>) {
+      <span class="keyword">if</span> (state.any)
+        <span class="keyword">var</span> save = input.save();
+      <span class="keyword">var</span> body = <span class="keyword">this</span>._decodeTag(
+        input,
+        state.implicit !== <span class="literal">null</span> ? state.implicit : state.tag,
+        state.any
+      );
+      <span class="keyword">if</span> (input.isError(body))
+        <span class="keyword">return</span> body;
+
+      <span class="keyword">if</span> (state.any)
+        result = input.raw(save);
+      <span class="keyword">else</span>
+        input = body;
+    }
+
+    <span class="keyword">if</span> (options &amp;&amp; options.track &amp;&amp; state.tag !== <span class="literal">null</span>)
+      options.track(input.path(), start, input.length, <span class="string">'tagged'</span>);
+
+    <span class="keyword">if</span> (options &amp;&amp; options.track &amp;&amp; state.tag !== <span class="literal">null</span>)
+      options.track(input.path(), input.offset, input.length, <span class="string">'content'</span>);
+
+    <span class="comment">// Select proper method for tag</span>
+    <span class="keyword">if</span> (state.any)
+      result = result;
+    <span class="keyword">else</span> <span class="keyword">if</span> (state.choice === <span class="literal">null</span>)
+      result = <span class="keyword">this</span>._decodeGeneric(state.tag, input, options);
+    <span class="keyword">else</span>
+      result = <span class="keyword">this</span>._decodeChoice(input, options);
+
+    <span class="keyword">if</span> (input.isError(result))
+      <span class="keyword">return</span> result;
+
+    <span class="comment">// Decode children</span>
+    <span class="keyword">if</span> (!state.any &amp;&amp; state.choice === <span class="literal">null</span> &amp;&amp; state.children !== <span class="literal">null</span>) {
+      state.children.forEach(<span class="function"><span class="keyword">function</span> <span class="title">decodeChildren</span><span class="params">(child)</span> {</span>
+        <span class="comment">// NOTE: We are ignoring errors here, to let parser continue with other</span>
+        <span class="comment">// parts of encoded data</span>
+        child._decode(input, options);
+      });
+    }
+
+    <span class="comment">// Decode contained/encoded by schema, only in bit or octet strings</span>
+    <span class="keyword">if</span> (state.contains &amp;&amp; (state.tag === <span class="string">'octstr'</span> || state.tag === <span class="string">'bitstr'</span>)) {
+      <span class="keyword">var</span> data = <span class="keyword">new</span> DecoderBuffer(result);
+      result = <span class="keyword">this</span>._getUse(state.contains, input._reporterState.obj)
+          ._decode(data, options);
+    }
+  }
+
+  <span class="comment">// Pop object</span>
+  <span class="keyword">if</span> (state.obj &amp;&amp; present)
+    result = input.leaveObject(prevObj);
+
+  <span class="comment">// Set key</span>
+  <span class="keyword">if</span> (state.key !== <span class="literal">null</span> &amp;&amp; (result !== <span class="literal">null</span> || present === <span class="literal">true</span>))
+    input.leaveKey(prevKey, state.key, result);
+  <span class="keyword">else</span> <span class="keyword">if</span> (prevKey !== <span class="literal">null</span>)
+    input.exitKey(prevKey);
+
+  <span class="keyword">return</span> result;
+};
+
+Node.prototype._decodeGeneric = <span class="function"><span class="keyword">function</span> <span class="title">decodeGeneric</span><span class="params">(tag, input, options)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  <span class="keyword">if</span> (tag === <span class="string">'seq'</span> || tag === <span class="string">'set'</span>)
+    <span class="keyword">return</span> <span class="literal">null</span>;
+  <span class="keyword">if</span> (tag === <span class="string">'seqof'</span> || tag === <span class="string">'setof'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeList(input, tag, state.args[<span class="number">0</span>], options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (<span class="regexp">/str$/</span>.test(tag))
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeStr(input, tag, options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'objid'</span> &amp;&amp; state.args)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeObjid(input, state.args[<span class="number">0</span>], state.args[<span class="number">1</span>], options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'objid'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeObjid(input, <span class="literal">null</span>, <span class="literal">null</span>, options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'gentime'</span> || tag === <span class="string">'utctime'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeTime(input, tag, options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'null_'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeNull(input, options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'bool'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeBool(input, options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'objDesc'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeStr(input, tag, options);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'int'</span> || tag === <span class="string">'enum'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._decodeInt(input, state.args &amp;&amp; state.args[<span class="number">0</span>], options);
+
+  <span class="keyword">if</span> (state.use !== <span class="literal">null</span>) {
+    <span class="keyword">return</span> <span class="keyword">this</span>._getUse(state.use, input._reporterState.obj)
+        ._decode(input, options);
+  } <span class="keyword">else</span> {
+    <span class="keyword">return</span> input.error(<span class="string">'unknown tag: '</span> + tag);
+  }
+};
+
+Node.prototype._getUse = <span class="function"><span class="keyword">function</span> <span class="title">_getUse</span><span class="params">(entity, obj)</span> {</span>
+
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+  <span class="comment">// Create altered use decoder if implicit is set</span>
+  state.useDecoder = <span class="keyword">this</span>._use(entity, obj);
+  assert(state.useDecoder._baseState.parent === <span class="literal">null</span>);
+  state.useDecoder = state.useDecoder._baseState.children[<span class="number">0</span>];
+  <span class="keyword">if</span> (state.implicit !== state.useDecoder._baseState.implicit) {
+    state.useDecoder = state.useDecoder.clone();
+    state.useDecoder._baseState.implicit = state.implicit;
+  }
+  <span class="keyword">return</span> state.useDecoder;
+};
+
+Node.prototype._decodeChoice = <span class="function"><span class="keyword">function</span> <span class="title">decodeChoice</span><span class="params">(input, options)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+  <span class="keyword">var</span> result = <span class="literal">null</span>;
+  <span class="keyword">var</span> match = <span class="literal">false</span>;
+
+  Object.keys(state.choice).some(<span class="keyword">function</span>(key) {
+    <span class="keyword">var</span> save = input.save();
+    <span class="keyword">var</span> node = state.choice[key];
+    <span class="keyword">try</span> {
+      <span class="keyword">var</span> value = node._decode(input, options);
+      <span class="keyword">if</span> (input.isError(value))
+        <span class="keyword">return</span> <span class="literal">false</span>;
+
+      result = { type: key, value: value };
+      match = <span class="literal">true</span>;
+    } <span class="keyword">catch</span> (e) {
+      input.restore(save);
+      <span class="keyword">return</span> <span class="literal">false</span>;
+    }
+    <span class="keyword">return</span> <span class="literal">true</span>;
+  }, <span class="keyword">this</span>);
+
+  <span class="keyword">if</span> (!match)
+    <span class="keyword">return</span> input.error(<span class="string">'Choice not matched'</span>);
+
+  <span class="keyword">return</span> result;
+};
+
+<span class="comment">//</span>
+<span class="comment">// Encoding</span>
+<span class="comment">//</span>
+
+Node.prototype._createEncoderBuffer = <span class="function"><span class="keyword">function</span> <span class="title">createEncoderBuffer</span><span class="params">(data)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">new</span> EncoderBuffer(data, <span class="keyword">this</span>.reporter);
+};
+
+Node.prototype._encode = <span class="function"><span class="keyword">function</span> <span class="title">encode</span><span class="params">(data, reporter, parent)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+  <span class="keyword">if</span> (state[<span class="string">'default'</span>] !== <span class="literal">null</span> &amp;&amp; state[<span class="string">'default'</span>] === data)
+    <span class="keyword">return</span>;
+
+  <span class="keyword">var</span> result = <span class="keyword">this</span>._encodeValue(data, reporter, parent);
+  <span class="keyword">if</span> (result === <span class="literal">undefined</span>)
+    <span class="keyword">return</span>;
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>._skipDefault(result, reporter, parent))
+    <span class="keyword">return</span>;
+
+  <span class="keyword">return</span> result;
+};
+
+Node.prototype._encodeValue = <span class="function"><span class="keyword">function</span> <span class="title">encode</span><span class="params">(data, reporter, parent)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  <span class="comment">// Decode root node</span>
+  <span class="keyword">if</span> (state.parent === <span class="literal">null</span>)
+    <span class="keyword">return</span> state.children[<span class="number">0</span>]._encode(data, reporter || <span class="keyword">new</span> Reporter());
+
+  <span class="keyword">var</span> result = <span class="literal">null</span>;
+
+  <span class="comment">// Set reporter to share it with a child class</span>
+  <span class="keyword">this</span>.reporter = reporter;
+
+  <span class="comment">// Check if data is there</span>
+  <span class="keyword">if</span> (state.optional &amp;&amp; data === <span class="literal">undefined</span>) {
+    <span class="keyword">if</span> (state[<span class="string">'default'</span>] !== <span class="literal">null</span>)
+      data = state[<span class="string">'default'</span>]
+    <span class="keyword">else</span>
+      <span class="keyword">return</span>;
+  }
+
+  <span class="comment">// Encode children first</span>
+  <span class="keyword">var</span> content = <span class="literal">null</span>;
+  <span class="keyword">var</span> primitive = <span class="literal">false</span>;
+  <span class="keyword">if</span> (state.any) {
+    <span class="comment">// Anything that was given is translated to buffer</span>
+    result = <span class="keyword">this</span>._createEncoderBuffer(data);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (state.choice) {
+    result = <span class="keyword">this</span>._encodeChoice(data, reporter);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (state.contains) {
+    content = <span class="keyword">this</span>._getUse(state.contains, parent)._encode(data, reporter);
+    primitive = <span class="literal">true</span>;
+  } <span class="keyword">else</span> <span class="keyword">if</span> (state.children) {
+    content = state.children.map(<span class="keyword">function</span>(child) {
+      <span class="keyword">if</span> (child._baseState.tag === <span class="string">'null_'</span>)
+        <span class="keyword">return</span> child._encode(<span class="literal">null</span>, reporter, data);
+
+      <span class="keyword">if</span> (child._baseState.key === <span class="literal">null</span>)
+        <span class="keyword">return</span> reporter.error(<span class="string">'Child should have a key'</span>);
+      <span class="keyword">var</span> prevKey = reporter.enterKey(child._baseState.key);
+
+      <span class="keyword">if</span> (<span class="keyword">typeof</span> data !== <span class="string">'object'</span>)
+        <span class="keyword">return</span> reporter.error(<span class="string">'Child expected, but input is not object'</span>);
+
+      <span class="keyword">var</span> res = child._encode(data[child._baseState.key], reporter, data);
+      reporter.leaveKey(prevKey);
+
+      <span class="keyword">return</span> res;
+    }, <span class="keyword">this</span>).filter(<span class="keyword">function</span>(child) {
+      <span class="keyword">return</span> child;
+    });
+    content = <span class="keyword">this</span>._createEncoderBuffer(content);
+  } <span class="keyword">else</span> {
+    <span class="keyword">if</span> (state.tag === <span class="string">'seqof'</span> || state.tag === <span class="string">'setof'</span>) {
+      <span class="comment">// TODO(indutny): this should be thrown on DSL level</span>
+      <span class="keyword">if</span> (!(state.args &amp;&amp; state.args.length === <span class="number">1</span>))
+        <span class="keyword">return</span> reporter.error(<span class="string">'Too many args for : '</span> + state.tag);
+
+      <span class="keyword">if</span> (!Array.isArray(data))
+        <span class="keyword">return</span> reporter.error(<span class="string">'seqof/setof, but data is not Array'</span>);
+
+      <span class="keyword">var</span> child = <span class="keyword">this</span>.clone();
+      child._baseState.implicit = <span class="literal">null</span>;
+      content = <span class="keyword">this</span>._createEncoderBuffer(data.map(<span class="keyword">function</span>(item) {
+        <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+        <span class="keyword">return</span> <span class="keyword">this</span>._getUse(state.args[<span class="number">0</span>], data)._encode(item, reporter);
+      }, child));
+    } <span class="keyword">else</span> <span class="keyword">if</span> (state.use !== <span class="literal">null</span>) {
+      result = <span class="keyword">this</span>._getUse(state.use, parent)._encode(data, reporter);
+    } <span class="keyword">else</span> {
+      content = <span class="keyword">this</span>._encodePrimitive(state.tag, data);
+      primitive = <span class="literal">true</span>;
+    }
+  }
+
+  <span class="comment">// Encode data itself</span>
+  <span class="keyword">var</span> result;
+  <span class="keyword">if</span> (!state.any &amp;&amp; state.choice === <span class="literal">null</span>) {
+    <span class="keyword">var</span> tag = state.implicit !== <span class="literal">null</span> ? state.implicit : state.tag;
+    <span class="keyword">var</span> cls = state.implicit === <span class="literal">null</span> ? <span class="string">'universal'</span> : <span class="string">'context'</span>;
+
+    <span class="keyword">if</span> (tag === <span class="literal">null</span>) {
+      <span class="keyword">if</span> (state.use === <span class="literal">null</span>)
+        reporter.error(<span class="string">'Tag could be omitted only for .use()'</span>);
+    } <span class="keyword">else</span> {
+      <span class="keyword">if</span> (state.use === <span class="literal">null</span>)
+        result = <span class="keyword">this</span>._encodeComposite(tag, primitive, cls, content);
+    }
+  }
+
+  <span class="comment">// Wrap in explicit</span>
+  <span class="keyword">if</span> (state.explicit !== <span class="literal">null</span>)
+    result = <span class="keyword">this</span>._encodeComposite(state.explicit, <span class="literal">false</span>, <span class="string">'context'</span>, result);
+
+  <span class="keyword">return</span> result;
+};
+
+Node.prototype._encodeChoice = <span class="function"><span class="keyword">function</span> <span class="title">encodeChoice</span><span class="params">(data, reporter)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  <span class="keyword">var</span> node = state.choice[data.type];
+  <span class="keyword">if</span> (!node) {
+    assert(
+        <span class="literal">false</span>,
+        data.type + <span class="string">' not found in '</span> +
+            JSON.stringify(Object.keys(state.choice)));
+  }
+  <span class="keyword">return</span> node._encode(data.value, reporter);
+};
+
+Node.prototype._encodePrimitive = <span class="function"><span class="keyword">function</span> <span class="title">encodePrimitive</span><span class="params">(tag, data)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+
+  <span class="keyword">if</span> (<span class="regexp">/str$/</span>.test(tag))
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeStr(data, tag);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'objid'</span> &amp;&amp; state.args)
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeObjid(data, state.reverseArgs[<span class="number">0</span>], state.args[<span class="number">1</span>]);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'objid'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeObjid(data, <span class="literal">null</span>, <span class="literal">null</span>);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'gentime'</span> || tag === <span class="string">'utctime'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeTime(data, tag);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'null_'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeNull();
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'int'</span> || tag === <span class="string">'enum'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeInt(data, state.args &amp;&amp; state.reverseArgs[<span class="number">0</span>]);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'bool'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeBool(data);
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'objDesc'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._encodeStr(data, tag);
+  <span class="keyword">else</span>
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Unsupported tag: '</span> + tag);
+};
+
+Node.prototype._isNumstr = <span class="function"><span class="keyword">function</span> <span class="title">isNumstr</span><span class="params">(str)</span> {</span>
+  <span class="keyword">return</span> <span class="regexp">/^[0-9 ]*$/</span>.test(str);
+};
+
+Node.prototype._isPrintstr = <span class="function"><span class="keyword">function</span> <span class="title">isPrintstr</span><span class="params">(str)</span> {</span>
+  <span class="keyword">return</span> <span class="regexp">/^[A-Za-z0-9 '\(\)\+,\-\.\/:=\?]*$/</span>.test(str);
+};
+</code></pre>

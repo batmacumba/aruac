@@ -1,0 +1,148 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>)
+<span class="keyword">var</span> HashBase = require(<span class="string">'hash-base'</span>)
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+
+<span class="keyword">var</span> ARRAY16 = <span class="keyword">new</span> Array(<span class="number">16</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">MD5</span> <span class="params">()</span> {</span>
+  HashBase.call(<span class="keyword">this</span>, <span class="number">64</span>)
+
+  <span class="comment">// state</span>
+  <span class="keyword">this</span>._a = <span class="number">0x67452301</span>
+  <span class="keyword">this</span>._b = <span class="number">0xefcdab89</span>
+  <span class="keyword">this</span>._c = <span class="number">0x98badcfe</span>
+  <span class="keyword">this</span>._d = <span class="number">0x10325476</span>
+}
+
+inherits(MD5, HashBase)
+
+MD5.prototype._update = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> M = ARRAY16
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">16</span>; ++i) M[i] = <span class="keyword">this</span>._block.readInt32LE(i * <span class="number">4</span>)
+
+  <span class="keyword">var</span> a = <span class="keyword">this</span>._a
+  <span class="keyword">var</span> b = <span class="keyword">this</span>._b
+  <span class="keyword">var</span> c = <span class="keyword">this</span>._c
+  <span class="keyword">var</span> d = <span class="keyword">this</span>._d
+
+  a = fnF(a, b, c, d, M[<span class="number">0</span>], <span class="number">0xd76aa478</span>, <span class="number">7</span>)
+  d = fnF(d, a, b, c, M[<span class="number">1</span>], <span class="number">0xe8c7b756</span>, <span class="number">12</span>)
+  c = fnF(c, d, a, b, M[<span class="number">2</span>], <span class="number">0x242070db</span>, <span class="number">17</span>)
+  b = fnF(b, c, d, a, M[<span class="number">3</span>], <span class="number">0xc1bdceee</span>, <span class="number">22</span>)
+  a = fnF(a, b, c, d, M[<span class="number">4</span>], <span class="number">0xf57c0faf</span>, <span class="number">7</span>)
+  d = fnF(d, a, b, c, M[<span class="number">5</span>], <span class="number">0x4787c62a</span>, <span class="number">12</span>)
+  c = fnF(c, d, a, b, M[<span class="number">6</span>], <span class="number">0xa8304613</span>, <span class="number">17</span>)
+  b = fnF(b, c, d, a, M[<span class="number">7</span>], <span class="number">0xfd469501</span>, <span class="number">22</span>)
+  a = fnF(a, b, c, d, M[<span class="number">8</span>], <span class="number">0x698098d8</span>, <span class="number">7</span>)
+  d = fnF(d, a, b, c, M[<span class="number">9</span>], <span class="number">0x8b44f7af</span>, <span class="number">12</span>)
+  c = fnF(c, d, a, b, M[<span class="number">10</span>], <span class="number">0xffff5bb1</span>, <span class="number">17</span>)
+  b = fnF(b, c, d, a, M[<span class="number">11</span>], <span class="number">0x895cd7be</span>, <span class="number">22</span>)
+  a = fnF(a, b, c, d, M[<span class="number">12</span>], <span class="number">0x6b901122</span>, <span class="number">7</span>)
+  d = fnF(d, a, b, c, M[<span class="number">13</span>], <span class="number">0xfd987193</span>, <span class="number">12</span>)
+  c = fnF(c, d, a, b, M[<span class="number">14</span>], <span class="number">0xa679438e</span>, <span class="number">17</span>)
+  b = fnF(b, c, d, a, M[<span class="number">15</span>], <span class="number">0x49b40821</span>, <span class="number">22</span>)
+
+  a = fnG(a, b, c, d, M[<span class="number">1</span>], <span class="number">0xf61e2562</span>, <span class="number">5</span>)
+  d = fnG(d, a, b, c, M[<span class="number">6</span>], <span class="number">0xc040b340</span>, <span class="number">9</span>)
+  c = fnG(c, d, a, b, M[<span class="number">11</span>], <span class="number">0x265e5a51</span>, <span class="number">14</span>)
+  b = fnG(b, c, d, a, M[<span class="number">0</span>], <span class="number">0xe9b6c7aa</span>, <span class="number">20</span>)
+  a = fnG(a, b, c, d, M[<span class="number">5</span>], <span class="number">0xd62f105d</span>, <span class="number">5</span>)
+  d = fnG(d, a, b, c, M[<span class="number">10</span>], <span class="number">0x02441453</span>, <span class="number">9</span>)
+  c = fnG(c, d, a, b, M[<span class="number">15</span>], <span class="number">0xd8a1e681</span>, <span class="number">14</span>)
+  b = fnG(b, c, d, a, M[<span class="number">4</span>], <span class="number">0xe7d3fbc8</span>, <span class="number">20</span>)
+  a = fnG(a, b, c, d, M[<span class="number">9</span>], <span class="number">0x21e1cde6</span>, <span class="number">5</span>)
+  d = fnG(d, a, b, c, M[<span class="number">14</span>], <span class="number">0xc33707d6</span>, <span class="number">9</span>)
+  c = fnG(c, d, a, b, M[<span class="number">3</span>], <span class="number">0xf4d50d87</span>, <span class="number">14</span>)
+  b = fnG(b, c, d, a, M[<span class="number">8</span>], <span class="number">0x455a14ed</span>, <span class="number">20</span>)
+  a = fnG(a, b, c, d, M[<span class="number">13</span>], <span class="number">0xa9e3e905</span>, <span class="number">5</span>)
+  d = fnG(d, a, b, c, M[<span class="number">2</span>], <span class="number">0xfcefa3f8</span>, <span class="number">9</span>)
+  c = fnG(c, d, a, b, M[<span class="number">7</span>], <span class="number">0x676f02d9</span>, <span class="number">14</span>)
+  b = fnG(b, c, d, a, M[<span class="number">12</span>], <span class="number">0x8d2a4c8a</span>, <span class="number">20</span>)
+
+  a = fnH(a, b, c, d, M[<span class="number">5</span>], <span class="number">0xfffa3942</span>, <span class="number">4</span>)
+  d = fnH(d, a, b, c, M[<span class="number">8</span>], <span class="number">0x8771f681</span>, <span class="number">11</span>)
+  c = fnH(c, d, a, b, M[<span class="number">11</span>], <span class="number">0x6d9d6122</span>, <span class="number">16</span>)
+  b = fnH(b, c, d, a, M[<span class="number">14</span>], <span class="number">0xfde5380c</span>, <span class="number">23</span>)
+  a = fnH(a, b, c, d, M[<span class="number">1</span>], <span class="number">0xa4beea44</span>, <span class="number">4</span>)
+  d = fnH(d, a, b, c, M[<span class="number">4</span>], <span class="number">0x4bdecfa9</span>, <span class="number">11</span>)
+  c = fnH(c, d, a, b, M[<span class="number">7</span>], <span class="number">0xf6bb4b60</span>, <span class="number">16</span>)
+  b = fnH(b, c, d, a, M[<span class="number">10</span>], <span class="number">0xbebfbc70</span>, <span class="number">23</span>)
+  a = fnH(a, b, c, d, M[<span class="number">13</span>], <span class="number">0x289b7ec6</span>, <span class="number">4</span>)
+  d = fnH(d, a, b, c, M[<span class="number">0</span>], <span class="number">0xeaa127fa</span>, <span class="number">11</span>)
+  c = fnH(c, d, a, b, M[<span class="number">3</span>], <span class="number">0xd4ef3085</span>, <span class="number">16</span>)
+  b = fnH(b, c, d, a, M[<span class="number">6</span>], <span class="number">0x04881d05</span>, <span class="number">23</span>)
+  a = fnH(a, b, c, d, M[<span class="number">9</span>], <span class="number">0xd9d4d039</span>, <span class="number">4</span>)
+  d = fnH(d, a, b, c, M[<span class="number">12</span>], <span class="number">0xe6db99e5</span>, <span class="number">11</span>)
+  c = fnH(c, d, a, b, M[<span class="number">15</span>], <span class="number">0x1fa27cf8</span>, <span class="number">16</span>)
+  b = fnH(b, c, d, a, M[<span class="number">2</span>], <span class="number">0xc4ac5665</span>, <span class="number">23</span>)
+
+  a = fnI(a, b, c, d, M[<span class="number">0</span>], <span class="number">0xf4292244</span>, <span class="number">6</span>)
+  d = fnI(d, a, b, c, M[<span class="number">7</span>], <span class="number">0x432aff97</span>, <span class="number">10</span>)
+  c = fnI(c, d, a, b, M[<span class="number">14</span>], <span class="number">0xab9423a7</span>, <span class="number">15</span>)
+  b = fnI(b, c, d, a, M[<span class="number">5</span>], <span class="number">0xfc93a039</span>, <span class="number">21</span>)
+  a = fnI(a, b, c, d, M[<span class="number">12</span>], <span class="number">0x655b59c3</span>, <span class="number">6</span>)
+  d = fnI(d, a, b, c, M[<span class="number">3</span>], <span class="number">0x8f0ccc92</span>, <span class="number">10</span>)
+  c = fnI(c, d, a, b, M[<span class="number">10</span>], <span class="number">0xffeff47d</span>, <span class="number">15</span>)
+  b = fnI(b, c, d, a, M[<span class="number">1</span>], <span class="number">0x85845dd1</span>, <span class="number">21</span>)
+  a = fnI(a, b, c, d, M[<span class="number">8</span>], <span class="number">0x6fa87e4f</span>, <span class="number">6</span>)
+  d = fnI(d, a, b, c, M[<span class="number">15</span>], <span class="number">0xfe2ce6e0</span>, <span class="number">10</span>)
+  c = fnI(c, d, a, b, M[<span class="number">6</span>], <span class="number">0xa3014314</span>, <span class="number">15</span>)
+  b = fnI(b, c, d, a, M[<span class="number">13</span>], <span class="number">0x4e0811a1</span>, <span class="number">21</span>)
+  a = fnI(a, b, c, d, M[<span class="number">4</span>], <span class="number">0xf7537e82</span>, <span class="number">6</span>)
+  d = fnI(d, a, b, c, M[<span class="number">11</span>], <span class="number">0xbd3af235</span>, <span class="number">10</span>)
+  c = fnI(c, d, a, b, M[<span class="number">2</span>], <span class="number">0x2ad7d2bb</span>, <span class="number">15</span>)
+  b = fnI(b, c, d, a, M[<span class="number">9</span>], <span class="number">0xeb86d391</span>, <span class="number">21</span>)
+
+  <span class="keyword">this</span>._a = (<span class="keyword">this</span>._a + a) | <span class="number">0</span>
+  <span class="keyword">this</span>._b = (<span class="keyword">this</span>._b + b) | <span class="number">0</span>
+  <span class="keyword">this</span>._c = (<span class="keyword">this</span>._c + c) | <span class="number">0</span>
+  <span class="keyword">this</span>._d = (<span class="keyword">this</span>._d + d) | <span class="number">0</span>
+}
+
+MD5.prototype._digest = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="comment">// create padding and handle blocks</span>
+  <span class="keyword">this</span>._block[<span class="keyword">this</span>._blockOffset++] = <span class="number">0x80</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>._blockOffset > <span class="number">56</span>) {
+    <span class="keyword">this</span>._block.fill(<span class="number">0</span>, <span class="keyword">this</span>._blockOffset, <span class="number">64</span>)
+    <span class="keyword">this</span>._update()
+    <span class="keyword">this</span>._blockOffset = <span class="number">0</span>
+  }
+
+  <span class="keyword">this</span>._block.fill(<span class="number">0</span>, <span class="keyword">this</span>._blockOffset, <span class="number">56</span>)
+  <span class="keyword">this</span>._block.writeUInt32LE(<span class="keyword">this</span>._length[<span class="number">0</span>], <span class="number">56</span>)
+  <span class="keyword">this</span>._block.writeUInt32LE(<span class="keyword">this</span>._length[<span class="number">1</span>], <span class="number">60</span>)
+  <span class="keyword">this</span>._update()
+
+  <span class="comment">// produce result</span>
+  <span class="keyword">var</span> buffer = Buffer.allocUnsafe(<span class="number">16</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._a, <span class="number">0</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._b, <span class="number">4</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._c, <span class="number">8</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._d, <span class="number">12</span>)
+  <span class="keyword">return</span> buffer
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">rotl</span> <span class="params">(x, n)</span> {</span>
+  <span class="keyword">return</span> (x &lt;&lt; n) | (x >>> (<span class="number">32</span> - n))
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fnF</span> <span class="params">(a, b, c, d, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + ((b &amp; c) | ((~b) &amp; d)) + m + k) | <span class="number">0</span>, s) + b) | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fnG</span> <span class="params">(a, b, c, d, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + ((b &amp; d) | (c &amp; (~d))) + m + k) | <span class="number">0</span>, s) + b) | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fnH</span> <span class="params">(a, b, c, d, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + (b ^ c ^ d) + m + k) | <span class="number">0</span>, s) + b) | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fnI</span> <span class="params">(a, b, c, d, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + ((c ^ (b | (~d)))) + m + k) | <span class="number">0</span>, s) + b) | <span class="number">0</span>
+}
+
+module.exports = MD5
+</code></pre>

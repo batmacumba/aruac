@@ -1,0 +1,198 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> Duplex = require(<span class="string">'readable-stream'</span>).Duplex;
+<span class="keyword">var</span> PassThrough = require(<span class="string">'readable-stream'</span>).PassThrough;
+<span class="keyword">var</span> Readable = require(<span class="string">'readable-stream'</span>).Readable;
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>);
+
+<span class="keyword">var</span> nextTick = <span class="keyword">typeof</span> setImmediate !== <span class="string">'undefined'</span>
+    ? setImmediate : process.nextTick
+;
+
+module.exports = Pipeline;
+inherits(Pipeline, Duplex);
+
+module.exports.obj = <span class="function"><span class="keyword">function</span> <span class="params">(streams, opts)</span> {</span>
+    <span class="keyword">if</span> (!opts &amp;&amp; !Array.isArray(streams)) {
+        opts = streams;
+        streams = [];
+    }
+    <span class="keyword">if</span> (!streams) streams = [];
+    <span class="keyword">if</span> (!opts) opts = {};
+    opts.objectMode = <span class="literal">true</span>;
+    <span class="keyword">return</span> <span class="keyword">new</span> Pipeline(streams, opts);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">Pipeline</span> <span class="params">(streams, opts)</span> {</span>
+    <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> Pipeline)) <span class="keyword">return</span> <span class="keyword">new</span> Pipeline(streams, opts);
+    <span class="keyword">if</span> (!opts &amp;&amp; !Array.isArray(streams)) {
+        opts = streams;
+        streams = [];
+    }
+    <span class="keyword">if</span> (!streams) streams = [];
+    <span class="keyword">if</span> (!opts) opts = {};
+    Duplex.call(<span class="keyword">this</span>, opts);
+    
+    <span class="keyword">var</span> self = <span class="keyword">this</span>;
+    <span class="keyword">this</span>._options = opts;
+    <span class="keyword">this</span>._wrapOptions = { objectMode: opts.objectMode !== <span class="literal">false</span> };
+    <span class="keyword">this</span>._streams = [];
+    
+    <span class="keyword">this</span>.splice.apply(<span class="keyword">this</span>, [ <span class="number">0</span>, <span class="number">0</span> ].concat(streams));
+    
+    <span class="keyword">this</span>.once(<span class="string">'finish'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+        self._notEmpty();
+        self._streams[<span class="number">0</span>].end();
+    });
+}
+
+Pipeline.prototype._read = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">var</span> self = <span class="keyword">this</span>;
+    <span class="keyword">this</span>._notEmpty();
+    
+    <span class="keyword">var</span> r = <span class="keyword">this</span>._streams[<span class="keyword">this</span>._streams.length-<span class="number">1</span>];
+    <span class="keyword">var</span> buf, reads = <span class="number">0</span>;
+    <span class="keyword">while</span> ((buf = r.read()) !== <span class="literal">null</span>) {
+        Duplex.prototype.push.call(<span class="keyword">this</span>, buf);
+        reads ++;
+    }
+    <span class="keyword">if</span> (reads === <span class="number">0</span>) {
+        <span class="keyword">var</span> onreadable = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+            r.removeListener(<span class="string">'readable'</span>, onreadable);
+            self.removeListener(<span class="string">'_mutate'</span>, onreadable);
+            self._read()
+        };
+        r.once(<span class="string">'readable'</span>, onreadable);
+        self.once(<span class="string">'_mutate'</span>, onreadable);
+    }
+};
+
+Pipeline.prototype._write = <span class="function"><span class="keyword">function</span> <span class="params">(buf, enc, next)</span> {</span>
+    <span class="keyword">this</span>._notEmpty();
+    <span class="keyword">this</span>._streams[<span class="number">0</span>]._write(buf, enc, next);
+};
+
+Pipeline.prototype._notEmpty = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">var</span> self = <span class="keyword">this</span>;
+    <span class="keyword">if</span> (<span class="keyword">this</span>._streams.length > <span class="number">0</span>) <span class="keyword">return</span>;
+    <span class="keyword">var</span> stream = <span class="keyword">new</span> PassThrough(<span class="keyword">this</span>._options);
+    stream.once(<span class="string">'end'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+        <span class="keyword">var</span> ix = self._streams.indexOf(stream);
+        <span class="keyword">if</span> (ix >= <span class="number">0</span> &amp;&amp; ix === self._streams.length - <span class="number">1</span>) {
+            Duplex.prototype.push.call(self, <span class="literal">null</span>);
+        }
+    });
+    <span class="keyword">this</span>._streams.push(stream);
+    <span class="keyword">this</span>.length = <span class="keyword">this</span>._streams.length;
+};
+
+Pipeline.prototype.push = <span class="function"><span class="keyword">function</span> <span class="params">(stream)</span> {</span>
+    <span class="keyword">var</span> args = [ <span class="keyword">this</span>._streams.length, <span class="number">0</span> ].concat([].slice.call(arguments));
+    <span class="keyword">this</span>.splice.apply(<span class="keyword">this</span>, args);
+    <span class="keyword">return</span> <span class="keyword">this</span>._streams.length;
+};
+
+Pipeline.prototype.pop = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.splice(<span class="keyword">this</span>._streams.length-<span class="number">1</span>,<span class="number">1</span>)[<span class="number">0</span>];
+};
+
+Pipeline.prototype.shift = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.splice(<span class="number">0</span>,<span class="number">1</span>)[<span class="number">0</span>];
+};
+
+Pipeline.prototype.unshift = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">this</span>.splice.apply(<span class="keyword">this</span>, [<span class="number">0</span>,<span class="number">0</span>].concat([].slice.call(arguments)));
+    <span class="keyword">return</span> <span class="keyword">this</span>._streams.length;
+};
+
+Pipeline.prototype.splice = <span class="function"><span class="keyword">function</span> <span class="params">(start, removeLen)</span> {</span>
+    <span class="keyword">var</span> self = <span class="keyword">this</span>;
+    <span class="keyword">var</span> len = <span class="keyword">this</span>._streams.length;
+    start = start &lt; <span class="number">0</span> ? len - start : start;
+    <span class="keyword">if</span> (removeLen === <span class="literal">undefined</span>) removeLen = len - start;
+    removeLen = Math.max(<span class="number">0</span>, Math.min(len - start, removeLen));
+    
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = start; i &lt; start + removeLen; i++) {
+        <span class="keyword">if</span> (self._streams[i-<span class="number">1</span>]) {
+            self._streams[i-<span class="number">1</span>].unpipe(self._streams[i]);
+        }
+    }
+    <span class="keyword">if</span> (self._streams[i-<span class="number">1</span>] &amp;&amp; self._streams[i]) {
+        self._streams[i-<span class="number">1</span>].unpipe(self._streams[i]);
+    }
+    <span class="keyword">var</span> end = i;
+    
+    <span class="keyword">var</span> reps = [], args = arguments;
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">2</span>; j &lt; args.length; j++) (<span class="function"><span class="keyword">function</span> <span class="params">(stream)</span> {</span>
+        <span class="keyword">if</span> (Array.isArray(stream)) {
+            stream = <span class="keyword">new</span> Pipeline(stream, self._options);
+        }
+        stream.on(<span class="string">'error'</span>, <span class="function"><span class="keyword">function</span> <span class="params">(err)</span> {</span>
+            err.stream = <span class="keyword">this</span>;
+            self.emit(<span class="string">'error'</span>, err);
+        });
+        stream = self._wrapStream(stream);
+        stream.once(<span class="string">'end'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+            <span class="keyword">var</span> ix = self._streams.indexOf(stream);
+            <span class="keyword">if</span> (ix >= <span class="number">0</span> &amp;&amp; ix === self._streams.length - <span class="number">1</span>) {
+                Duplex.prototype.push.call(self, <span class="literal">null</span>);
+            }
+        });
+        reps.push(stream);
+    })(arguments[j]);
+    
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; reps.length - <span class="number">1</span>; i++) {
+        reps[i].pipe(reps[i+<span class="number">1</span>]);
+    }
+    
+    <span class="keyword">if</span> (reps.length &amp;&amp; self._streams[end]) {
+        reps[reps.length-<span class="number">1</span>].pipe(self._streams[end]);
+    }
+    <span class="keyword">if</span> (reps[<span class="number">0</span>] &amp;&amp; self._streams[start-<span class="number">1</span>]) {
+        self._streams[start-<span class="number">1</span>].pipe(reps[<span class="number">0</span>]);
+    }
+    
+    <span class="keyword">var</span> sargs = [start,removeLen].concat(reps);
+    <span class="keyword">var</span> removed = self._streams.splice.apply(self._streams, sargs);
+    
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; reps.length; i++) {
+        reps[i].read(<span class="number">0</span>);
+    }
+    
+    <span class="keyword">this</span>.emit(<span class="string">'_mutate'</span>);
+    <span class="keyword">this</span>.length = <span class="keyword">this</span>._streams.length;
+    <span class="keyword">return</span> removed;
+};
+
+Pipeline.prototype.get = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">if</span> (arguments.length === <span class="number">0</span>) <span class="keyword">return</span> <span class="literal">undefined</span>;
+    
+    <span class="keyword">var</span> base = <span class="keyword">this</span>;
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; arguments.length; i++) {
+        <span class="keyword">var</span> index = arguments[i];
+        <span class="keyword">if</span> (index &lt; <span class="number">0</span>) {
+            base = base._streams[base._streams.length + index];
+        }
+        <span class="keyword">else</span> {
+            base = base._streams[index];
+        }
+        <span class="keyword">if</span> (!base) <span class="keyword">return</span> <span class="literal">undefined</span>;
+    }
+    <span class="keyword">return</span> base;
+};
+
+Pipeline.prototype.indexOf = <span class="function"><span class="keyword">function</span> <span class="params">(stream)</span> {</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>._streams.indexOf(stream);
+};
+
+Pipeline.prototype._wrapStream = <span class="function"><span class="keyword">function</span> <span class="params">(stream)</span> {</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> stream.read === <span class="string">'function'</span>) <span class="keyword">return</span> stream;
+    <span class="keyword">var</span> w = <span class="keyword">new</span> Readable(<span class="keyword">this</span>._wrapOptions).wrap(stream);
+    w._write = <span class="function"><span class="keyword">function</span> <span class="params">(buf, enc, next)</span> {</span>
+        <span class="keyword">if</span> (stream.write(buf) === <span class="literal">false</span>) {
+            stream.once(<span class="string">'drain'</span>, next);
+        }
+        <span class="keyword">else</span> nextTick(next);
+    };
+    <span class="keyword">return</span> w;
+};
+</code></pre>

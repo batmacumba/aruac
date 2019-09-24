@@ -2,4 +2,4 @@
                                     NAVBAR
 *******************************************************************************/
 
-window.setTimeout(function(){$('.hidden-nav').addClass('esconde-nav');}, 1500);
+//window.setTimeout(function(){$('.hidden-nav').addClass('esconde-nav');}, 1500);

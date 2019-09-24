@@ -1,0 +1,939 @@
+<h1>short.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> curve = require(<span class="string">'../curve'</span>);
+<span class="keyword">var</span> elliptic = require(<span class="string">'../../elliptic'</span>);
+<span class="keyword">var</span> BN = require(<span class="string">'bn.js'</span>);
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>);
+<span class="keyword">var</span> Base = curve.base;
+
+<span class="keyword">var</span> assert = elliptic.utils.assert;
+
+<span class="function"><span class="keyword">function</span> <span class="title">ShortCurve</span><span class="params">(conf)</span> {</span>
+  Base.call(<span class="keyword">this</span>, <span class="string">'short'</span>, conf);
+
+  <span class="keyword">this</span>.a = <span class="keyword">new</span> BN(conf.a, <span class="number">16</span>).toRed(<span class="keyword">this</span>.red);
+  <span class="keyword">this</span>.b = <span class="keyword">new</span> BN(conf.b, <span class="number">16</span>).toRed(<span class="keyword">this</span>.red);
+  <span class="keyword">this</span>.tinv = <span class="keyword">this</span>.two.redInvm();
+
+  <span class="keyword">this</span>.zeroA = <span class="keyword">this</span>.a.fromRed().cmpn(<span class="number">0</span>) === <span class="number">0</span>;
+  <span class="keyword">this</span>.threeA = <span class="keyword">this</span>.a.fromRed().sub(<span class="keyword">this</span>.p).cmpn(-<span class="number">3</span>) === <span class="number">0</span>;
+
+  <span class="comment">// If the curve is endomorphic, precalculate beta and lambda</span>
+  <span class="keyword">this</span>.endo = <span class="keyword">this</span>._getEndomorphism(conf);
+  <span class="keyword">this</span>._endoWnafT1 = <span class="keyword">new</span> Array(<span class="number">4</span>);
+  <span class="keyword">this</span>._endoWnafT2 = <span class="keyword">new</span> Array(<span class="number">4</span>);
+}
+inherits(ShortCurve, Base);
+module.exports = ShortCurve;
+
+ShortCurve.prototype._getEndomorphism = <span class="function"><span class="keyword">function</span> <span class="title">_getEndomorphism</span><span class="params">(conf)</span> {</span>
+  <span class="comment">// No efficient endomorphism</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.zeroA || !<span class="keyword">this</span>.g || !<span class="keyword">this</span>.n || <span class="keyword">this</span>.p.modn(<span class="number">3</span>) !== <span class="number">1</span>)
+    <span class="keyword">return</span>;
+
+  <span class="comment">// Compute beta and lambda, that lambda * P = (beta * Px; Py)</span>
+  <span class="keyword">var</span> beta;
+  <span class="keyword">var</span> lambda;
+  <span class="keyword">if</span> (conf.beta) {
+    beta = <span class="keyword">new</span> BN(conf.beta, <span class="number">16</span>).toRed(<span class="keyword">this</span>.red);
+  } <span class="keyword">else</span> {
+    <span class="keyword">var</span> betas = <span class="keyword">this</span>._getEndoRoots(<span class="keyword">this</span>.p);
+    <span class="comment">// Choose the smallest beta</span>
+    beta = betas[<span class="number">0</span>].cmp(betas[<span class="number">1</span>]) &lt; <span class="number">0</span> ? betas[<span class="number">0</span>] : betas[<span class="number">1</span>];
+    beta = beta.toRed(<span class="keyword">this</span>.red);
+  }
+  <span class="keyword">if</span> (conf.lambda) {
+    lambda = <span class="keyword">new</span> BN(conf.lambda, <span class="number">16</span>);
+  } <span class="keyword">else</span> {
+    <span class="comment">// Choose the lambda that is matching selected beta</span>
+    <span class="keyword">var</span> lambdas = <span class="keyword">this</span>._getEndoRoots(<span class="keyword">this</span>.n);
+    <span class="keyword">if</span> (<span class="keyword">this</span>.g.mul(lambdas[<span class="number">0</span>]).x.cmp(<span class="keyword">this</span>.g.x.redMul(beta)) === <span class="number">0</span>) {
+      lambda = lambdas[<span class="number">0</span>];
+    } <span class="keyword">else</span> {
+      lambda = lambdas[<span class="number">1</span>];
+      assert(<span class="keyword">this</span>.g.mul(lambda).x.cmp(<span class="keyword">this</span>.g.x.redMul(beta)) === <span class="number">0</span>);
+    }
+  }
+
+  <span class="comment">// Get basis vectors, used for balanced length-two representation</span>
+  <span class="keyword">var</span> basis;
+  <span class="keyword">if</span> (conf.basis) {
+    basis = conf.basis.map(<span class="keyword">function</span>(vec) {
+      <span class="keyword">return</span> {
+        a: <span class="keyword">new</span> BN(vec.a, <span class="number">16</span>),
+        b: <span class="keyword">new</span> BN(vec.b, <span class="number">16</span>)
+      };
+    });
+  } <span class="keyword">else</span> {
+    basis = <span class="keyword">this</span>._getEndoBasis(lambda);
+  }
+
+  <span class="keyword">return</span> {
+    beta: beta,
+    lambda: lambda,
+    basis: basis
+  };
+};
+
+ShortCurve.prototype._getEndoRoots = <span class="function"><span class="keyword">function</span> <span class="title">_getEndoRoots</span><span class="params">(num)</span> {</span>
+  <span class="comment">// Find roots of for x^2 + x + 1 in F</span>
+  <span class="comment">// Root = (-1 +- Sqrt(-3)) / 2</span>
+  <span class="comment">//</span>
+  <span class="keyword">var</span> red = num === <span class="keyword">this</span>.p ? <span class="keyword">this</span>.red : BN.mont(num);
+  <span class="keyword">var</span> tinv = <span class="keyword">new</span> BN(<span class="number">2</span>).toRed(red).redInvm();
+  <span class="keyword">var</span> ntinv = tinv.redNeg();
+
+  <span class="keyword">var</span> s = <span class="keyword">new</span> BN(<span class="number">3</span>).toRed(red).redNeg().redSqrt().redMul(tinv);
+
+  <span class="keyword">var</span> l1 = ntinv.redAdd(s).fromRed();
+  <span class="keyword">var</span> l2 = ntinv.redSub(s).fromRed();
+  <span class="keyword">return</span> [ l1, l2 ];
+};
+
+ShortCurve.prototype._getEndoBasis = <span class="function"><span class="keyword">function</span> <span class="title">_getEndoBasis</span><span class="params">(lambda)</span> {</span>
+  <span class="comment">// aprxSqrt >= sqrt(this.n)</span>
+  <span class="keyword">var</span> aprxSqrt = <span class="keyword">this</span>.n.ushrn(Math.floor(<span class="keyword">this</span>.n.bitLength() / <span class="number">2</span>));
+
+  <span class="comment">// 3.74</span>
+  <span class="comment">// Run EGCD, until r(L + 1) &lt; aprxSqrt</span>
+  <span class="keyword">var</span> u = lambda;
+  <span class="keyword">var</span> v = <span class="keyword">this</span>.n.clone();
+  <span class="keyword">var</span> x1 = <span class="keyword">new</span> BN(<span class="number">1</span>);
+  <span class="keyword">var</span> y1 = <span class="keyword">new</span> BN(<span class="number">0</span>);
+  <span class="keyword">var</span> x2 = <span class="keyword">new</span> BN(<span class="number">0</span>);
+  <span class="keyword">var</span> y2 = <span class="keyword">new</span> BN(<span class="number">1</span>);
+
+  <span class="comment">// NOTE: all vectors are roots of: a + b * lambda = 0 (mod n)</span>
+  <span class="keyword">var</span> a0;
+  <span class="keyword">var</span> b0;
+  <span class="comment">// First vector</span>
+  <span class="keyword">var</span> a1;
+  <span class="keyword">var</span> b1;
+  <span class="comment">// Second vector</span>
+  <span class="keyword">var</span> a2;
+  <span class="keyword">var</span> b2;
+
+  <span class="keyword">var</span> prevR;
+  <span class="keyword">var</span> i = <span class="number">0</span>;
+  <span class="keyword">var</span> r;
+  <span class="keyword">var</span> x;
+  <span class="keyword">while</span> (u.cmpn(<span class="number">0</span>) !== <span class="number">0</span>) {
+    <span class="keyword">var</span> q = v.div(u);
+    r = v.sub(q.mul(u));
+    x = x2.sub(q.mul(x1));
+    <span class="keyword">var</span> y = y2.sub(q.mul(y1));
+
+    <span class="keyword">if</span> (!a1 &amp;&amp; r.cmp(aprxSqrt) &lt; <span class="number">0</span>) {
+      a0 = prevR.neg();
+      b0 = x1;
+      a1 = r.neg();
+      b1 = x;
+    } <span class="keyword">else</span> <span class="keyword">if</span> (a1 &amp;&amp; ++i === <span class="number">2</span>) {
+      <span class="keyword">break</span>;
+    }
+    prevR = r;
+
+    v = u;
+    u = r;
+    x2 = x1;
+    x1 = x;
+    y2 = y1;
+    y1 = y;
+  }
+  a2 = r.neg();
+  b2 = x;
+
+  <span class="keyword">var</span> len1 = a1.sqr().add(b1.sqr());
+  <span class="keyword">var</span> len2 = a2.sqr().add(b2.sqr());
+  <span class="keyword">if</span> (len2.cmp(len1) >= <span class="number">0</span>) {
+    a2 = a0;
+    b2 = b0;
+  }
+
+  <span class="comment">// Normalize signs</span>
+  <span class="keyword">if</span> (a1.negative) {
+    a1 = a1.neg();
+    b1 = b1.neg();
+  }
+  <span class="keyword">if</span> (a2.negative) {
+    a2 = a2.neg();
+    b2 = b2.neg();
+  }
+
+  <span class="keyword">return</span> [
+    { a: a1, b: b1 },
+    { a: a2, b: b2 }
+  ];
+};
+
+ShortCurve.prototype._endoSplit = <span class="function"><span class="keyword">function</span> <span class="title">_endoSplit</span><span class="params">(k)</span> {</span>
+  <span class="keyword">var</span> basis = <span class="keyword">this</span>.endo.basis;
+  <span class="keyword">var</span> v1 = basis[<span class="number">0</span>];
+  <span class="keyword">var</span> v2 = basis[<span class="number">1</span>];
+
+  <span class="keyword">var</span> c1 = v2.b.mul(k).divRound(<span class="keyword">this</span>.n);
+  <span class="keyword">var</span> c2 = v1.b.neg().mul(k).divRound(<span class="keyword">this</span>.n);
+
+  <span class="keyword">var</span> p1 = c1.mul(v1.a);
+  <span class="keyword">var</span> p2 = c2.mul(v2.a);
+  <span class="keyword">var</span> q1 = c1.mul(v1.b);
+  <span class="keyword">var</span> q2 = c2.mul(v2.b);
+
+  <span class="comment">// Calculate answer</span>
+  <span class="keyword">var</span> k1 = k.sub(p1).sub(p2);
+  <span class="keyword">var</span> k2 = q1.add(q2).neg();
+  <span class="keyword">return</span> { k1: k1, k2: k2 };
+};
+
+ShortCurve.prototype.pointFromX = <span class="function"><span class="keyword">function</span> <span class="title">pointFromX</span><span class="params">(x, odd)</span> {</span>
+  x = <span class="keyword">new</span> BN(x, <span class="number">16</span>);
+  <span class="keyword">if</span> (!x.red)
+    x = x.toRed(<span class="keyword">this</span>.red);
+
+  <span class="keyword">var</span> y2 = x.redSqr().redMul(x).redIAdd(x.redMul(<span class="keyword">this</span>.a)).redIAdd(<span class="keyword">this</span>.b);
+  <span class="keyword">var</span> y = y2.redSqrt();
+  <span class="keyword">if</span> (y.redSqr().redSub(y2).cmp(<span class="keyword">this</span>.zero) !== <span class="number">0</span>)
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'invalid point'</span>);
+
+  <span class="comment">// XXX Is there any way to tell if the number is odd without converting it</span>
+  <span class="comment">// to non-red form?</span>
+  <span class="keyword">var</span> isOdd = y.fromRed().isOdd();
+  <span class="keyword">if</span> (odd &amp;&amp; !isOdd || !odd &amp;&amp; isOdd)
+    y = y.redNeg();
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.point(x, y);
+};
+
+ShortCurve.prototype.validate = <span class="function"><span class="keyword">function</span> <span class="title">validate</span><span class="params">(point)</span> {</span>
+  <span class="keyword">if</span> (point.inf)
+    <span class="keyword">return</span> <span class="literal">true</span>;
+
+  <span class="keyword">var</span> x = point.x;
+  <span class="keyword">var</span> y = point.y;
+
+  <span class="keyword">var</span> ax = <span class="keyword">this</span>.a.redMul(x);
+  <span class="keyword">var</span> rhs = x.redSqr().redMul(x).redIAdd(ax).redIAdd(<span class="keyword">this</span>.b);
+  <span class="keyword">return</span> y.redSqr().redISub(rhs).cmpn(<span class="number">0</span>) === <span class="number">0</span>;
+};
+
+ShortCurve.prototype._endoWnafMulAdd =
+    <span class="function"><span class="keyword">function</span> <span class="title">_endoWnafMulAdd</span><span class="params">(points, coeffs, jacobianResult)</span> {</span>
+  <span class="keyword">var</span> npoints = <span class="keyword">this</span>._endoWnafT1;
+  <span class="keyword">var</span> ncoeffs = <span class="keyword">this</span>._endoWnafT2;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; points.length; i++) {
+    <span class="keyword">var</span> split = <span class="keyword">this</span>._endoSplit(coeffs[i]);
+    <span class="keyword">var</span> p = points[i];
+    <span class="keyword">var</span> beta = p._getBeta();
+
+    <span class="keyword">if</span> (split.k1.negative) {
+      split.k1.ineg();
+      p = p.neg(<span class="literal">true</span>);
+    }
+    <span class="keyword">if</span> (split.k2.negative) {
+      split.k2.ineg();
+      beta = beta.neg(<span class="literal">true</span>);
+    }
+
+    npoints[i * <span class="number">2</span>] = p;
+    npoints[i * <span class="number">2</span> + <span class="number">1</span>] = beta;
+    ncoeffs[i * <span class="number">2</span>] = split.k1;
+    ncoeffs[i * <span class="number">2</span> + <span class="number">1</span>] = split.k2;
+  }
+  <span class="keyword">var</span> res = <span class="keyword">this</span>._wnafMulAdd(<span class="number">1</span>, npoints, ncoeffs, i * <span class="number">2</span>, jacobianResult);
+
+  <span class="comment">// Clean-up references to points and coefficients</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; i * <span class="number">2</span>; j++) {
+    npoints[j] = <span class="literal">null</span>;
+    ncoeffs[j] = <span class="literal">null</span>;
+  }
+  <span class="keyword">return</span> res;
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">Point</span><span class="params">(curve, x, y, isRed)</span> {</span>
+  Base.BasePoint.call(<span class="keyword">this</span>, curve, <span class="string">'affine'</span>);
+  <span class="keyword">if</span> (x === <span class="literal">null</span> &amp;&amp; y === <span class="literal">null</span>) {
+    <span class="keyword">this</span>.x = <span class="literal">null</span>;
+    <span class="keyword">this</span>.y = <span class="literal">null</span>;
+    <span class="keyword">this</span>.inf = <span class="literal">true</span>;
+  } <span class="keyword">else</span> {
+    <span class="keyword">this</span>.x = <span class="keyword">new</span> BN(x, <span class="number">16</span>);
+    <span class="keyword">this</span>.y = <span class="keyword">new</span> BN(y, <span class="number">16</span>);
+    <span class="comment">// Force redgomery representation when loading from JSON</span>
+    <span class="keyword">if</span> (isRed) {
+      <span class="keyword">this</span>.x.forceRed(<span class="keyword">this</span>.curve.red);
+      <span class="keyword">this</span>.y.forceRed(<span class="keyword">this</span>.curve.red);
+    }
+    <span class="keyword">if</span> (!<span class="keyword">this</span>.x.red)
+      <span class="keyword">this</span>.x = <span class="keyword">this</span>.x.toRed(<span class="keyword">this</span>.curve.red);
+    <span class="keyword">if</span> (!<span class="keyword">this</span>.y.red)
+      <span class="keyword">this</span>.y = <span class="keyword">this</span>.y.toRed(<span class="keyword">this</span>.curve.red);
+    <span class="keyword">this</span>.inf = <span class="literal">false</span>;
+  }
+}
+inherits(Point, Base.BasePoint);
+
+ShortCurve.prototype.point = <span class="function"><span class="keyword">function</span> <span class="title">point</span><span class="params">(x, y, isRed)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">new</span> Point(<span class="keyword">this</span>, x, y, isRed);
+};
+
+ShortCurve.prototype.pointFromJSON = <span class="function"><span class="keyword">function</span> <span class="title">pointFromJSON</span><span class="params">(obj, red)</span> {</span>
+  <span class="keyword">return</span> Point.fromJSON(<span class="keyword">this</span>, obj, red);
+};
+
+Point.prototype._getBeta = <span class="function"><span class="keyword">function</span> <span class="title">_getBeta</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.curve.endo)
+    <span class="keyword">return</span>;
+
+  <span class="keyword">var</span> pre = <span class="keyword">this</span>.precomputed;
+  <span class="keyword">if</span> (pre &amp;&amp; pre.beta)
+    <span class="keyword">return</span> pre.beta;
+
+  <span class="keyword">var</span> beta = <span class="keyword">this</span>.curve.point(<span class="keyword">this</span>.x.redMul(<span class="keyword">this</span>.curve.endo.beta), <span class="keyword">this</span>.y);
+  <span class="keyword">if</span> (pre) {
+    <span class="keyword">var</span> curve = <span class="keyword">this</span>.curve;
+    <span class="keyword">var</span> endoMul = <span class="keyword">function</span>(p) {
+      <span class="keyword">return</span> curve.point(p.x.redMul(curve.endo.beta), p.y);
+    };
+    pre.beta = beta;
+    beta.precomputed = {
+      beta: <span class="literal">null</span>,
+      naf: pre.naf &amp;&amp; {
+        wnd: pre.naf.wnd,
+        points: pre.naf.points.map(endoMul)
+      },
+      doubles: pre.doubles &amp;&amp; {
+        step: pre.doubles.step,
+        points: pre.doubles.points.map(endoMul)
+      }
+    };
+  }
+  <span class="keyword">return</span> beta;
+};
+
+Point.prototype.toJSON = <span class="function"><span class="keyword">function</span> <span class="title">toJSON</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.precomputed)
+    <span class="keyword">return</span> [ <span class="keyword">this</span>.x, <span class="keyword">this</span>.y ];
+
+  <span class="keyword">return</span> [ <span class="keyword">this</span>.x, <span class="keyword">this</span>.y, <span class="keyword">this</span>.precomputed &amp;&amp; {
+    doubles: <span class="keyword">this</span>.precomputed.doubles &amp;&amp; {
+      step: <span class="keyword">this</span>.precomputed.doubles.step,
+      points: <span class="keyword">this</span>.precomputed.doubles.points.slice(<span class="number">1</span>)
+    },
+    naf: <span class="keyword">this</span>.precomputed.naf &amp;&amp; {
+      wnd: <span class="keyword">this</span>.precomputed.naf.wnd,
+      points: <span class="keyword">this</span>.precomputed.naf.points.slice(<span class="number">1</span>)
+    }
+  } ];
+};
+
+Point.fromJSON = <span class="function"><span class="keyword">function</span> <span class="title">fromJSON</span><span class="params">(curve, obj, red)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> obj === <span class="string">'string'</span>)
+    obj = JSON.parse(obj);
+  <span class="keyword">var</span> res = curve.point(obj[<span class="number">0</span>], obj[<span class="number">1</span>], red);
+  <span class="keyword">if</span> (!obj[<span class="number">2</span>])
+    <span class="keyword">return</span> res;
+
+  <span class="function"><span class="keyword">function</span> <span class="title">obj2point</span><span class="params">(obj)</span> {</span>
+    <span class="keyword">return</span> curve.point(obj[<span class="number">0</span>], obj[<span class="number">1</span>], red);
+  }
+
+  <span class="keyword">var</span> pre = obj[<span class="number">2</span>];
+  res.precomputed = {
+    beta: <span class="literal">null</span>,
+    doubles: pre.doubles &amp;&amp; {
+      step: pre.doubles.step,
+      points: [ res ].concat(pre.doubles.points.map(obj2point))
+    },
+    naf: pre.naf &amp;&amp; {
+      wnd: pre.naf.wnd,
+      points: [ res ].concat(pre.naf.points.map(obj2point))
+    }
+  };
+  <span class="keyword">return</span> res;
+};
+
+Point.prototype.inspect = <span class="function"><span class="keyword">function</span> <span class="title">inspect</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.isInfinity())
+    <span class="keyword">return</span> <span class="string">'&lt;EC Point Infinity>'</span>;
+  <span class="keyword">return</span> <span class="string">'&lt;EC Point x: '</span> + <span class="keyword">this</span>.x.fromRed().toString(<span class="number">16</span>, <span class="number">2</span>) +
+      <span class="string">' y: '</span> + <span class="keyword">this</span>.y.fromRed().toString(<span class="number">16</span>, <span class="number">2</span>) + <span class="string">'>'</span>;
+};
+
+Point.prototype.isInfinity = <span class="function"><span class="keyword">function</span> <span class="title">isInfinity</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.inf;
+};
+
+Point.prototype.add = <span class="function"><span class="keyword">function</span> <span class="title">add</span><span class="params">(p)</span> {</span>
+  <span class="comment">// O + P = P</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.inf)
+    <span class="keyword">return</span> p;
+
+  <span class="comment">// P + O = P</span>
+  <span class="keyword">if</span> (p.inf)
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+
+  <span class="comment">// P + P = 2P</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.eq(p))
+    <span class="keyword">return</span> <span class="keyword">this</span>.dbl();
+
+  <span class="comment">// P + (-P) = O</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.neg().eq(p))
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve.point(<span class="literal">null</span>, <span class="literal">null</span>);
+
+  <span class="comment">// P + Q = O</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.x.cmp(p.x) === <span class="number">0</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve.point(<span class="literal">null</span>, <span class="literal">null</span>);
+
+  <span class="keyword">var</span> c = <span class="keyword">this</span>.y.redSub(p.y);
+  <span class="keyword">if</span> (c.cmpn(<span class="number">0</span>) !== <span class="number">0</span>)
+    c = c.redMul(<span class="keyword">this</span>.x.redSub(p.x).redInvm());
+  <span class="keyword">var</span> nx = c.redSqr().redISub(<span class="keyword">this</span>.x).redISub(p.x);
+  <span class="keyword">var</span> ny = c.redMul(<span class="keyword">this</span>.x.redSub(nx)).redISub(<span class="keyword">this</span>.y);
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.point(nx, ny);
+};
+
+Point.prototype.dbl = <span class="function"><span class="keyword">function</span> <span class="title">dbl</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.inf)
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+
+  <span class="comment">// 2P = O</span>
+  <span class="keyword">var</span> ys1 = <span class="keyword">this</span>.y.redAdd(<span class="keyword">this</span>.y);
+  <span class="keyword">if</span> (ys1.cmpn(<span class="number">0</span>) === <span class="number">0</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve.point(<span class="literal">null</span>, <span class="literal">null</span>);
+
+  <span class="keyword">var</span> a = <span class="keyword">this</span>.curve.a;
+
+  <span class="keyword">var</span> x2 = <span class="keyword">this</span>.x.redSqr();
+  <span class="keyword">var</span> dyinv = ys1.redInvm();
+  <span class="keyword">var</span> c = x2.redAdd(x2).redIAdd(x2).redIAdd(a).redMul(dyinv);
+
+  <span class="keyword">var</span> nx = c.redSqr().redISub(<span class="keyword">this</span>.x.redAdd(<span class="keyword">this</span>.x));
+  <span class="keyword">var</span> ny = c.redMul(<span class="keyword">this</span>.x.redSub(nx)).redISub(<span class="keyword">this</span>.y);
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.point(nx, ny);
+};
+
+Point.prototype.getX = <span class="function"><span class="keyword">function</span> <span class="title">getX</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.x.fromRed();
+};
+
+Point.prototype.getY = <span class="function"><span class="keyword">function</span> <span class="title">getY</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.y.fromRed();
+};
+
+Point.prototype.mul = <span class="function"><span class="keyword">function</span> <span class="title">mul</span><span class="params">(k)</span> {</span>
+  k = <span class="keyword">new</span> BN(k, <span class="number">16</span>);
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>._hasDoubles(k))
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve._fixedNafMul(<span class="keyword">this</span>, k);
+  <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.curve.endo)
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve._endoWnafMulAdd([ <span class="keyword">this</span> ], [ k ]);
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve._wnafMul(<span class="keyword">this</span>, k);
+};
+
+Point.prototype.mulAdd = <span class="function"><span class="keyword">function</span> <span class="title">mulAdd</span><span class="params">(k1, p2, k2)</span> {</span>
+  <span class="keyword">var</span> points = [ <span class="keyword">this</span>, p2 ];
+  <span class="keyword">var</span> coeffs = [ k1, k2 ];
+  <span class="keyword">if</span> (<span class="keyword">this</span>.curve.endo)
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve._endoWnafMulAdd(points, coeffs);
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve._wnafMulAdd(<span class="number">1</span>, points, coeffs, <span class="number">2</span>);
+};
+
+Point.prototype.jmulAdd = <span class="function"><span class="keyword">function</span> <span class="title">jmulAdd</span><span class="params">(k1, p2, k2)</span> {</span>
+  <span class="keyword">var</span> points = [ <span class="keyword">this</span>, p2 ];
+  <span class="keyword">var</span> coeffs = [ k1, k2 ];
+  <span class="keyword">if</span> (<span class="keyword">this</span>.curve.endo)
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve._endoWnafMulAdd(points, coeffs, <span class="literal">true</span>);
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve._wnafMulAdd(<span class="number">1</span>, points, coeffs, <span class="number">2</span>, <span class="literal">true</span>);
+};
+
+Point.prototype.eq = <span class="function"><span class="keyword">function</span> <span class="title">eq</span><span class="params">(p)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span> === p ||
+         <span class="keyword">this</span>.inf === p.inf &amp;&amp;
+             (<span class="keyword">this</span>.inf || <span class="keyword">this</span>.x.cmp(p.x) === <span class="number">0</span> &amp;&amp; <span class="keyword">this</span>.y.cmp(p.y) === <span class="number">0</span>);
+};
+
+Point.prototype.neg = <span class="function"><span class="keyword">function</span> <span class="title">neg</span><span class="params">(_precompute)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.inf)
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+
+  <span class="keyword">var</span> res = <span class="keyword">this</span>.curve.point(<span class="keyword">this</span>.x, <span class="keyword">this</span>.y.redNeg());
+  <span class="keyword">if</span> (_precompute &amp;&amp; <span class="keyword">this</span>.precomputed) {
+    <span class="keyword">var</span> pre = <span class="keyword">this</span>.precomputed;
+    <span class="keyword">var</span> negate = <span class="keyword">function</span>(p) {
+      <span class="keyword">return</span> p.neg();
+    };
+    res.precomputed = {
+      naf: pre.naf &amp;&amp; {
+        wnd: pre.naf.wnd,
+        points: pre.naf.points.map(negate)
+      },
+      doubles: pre.doubles &amp;&amp; {
+        step: pre.doubles.step,
+        points: pre.doubles.points.map(negate)
+      }
+    };
+  }
+  <span class="keyword">return</span> res;
+};
+
+Point.prototype.toJ = <span class="function"><span class="keyword">function</span> <span class="title">toJ</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.inf)
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(<span class="literal">null</span>, <span class="literal">null</span>, <span class="literal">null</span>);
+
+  <span class="keyword">var</span> res = <span class="keyword">this</span>.curve.jpoint(<span class="keyword">this</span>.x, <span class="keyword">this</span>.y, <span class="keyword">this</span>.curve.one);
+  <span class="keyword">return</span> res;
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">JPoint</span><span class="params">(curve, x, y, z)</span> {</span>
+  Base.BasePoint.call(<span class="keyword">this</span>, curve, <span class="string">'jacobian'</span>);
+  <span class="keyword">if</span> (x === <span class="literal">null</span> &amp;&amp; y === <span class="literal">null</span> &amp;&amp; z === <span class="literal">null</span>) {
+    <span class="keyword">this</span>.x = <span class="keyword">this</span>.curve.one;
+    <span class="keyword">this</span>.y = <span class="keyword">this</span>.curve.one;
+    <span class="keyword">this</span>.z = <span class="keyword">new</span> BN(<span class="number">0</span>);
+  } <span class="keyword">else</span> {
+    <span class="keyword">this</span>.x = <span class="keyword">new</span> BN(x, <span class="number">16</span>);
+    <span class="keyword">this</span>.y = <span class="keyword">new</span> BN(y, <span class="number">16</span>);
+    <span class="keyword">this</span>.z = <span class="keyword">new</span> BN(z, <span class="number">16</span>);
+  }
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.x.red)
+    <span class="keyword">this</span>.x = <span class="keyword">this</span>.x.toRed(<span class="keyword">this</span>.curve.red);
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.y.red)
+    <span class="keyword">this</span>.y = <span class="keyword">this</span>.y.toRed(<span class="keyword">this</span>.curve.red);
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.z.red)
+    <span class="keyword">this</span>.z = <span class="keyword">this</span>.z.toRed(<span class="keyword">this</span>.curve.red);
+
+  <span class="keyword">this</span>.zOne = <span class="keyword">this</span>.z === <span class="keyword">this</span>.curve.one;
+}
+inherits(JPoint, Base.BasePoint);
+
+ShortCurve.prototype.jpoint = <span class="function"><span class="keyword">function</span> <span class="title">jpoint</span><span class="params">(x, y, z)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">new</span> JPoint(<span class="keyword">this</span>, x, y, z);
+};
+
+JPoint.prototype.toP = <span class="function"><span class="keyword">function</span> <span class="title">toP</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.isInfinity())
+    <span class="keyword">return</span> <span class="keyword">this</span>.curve.point(<span class="literal">null</span>, <span class="literal">null</span>);
+
+  <span class="keyword">var</span> zinv = <span class="keyword">this</span>.z.redInvm();
+  <span class="keyword">var</span> zinv2 = zinv.redSqr();
+  <span class="keyword">var</span> ax = <span class="keyword">this</span>.x.redMul(zinv2);
+  <span class="keyword">var</span> ay = <span class="keyword">this</span>.y.redMul(zinv2).redMul(zinv);
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.point(ax, ay);
+};
+
+JPoint.prototype.neg = <span class="function"><span class="keyword">function</span> <span class="title">neg</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(<span class="keyword">this</span>.x, <span class="keyword">this</span>.y.redNeg(), <span class="keyword">this</span>.z);
+};
+
+JPoint.prototype.add = <span class="function"><span class="keyword">function</span> <span class="title">add</span><span class="params">(p)</span> {</span>
+  <span class="comment">// O + P = P</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.isInfinity())
+    <span class="keyword">return</span> p;
+
+  <span class="comment">// P + O = P</span>
+  <span class="keyword">if</span> (p.isInfinity())
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+
+  <span class="comment">// 12M + 4S + 7A</span>
+  <span class="keyword">var</span> pz2 = p.z.redSqr();
+  <span class="keyword">var</span> z2 = <span class="keyword">this</span>.z.redSqr();
+  <span class="keyword">var</span> u1 = <span class="keyword">this</span>.x.redMul(pz2);
+  <span class="keyword">var</span> u2 = p.x.redMul(z2);
+  <span class="keyword">var</span> s1 = <span class="keyword">this</span>.y.redMul(pz2.redMul(p.z));
+  <span class="keyword">var</span> s2 = p.y.redMul(z2.redMul(<span class="keyword">this</span>.z));
+
+  <span class="keyword">var</span> h = u1.redSub(u2);
+  <span class="keyword">var</span> r = s1.redSub(s2);
+  <span class="keyword">if</span> (h.cmpn(<span class="number">0</span>) === <span class="number">0</span>) {
+    <span class="keyword">if</span> (r.cmpn(<span class="number">0</span>) !== <span class="number">0</span>)
+      <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(<span class="literal">null</span>, <span class="literal">null</span>, <span class="literal">null</span>);
+    <span class="keyword">else</span>
+      <span class="keyword">return</span> <span class="keyword">this</span>.dbl();
+  }
+
+  <span class="keyword">var</span> h2 = h.redSqr();
+  <span class="keyword">var</span> h3 = h2.redMul(h);
+  <span class="keyword">var</span> v = u1.redMul(h2);
+
+  <span class="keyword">var</span> nx = r.redSqr().redIAdd(h3).redISub(v).redISub(v);
+  <span class="keyword">var</span> ny = r.redMul(v.redISub(nx)).redISub(s1.redMul(h3));
+  <span class="keyword">var</span> nz = <span class="keyword">this</span>.z.redMul(p.z).redMul(h);
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(nx, ny, nz);
+};
+
+JPoint.prototype.mixedAdd = <span class="function"><span class="keyword">function</span> <span class="title">mixedAdd</span><span class="params">(p)</span> {</span>
+  <span class="comment">// O + P = P</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.isInfinity())
+    <span class="keyword">return</span> p.toJ();
+
+  <span class="comment">// P + O = P</span>
+  <span class="keyword">if</span> (p.isInfinity())
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+
+  <span class="comment">// 8M + 3S + 7A</span>
+  <span class="keyword">var</span> z2 = <span class="keyword">this</span>.z.redSqr();
+  <span class="keyword">var</span> u1 = <span class="keyword">this</span>.x;
+  <span class="keyword">var</span> u2 = p.x.redMul(z2);
+  <span class="keyword">var</span> s1 = <span class="keyword">this</span>.y;
+  <span class="keyword">var</span> s2 = p.y.redMul(z2).redMul(<span class="keyword">this</span>.z);
+
+  <span class="keyword">var</span> h = u1.redSub(u2);
+  <span class="keyword">var</span> r = s1.redSub(s2);
+  <span class="keyword">if</span> (h.cmpn(<span class="number">0</span>) === <span class="number">0</span>) {
+    <span class="keyword">if</span> (r.cmpn(<span class="number">0</span>) !== <span class="number">0</span>)
+      <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(<span class="literal">null</span>, <span class="literal">null</span>, <span class="literal">null</span>);
+    <span class="keyword">else</span>
+      <span class="keyword">return</span> <span class="keyword">this</span>.dbl();
+  }
+
+  <span class="keyword">var</span> h2 = h.redSqr();
+  <span class="keyword">var</span> h3 = h2.redMul(h);
+  <span class="keyword">var</span> v = u1.redMul(h2);
+
+  <span class="keyword">var</span> nx = r.redSqr().redIAdd(h3).redISub(v).redISub(v);
+  <span class="keyword">var</span> ny = r.redMul(v.redISub(nx)).redISub(s1.redMul(h3));
+  <span class="keyword">var</span> nz = <span class="keyword">this</span>.z.redMul(h);
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(nx, ny, nz);
+};
+
+JPoint.prototype.dblp = <span class="function"><span class="keyword">function</span> <span class="title">dblp</span><span class="params">(pow)</span> {</span>
+  <span class="keyword">if</span> (pow === <span class="number">0</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+  <span class="keyword">if</span> (<span class="keyword">this</span>.isInfinity())
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+  <span class="keyword">if</span> (!pow)
+    <span class="keyword">return</span> <span class="keyword">this</span>.dbl();
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.curve.zeroA || <span class="keyword">this</span>.curve.threeA) {
+    <span class="keyword">var</span> r = <span class="keyword">this</span>;
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; pow; i++)
+      r = r.dbl();
+    <span class="keyword">return</span> r;
+  }
+
+  <span class="comment">// 1M + 2S + 1A + N * (4S + 5M + 8A)</span>
+  <span class="comment">// N = 1 => 6M + 6S + 9A</span>
+  <span class="keyword">var</span> a = <span class="keyword">this</span>.curve.a;
+  <span class="keyword">var</span> tinv = <span class="keyword">this</span>.curve.tinv;
+
+  <span class="keyword">var</span> jx = <span class="keyword">this</span>.x;
+  <span class="keyword">var</span> jy = <span class="keyword">this</span>.y;
+  <span class="keyword">var</span> jz = <span class="keyword">this</span>.z;
+  <span class="keyword">var</span> jz4 = jz.redSqr().redSqr();
+
+  <span class="comment">// Reuse results</span>
+  <span class="keyword">var</span> jyd = jy.redAdd(jy);
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; pow; i++) {
+    <span class="keyword">var</span> jx2 = jx.redSqr();
+    <span class="keyword">var</span> jyd2 = jyd.redSqr();
+    <span class="keyword">var</span> jyd4 = jyd2.redSqr();
+    <span class="keyword">var</span> c = jx2.redAdd(jx2).redIAdd(jx2).redIAdd(a.redMul(jz4));
+
+    <span class="keyword">var</span> t1 = jx.redMul(jyd2);
+    <span class="keyword">var</span> nx = c.redSqr().redISub(t1.redAdd(t1));
+    <span class="keyword">var</span> t2 = t1.redISub(nx);
+    <span class="keyword">var</span> dny = c.redMul(t2);
+    dny = dny.redIAdd(dny).redISub(jyd4);
+    <span class="keyword">var</span> nz = jyd.redMul(jz);
+    <span class="keyword">if</span> (i + <span class="number">1</span> &lt; pow)
+      jz4 = jz4.redMul(jyd4);
+
+    jx = nx;
+    jz = nz;
+    jyd = dny;
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(jx, jyd.redMul(tinv), jz);
+};
+
+JPoint.prototype.dbl = <span class="function"><span class="keyword">function</span> <span class="title">dbl</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.isInfinity())
+    <span class="keyword">return</span> <span class="keyword">this</span>;
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.curve.zeroA)
+    <span class="keyword">return</span> <span class="keyword">this</span>._zeroDbl();
+  <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.curve.threeA)
+    <span class="keyword">return</span> <span class="keyword">this</span>._threeDbl();
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>._dbl();
+};
+
+JPoint.prototype._zeroDbl = <span class="function"><span class="keyword">function</span> <span class="title">_zeroDbl</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> nx;
+  <span class="keyword">var</span> ny;
+  <span class="keyword">var</span> nz;
+  <span class="comment">// Z = 1</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.zOne) {
+    <span class="comment">// hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html</span>
+    <span class="comment">//     #doubling-mdbl-2007-bl</span>
+    <span class="comment">// 1M + 5S + 14A</span>
+
+    <span class="comment">// XX = X1^2</span>
+    <span class="keyword">var</span> xx = <span class="keyword">this</span>.x.redSqr();
+    <span class="comment">// YY = Y1^2</span>
+    <span class="keyword">var</span> yy = <span class="keyword">this</span>.y.redSqr();
+    <span class="comment">// YYYY = YY^2</span>
+    <span class="keyword">var</span> yyyy = yy.redSqr();
+    <span class="comment">// S = 2 * ((X1 + YY)^2 - XX - YYYY)</span>
+    <span class="keyword">var</span> s = <span class="keyword">this</span>.x.redAdd(yy).redSqr().redISub(xx).redISub(yyyy);
+    s = s.redIAdd(s);
+    <span class="comment">// M = 3 * XX + a; a = 0</span>
+    <span class="keyword">var</span> m = xx.redAdd(xx).redIAdd(xx);
+    <span class="comment">// T = M ^ 2 - 2*S</span>
+    <span class="keyword">var</span> t = m.redSqr().redISub(s).redISub(s);
+
+    <span class="comment">// 8 * YYYY</span>
+    <span class="keyword">var</span> yyyy8 = yyyy.redIAdd(yyyy);
+    yyyy8 = yyyy8.redIAdd(yyyy8);
+    yyyy8 = yyyy8.redIAdd(yyyy8);
+
+    <span class="comment">// X3 = T</span>
+    nx = t;
+    <span class="comment">// Y3 = M * (S - T) - 8 * YYYY</span>
+    ny = m.redMul(s.redISub(t)).redISub(yyyy8);
+    <span class="comment">// Z3 = 2*Y1</span>
+    nz = <span class="keyword">this</span>.y.redAdd(<span class="keyword">this</span>.y);
+  } <span class="keyword">else</span> {
+    <span class="comment">// hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html</span>
+    <span class="comment">//     #doubling-dbl-2009-l</span>
+    <span class="comment">// 2M + 5S + 13A</span>
+
+    <span class="comment">// A = X1^2</span>
+    <span class="keyword">var</span> a = <span class="keyword">this</span>.x.redSqr();
+    <span class="comment">// B = Y1^2</span>
+    <span class="keyword">var</span> b = <span class="keyword">this</span>.y.redSqr();
+    <span class="comment">// C = B^2</span>
+    <span class="keyword">var</span> c = b.redSqr();
+    <span class="comment">// D = 2 * ((X1 + B)^2 - A - C)</span>
+    <span class="keyword">var</span> d = <span class="keyword">this</span>.x.redAdd(b).redSqr().redISub(a).redISub(c);
+    d = d.redIAdd(d);
+    <span class="comment">// E = 3 * A</span>
+    <span class="keyword">var</span> e = a.redAdd(a).redIAdd(a);
+    <span class="comment">// F = E^2</span>
+    <span class="keyword">var</span> f = e.redSqr();
+
+    <span class="comment">// 8 * C</span>
+    <span class="keyword">var</span> c8 = c.redIAdd(c);
+    c8 = c8.redIAdd(c8);
+    c8 = c8.redIAdd(c8);
+
+    <span class="comment">// X3 = F - 2 * D</span>
+    nx = f.redISub(d).redISub(d);
+    <span class="comment">// Y3 = E * (D - X3) - 8 * C</span>
+    ny = e.redMul(d.redISub(nx)).redISub(c8);
+    <span class="comment">// Z3 = 2 * Y1 * Z1</span>
+    nz = <span class="keyword">this</span>.y.redMul(<span class="keyword">this</span>.z);
+    nz = nz.redIAdd(nz);
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(nx, ny, nz);
+};
+
+JPoint.prototype._threeDbl = <span class="function"><span class="keyword">function</span> <span class="title">_threeDbl</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> nx;
+  <span class="keyword">var</span> ny;
+  <span class="keyword">var</span> nz;
+  <span class="comment">// Z = 1</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.zOne) {
+    <span class="comment">// hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html</span>
+    <span class="comment">//     #doubling-mdbl-2007-bl</span>
+    <span class="comment">// 1M + 5S + 15A</span>
+
+    <span class="comment">// XX = X1^2</span>
+    <span class="keyword">var</span> xx = <span class="keyword">this</span>.x.redSqr();
+    <span class="comment">// YY = Y1^2</span>
+    <span class="keyword">var</span> yy = <span class="keyword">this</span>.y.redSqr();
+    <span class="comment">// YYYY = YY^2</span>
+    <span class="keyword">var</span> yyyy = yy.redSqr();
+    <span class="comment">// S = 2 * ((X1 + YY)^2 - XX - YYYY)</span>
+    <span class="keyword">var</span> s = <span class="keyword">this</span>.x.redAdd(yy).redSqr().redISub(xx).redISub(yyyy);
+    s = s.redIAdd(s);
+    <span class="comment">// M = 3 * XX + a</span>
+    <span class="keyword">var</span> m = xx.redAdd(xx).redIAdd(xx).redIAdd(<span class="keyword">this</span>.curve.a);
+    <span class="comment">// T = M^2 - 2 * S</span>
+    <span class="keyword">var</span> t = m.redSqr().redISub(s).redISub(s);
+    <span class="comment">// X3 = T</span>
+    nx = t;
+    <span class="comment">// Y3 = M * (S - T) - 8 * YYYY</span>
+    <span class="keyword">var</span> yyyy8 = yyyy.redIAdd(yyyy);
+    yyyy8 = yyyy8.redIAdd(yyyy8);
+    yyyy8 = yyyy8.redIAdd(yyyy8);
+    ny = m.redMul(s.redISub(t)).redISub(yyyy8);
+    <span class="comment">// Z3 = 2 * Y1</span>
+    nz = <span class="keyword">this</span>.y.redAdd(<span class="keyword">this</span>.y);
+  } <span class="keyword">else</span> {
+    <span class="comment">// hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b</span>
+    <span class="comment">// 3M + 5S</span>
+
+    <span class="comment">// delta = Z1^2</span>
+    <span class="keyword">var</span> delta = <span class="keyword">this</span>.z.redSqr();
+    <span class="comment">// gamma = Y1^2</span>
+    <span class="keyword">var</span> gamma = <span class="keyword">this</span>.y.redSqr();
+    <span class="comment">// beta = X1 * gamma</span>
+    <span class="keyword">var</span> beta = <span class="keyword">this</span>.x.redMul(gamma);
+    <span class="comment">// alpha = 3 * (X1 - delta) * (X1 + delta)</span>
+    <span class="keyword">var</span> alpha = <span class="keyword">this</span>.x.redSub(delta).redMul(<span class="keyword">this</span>.x.redAdd(delta));
+    alpha = alpha.redAdd(alpha).redIAdd(alpha);
+    <span class="comment">// X3 = alpha^2 - 8 * beta</span>
+    <span class="keyword">var</span> beta4 = beta.redIAdd(beta);
+    beta4 = beta4.redIAdd(beta4);
+    <span class="keyword">var</span> beta8 = beta4.redAdd(beta4);
+    nx = alpha.redSqr().redISub(beta8);
+    <span class="comment">// Z3 = (Y1 + Z1)^2 - gamma - delta</span>
+    nz = <span class="keyword">this</span>.y.redAdd(<span class="keyword">this</span>.z).redSqr().redISub(gamma).redISub(delta);
+    <span class="comment">// Y3 = alpha * (4 * beta - X3) - 8 * gamma^2</span>
+    <span class="keyword">var</span> ggamma8 = gamma.redSqr();
+    ggamma8 = ggamma8.redIAdd(ggamma8);
+    ggamma8 = ggamma8.redIAdd(ggamma8);
+    ggamma8 = ggamma8.redIAdd(ggamma8);
+    ny = alpha.redMul(beta4.redISub(nx)).redISub(ggamma8);
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(nx, ny, nz);
+};
+
+JPoint.prototype._dbl = <span class="function"><span class="keyword">function</span> <span class="title">_dbl</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> a = <span class="keyword">this</span>.curve.a;
+
+  <span class="comment">// 4M + 6S + 10A</span>
+  <span class="keyword">var</span> jx = <span class="keyword">this</span>.x;
+  <span class="keyword">var</span> jy = <span class="keyword">this</span>.y;
+  <span class="keyword">var</span> jz = <span class="keyword">this</span>.z;
+  <span class="keyword">var</span> jz4 = jz.redSqr().redSqr();
+
+  <span class="keyword">var</span> jx2 = jx.redSqr();
+  <span class="keyword">var</span> jy2 = jy.redSqr();
+
+  <span class="keyword">var</span> c = jx2.redAdd(jx2).redIAdd(jx2).redIAdd(a.redMul(jz4));
+
+  <span class="keyword">var</span> jxd4 = jx.redAdd(jx);
+  jxd4 = jxd4.redIAdd(jxd4);
+  <span class="keyword">var</span> t1 = jxd4.redMul(jy2);
+  <span class="keyword">var</span> nx = c.redSqr().redISub(t1.redAdd(t1));
+  <span class="keyword">var</span> t2 = t1.redISub(nx);
+
+  <span class="keyword">var</span> jyd8 = jy2.redSqr();
+  jyd8 = jyd8.redIAdd(jyd8);
+  jyd8 = jyd8.redIAdd(jyd8);
+  jyd8 = jyd8.redIAdd(jyd8);
+  <span class="keyword">var</span> ny = c.redMul(t2).redISub(jyd8);
+  <span class="keyword">var</span> nz = jy.redAdd(jy).redMul(jz);
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(nx, ny, nz);
+};
+
+JPoint.prototype.trpl = <span class="function"><span class="keyword">function</span> <span class="title">trpl</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.curve.zeroA)
+    <span class="keyword">return</span> <span class="keyword">this</span>.dbl().add(<span class="keyword">this</span>);
+
+  <span class="comment">// hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#tripling-tpl-2007-bl</span>
+  <span class="comment">// 5M + 10S + ...</span>
+
+  <span class="comment">// XX = X1^2</span>
+  <span class="keyword">var</span> xx = <span class="keyword">this</span>.x.redSqr();
+  <span class="comment">// YY = Y1^2</span>
+  <span class="keyword">var</span> yy = <span class="keyword">this</span>.y.redSqr();
+  <span class="comment">// ZZ = Z1^2</span>
+  <span class="keyword">var</span> zz = <span class="keyword">this</span>.z.redSqr();
+  <span class="comment">// YYYY = YY^2</span>
+  <span class="keyword">var</span> yyyy = yy.redSqr();
+  <span class="comment">// M = 3 * XX + a * ZZ2; a = 0</span>
+  <span class="keyword">var</span> m = xx.redAdd(xx).redIAdd(xx);
+  <span class="comment">// MM = M^2</span>
+  <span class="keyword">var</span> mm = m.redSqr();
+  <span class="comment">// E = 6 * ((X1 + YY)^2 - XX - YYYY) - MM</span>
+  <span class="keyword">var</span> e = <span class="keyword">this</span>.x.redAdd(yy).redSqr().redISub(xx).redISub(yyyy);
+  e = e.redIAdd(e);
+  e = e.redAdd(e).redIAdd(e);
+  e = e.redISub(mm);
+  <span class="comment">// EE = E^2</span>
+  <span class="keyword">var</span> ee = e.redSqr();
+  <span class="comment">// T = 16*YYYY</span>
+  <span class="keyword">var</span> t = yyyy.redIAdd(yyyy);
+  t = t.redIAdd(t);
+  t = t.redIAdd(t);
+  t = t.redIAdd(t);
+  <span class="comment">// U = (M + E)^2 - MM - EE - T</span>
+  <span class="keyword">var</span> u = m.redIAdd(e).redSqr().redISub(mm).redISub(ee).redISub(t);
+  <span class="comment">// X3 = 4 * (X1 * EE - 4 * YY * U)</span>
+  <span class="keyword">var</span> yyu4 = yy.redMul(u);
+  yyu4 = yyu4.redIAdd(yyu4);
+  yyu4 = yyu4.redIAdd(yyu4);
+  <span class="keyword">var</span> nx = <span class="keyword">this</span>.x.redMul(ee).redISub(yyu4);
+  nx = nx.redIAdd(nx);
+  nx = nx.redIAdd(nx);
+  <span class="comment">// Y3 = 8 * Y1 * (U * (T - U) - E * EE)</span>
+  <span class="keyword">var</span> ny = <span class="keyword">this</span>.y.redMul(u.redMul(t.redISub(u)).redISub(e.redMul(ee)));
+  ny = ny.redIAdd(ny);
+  ny = ny.redIAdd(ny);
+  ny = ny.redIAdd(ny);
+  <span class="comment">// Z3 = (Z1 + E)^2 - ZZ - EE</span>
+  <span class="keyword">var</span> nz = <span class="keyword">this</span>.z.redAdd(e).redSqr().redISub(zz).redISub(ee);
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve.jpoint(nx, ny, nz);
+};
+
+JPoint.prototype.mul = <span class="function"><span class="keyword">function</span> <span class="title">mul</span><span class="params">(k, kbase)</span> {</span>
+  k = <span class="keyword">new</span> BN(k, kbase);
+
+  <span class="keyword">return</span> <span class="keyword">this</span>.curve._wnafMul(<span class="keyword">this</span>, k);
+};
+
+JPoint.prototype.eq = <span class="function"><span class="keyword">function</span> <span class="title">eq</span><span class="params">(p)</span> {</span>
+  <span class="keyword">if</span> (p.type === <span class="string">'affine'</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>.eq(p.toJ());
+
+  <span class="keyword">if</span> (<span class="keyword">this</span> === p)
+    <span class="keyword">return</span> <span class="literal">true</span>;
+
+  <span class="comment">// x1 * z2^2 == x2 * z1^2</span>
+  <span class="keyword">var</span> z2 = <span class="keyword">this</span>.z.redSqr();
+  <span class="keyword">var</span> pz2 = p.z.redSqr();
+  <span class="keyword">if</span> (<span class="keyword">this</span>.x.redMul(pz2).redISub(p.x.redMul(z2)).cmpn(<span class="number">0</span>) !== <span class="number">0</span>)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="comment">// y1 * z2^3 == y2 * z1^3</span>
+  <span class="keyword">var</span> z3 = z2.redMul(<span class="keyword">this</span>.z);
+  <span class="keyword">var</span> pz3 = pz2.redMul(p.z);
+  <span class="keyword">return</span> <span class="keyword">this</span>.y.redMul(pz3).redISub(p.y.redMul(z3)).cmpn(<span class="number">0</span>) === <span class="number">0</span>;
+};
+
+JPoint.prototype.eqXToP = <span class="function"><span class="keyword">function</span> <span class="title">eqXToP</span><span class="params">(x)</span> {</span>
+  <span class="keyword">var</span> zs = <span class="keyword">this</span>.z.redSqr();
+  <span class="keyword">var</span> rx = x.toRed(<span class="keyword">this</span>.curve.red).redMul(zs);
+  <span class="keyword">if</span> (<span class="keyword">this</span>.x.cmp(rx) === <span class="number">0</span>)
+    <span class="keyword">return</span> <span class="literal">true</span>;
+
+  <span class="keyword">var</span> xc = x.clone();
+  <span class="keyword">var</span> t = <span class="keyword">this</span>.curve.redN.redMul(zs);
+  <span class="keyword">for</span> (;;) {
+    xc.iadd(<span class="keyword">this</span>.curve.n);
+    <span class="keyword">if</span> (xc.cmp(<span class="keyword">this</span>.curve.p) >= <span class="number">0</span>)
+      <span class="keyword">return</span> <span class="literal">false</span>;
+
+    rx.redIAdd(t);
+    <span class="keyword">if</span> (<span class="keyword">this</span>.x.cmp(rx) === <span class="number">0</span>)
+      <span class="keyword">return</span> <span class="literal">true</span>;
+  }
+};
+
+JPoint.prototype.inspect = <span class="function"><span class="keyword">function</span> <span class="title">inspect</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.isInfinity())
+    <span class="keyword">return</span> <span class="string">'&lt;EC JPoint Infinity>'</span>;
+  <span class="keyword">return</span> <span class="string">'&lt;EC JPoint x: '</span> + <span class="keyword">this</span>.x.toString(<span class="number">16</span>, <span class="number">2</span>) +
+      <span class="string">' y: '</span> + <span class="keyword">this</span>.y.toString(<span class="number">16</span>, <span class="number">2</span>) +
+      <span class="string">' z: '</span> + <span class="keyword">this</span>.z.toString(<span class="number">16</span>, <span class="number">2</span>) + <span class="string">'>'</span>;
+};
+
+JPoint.prototype.isInfinity = <span class="function"><span class="keyword">function</span> <span class="title">isInfinity</span><span class="params">()</span> {</span>
+  <span class="comment">// XXX This code assumes that zero is always zero in red</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.z.cmpn(<span class="number">0</span>) === <span class="number">0</span>;
+};
+</code></pre>

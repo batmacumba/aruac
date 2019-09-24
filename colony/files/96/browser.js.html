@@ -1,0 +1,12 @@
+<h1>browser.js</h1>
+<pre><code class="lang-js">exports.publicEncrypt = require(<span class="string">'./publicEncrypt'</span>)
+exports.privateDecrypt = require(<span class="string">'./privateDecrypt'</span>)
+
+exports.privateEncrypt = <span class="function"><span class="keyword">function</span> <span class="title">privateEncrypt</span> <span class="params">(key, buf)</span> {</span>
+  <span class="keyword">return</span> exports.publicEncrypt(key, buf, <span class="literal">true</span>)
+}
+
+exports.publicDecrypt = <span class="function"><span class="keyword">function</span> <span class="title">publicDecrypt</span> <span class="params">(key, buf)</span> {</span>
+  <span class="keyword">return</span> exports.privateDecrypt(key, buf, <span class="literal">true</span>)
+}
+</code></pre>

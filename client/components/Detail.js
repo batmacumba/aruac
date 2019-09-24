@@ -327,7 +327,7 @@ class Detail extends React.Component {
                           <hr/>
                         </div>
                         <ul>
-                        { this.props.project.awards.map((award) => {
+                        { this.props.project.awards[0].split(',').map((award) => {
                           return (this.displayAwards(award));
                         })}
                         </ul>
@@ -343,7 +343,7 @@ class Detail extends React.Component {
                           <hr/>
                         </div>
                         <ul>
-                        { this.props.project.awards_en.map((award) => {
+                        { this.props.project.awards_en[0].split(',').map((award) => {
                           return (this.displayAwards(award));
                         })}
                         </ul>
@@ -360,7 +360,7 @@ class Detail extends React.Component {
                           <hr/>
                         </div>
                         <ul>
-                        { this.props.project.festivals.map((festival) => {
+                        { this.props.project.festivals[0].split(',').map((festival) => {
                           return (this.displayFestivals(festival));
                         })}
                         </ul>
@@ -372,11 +372,11 @@ class Detail extends React.Component {
                       <div>
                         <div className="text-modal-subtitle">
                           <hr/>
-                          Appearances
+                          Screenings
                           <hr/>
                         </div>
                         <ul>
-                        { this.props.project.festivals_en.map((festival) => {
+                        { this.props.project.festivals_en[0].split(',').map((festival) => {
                           return (this.displayFestivals(festival));
                         })}
                         </ul>
@@ -393,7 +393,7 @@ class Detail extends React.Component {
                           <hr/>
                         </div>
                         <ul>
-                        { this.props.project.reviews.map((url) => {
+                        { this.props.project.reviews[0].split(',').map((url) => {
                           return (this.displayReviews(url));
                         })}
                         </ul>
@@ -409,7 +409,7 @@ class Detail extends React.Component {
                           <hr/>
                         </div>
                         <ul>
-                        { this.props.project.reviews_en.map((url) => {
+                        { this.props.project.reviews_en[0].split(',').map((url) => {
                           return (this.displayReviews(url));
                         })}
                         </ul>
@@ -448,7 +448,6 @@ class Detail extends React.Component {
                 </div>
               </div>
               {/* AVISO DE SUCESSO */}
-              <Button bsStyle="success" bsSize="small" onClick={this.openModal}><span className="glyphicon glyphicon-plus"></span></Button>
               <Modal
               isOpen={this.state.modalIsOpen}
               onAfterOpen={this.afterOpenModal}

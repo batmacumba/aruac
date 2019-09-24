@@ -1,0 +1,23 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="comment">/*!
+ * Determine if an object is a Buffer
+ *
+ * @author   Feross Aboukhadijeh &lt;https://feross.org>
+ * @license  MIT
+ */</span>
+
+<span class="comment">// The _isBuffer check is for Safari 5-7 support, because it's missing</span>
+<span class="comment">// Object.prototype.constructor. Remove this eventually</span>
+module.exports = <span class="function"><span class="keyword">function</span> <span class="params">(obj)</span> {</span>
+  <span class="keyword">return</span> obj != <span class="literal">null</span> &amp;&amp; (isBuffer(obj) || isSlowBuffer(obj) || !!obj._isBuffer)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">isBuffer</span> <span class="params">(obj)</span> {</span>
+  <span class="keyword">return</span> !!obj.constructor &amp;&amp; <span class="keyword">typeof</span> obj.constructor.isBuffer === <span class="string">'function'</span> &amp;&amp; obj.constructor.isBuffer(obj)
+}
+
+<span class="comment">// For Node v0.10 support. Remove this eventually.</span>
+<span class="function"><span class="keyword">function</span> <span class="title">isSlowBuffer</span> <span class="params">(obj)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">typeof</span> obj.readFloatLE === <span class="string">'function'</span> &amp;&amp; <span class="keyword">typeof</span> obj.slice === <span class="string">'function'</span> &amp;&amp; isBuffer(obj.slice(<span class="number">0</span>, <span class="number">0</span>))
+}
+</code></pre>

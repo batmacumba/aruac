@@ -1,0 +1,415 @@
+<h1>jsonparse.js</h1>
+<pre><code class="lang-js"><span class="comment">/*global Buffer*/</span>
+<span class="comment">// Named constants with unique integer values</span>
+<span class="keyword">var</span> C = {};
+<span class="comment">// Tokens</span>
+<span class="keyword">var</span> LEFT_BRACE    = C.LEFT_BRACE    = <span class="number">0x1</span>;
+<span class="keyword">var</span> RIGHT_BRACE   = C.RIGHT_BRACE   = <span class="number">0x2</span>;
+<span class="keyword">var</span> LEFT_BRACKET  = C.LEFT_BRACKET  = <span class="number">0x3</span>;
+<span class="keyword">var</span> RIGHT_BRACKET = C.RIGHT_BRACKET = <span class="number">0x4</span>;
+<span class="keyword">var</span> COLON         = C.COLON         = <span class="number">0x5</span>;
+<span class="keyword">var</span> COMMA         = C.COMMA         = <span class="number">0x6</span>;
+<span class="keyword">var</span> TRUE          = C.TRUE          = <span class="number">0x7</span>;
+<span class="keyword">var</span> FALSE         = C.FALSE         = <span class="number">0x8</span>;
+<span class="keyword">var</span> NULL          = C.NULL          = <span class="number">0x9</span>;
+<span class="keyword">var</span> STRING        = C.STRING        = <span class="number">0xa</span>;
+<span class="keyword">var</span> NUMBER        = C.NUMBER        = <span class="number">0xb</span>;
+<span class="comment">// Tokenizer States</span>
+<span class="keyword">var</span> START   = C.START   = <span class="number">0x11</span>;
+<span class="keyword">var</span> STOP    = C.STOP    = <span class="number">0x12</span>;
+<span class="keyword">var</span> TRUE1   = C.TRUE1   = <span class="number">0x21</span>;
+<span class="keyword">var</span> TRUE2   = C.TRUE2   = <span class="number">0x22</span>;
+<span class="keyword">var</span> TRUE3   = C.TRUE3   = <span class="number">0x23</span>;
+<span class="keyword">var</span> FALSE1  = C.FALSE1  = <span class="number">0x31</span>;
+<span class="keyword">var</span> FALSE2  = C.FALSE2  = <span class="number">0x32</span>;
+<span class="keyword">var</span> FALSE3  = C.FALSE3  = <span class="number">0x33</span>;
+<span class="keyword">var</span> FALSE4  = C.FALSE4  = <span class="number">0x34</span>;
+<span class="keyword">var</span> NULL1   = C.NULL1   = <span class="number">0x41</span>;
+<span class="keyword">var</span> NULL2   = C.NULL2   = <span class="number">0x42</span>;
+<span class="keyword">var</span> NULL3   = C.NULL3   = <span class="number">0x43</span>;
+<span class="keyword">var</span> NUMBER1 = C.NUMBER1 = <span class="number">0x51</span>;
+<span class="keyword">var</span> NUMBER3 = C.NUMBER3 = <span class="number">0x53</span>;
+<span class="keyword">var</span> STRING1 = C.STRING1 = <span class="number">0x61</span>;
+<span class="keyword">var</span> STRING2 = C.STRING2 = <span class="number">0x62</span>;
+<span class="keyword">var</span> STRING3 = C.STRING3 = <span class="number">0x63</span>;
+<span class="keyword">var</span> STRING4 = C.STRING4 = <span class="number">0x64</span>;
+<span class="keyword">var</span> STRING5 = C.STRING5 = <span class="number">0x65</span>;
+<span class="keyword">var</span> STRING6 = C.STRING6 = <span class="number">0x66</span>;
+<span class="comment">// Parser States</span>
+<span class="keyword">var</span> VALUE   = C.VALUE   = <span class="number">0x71</span>;
+<span class="keyword">var</span> KEY     = C.KEY     = <span class="number">0x72</span>;
+<span class="comment">// Parser Modes</span>
+<span class="keyword">var</span> OBJECT  = C.OBJECT  = <span class="number">0x81</span>;
+<span class="keyword">var</span> ARRAY   = C.ARRAY   = <span class="number">0x82</span>;
+<span class="comment">// Character constants</span>
+<span class="keyword">var</span> BACK_SLASH =      <span class="string">"\\"</span>.charCodeAt(<span class="number">0</span>);
+<span class="keyword">var</span> FORWARD_SLASH =   <span class="string">"\/"</span>.charCodeAt(<span class="number">0</span>);
+<span class="keyword">var</span> BACKSPACE =       <span class="string">"\b"</span>.charCodeAt(<span class="number">0</span>);
+<span class="keyword">var</span> FORM_FEED =       <span class="string">"\f"</span>.charCodeAt(<span class="number">0</span>);
+<span class="keyword">var</span> NEWLINE =         <span class="string">"\n"</span>.charCodeAt(<span class="number">0</span>);
+<span class="keyword">var</span> CARRIAGE_RETURN = <span class="string">"\r"</span>.charCodeAt(<span class="number">0</span>);
+<span class="keyword">var</span> TAB =             <span class="string">"\t"</span>.charCodeAt(<span class="number">0</span>);
+
+<span class="keyword">var</span> STRING_BUFFER_SIZE = <span class="number">64</span> * <span class="number">1024</span>;
+
+<span class="function"><span class="keyword">function</span> <span class="title">Parser</span><span class="params">()</span> {</span>
+  <span class="keyword">this</span>.tState = START;
+  <span class="keyword">this</span>.value = <span class="literal">undefined</span>;
+
+  <span class="keyword">this</span>.string = <span class="literal">undefined</span>; <span class="comment">// string data</span>
+  <span class="keyword">this</span>.stringBuffer = Buffer.alloc ? Buffer.alloc(STRING_BUFFER_SIZE) : <span class="keyword">new</span> Buffer(STRING_BUFFER_SIZE);
+  <span class="keyword">this</span>.stringBufferOffset = <span class="number">0</span>;
+  <span class="keyword">this</span>.unicode = <span class="literal">undefined</span>; <span class="comment">// unicode escapes</span>
+  <span class="keyword">this</span>.highSurrogate = <span class="literal">undefined</span>;
+
+  <span class="keyword">this</span>.key = <span class="literal">undefined</span>;
+  <span class="keyword">this</span>.mode = <span class="literal">undefined</span>;
+  <span class="keyword">this</span>.stack = [];
+  <span class="keyword">this</span>.state = VALUE;
+  <span class="keyword">this</span>.bytes_remaining = <span class="number">0</span>; <span class="comment">// number of bytes remaining in multi byte utf8 char to read after split boundary</span>
+  <span class="keyword">this</span>.bytes_in_sequence = <span class="number">0</span>; <span class="comment">// bytes in multi byte utf8 char to read</span>
+  <span class="keyword">this</span>.temp_buffs = { <span class="string">"2"</span>: <span class="keyword">new</span> Buffer(<span class="number">2</span>), <span class="string">"3"</span>: <span class="keyword">new</span> Buffer(<span class="number">3</span>), <span class="string">"4"</span>: <span class="keyword">new</span> Buffer(<span class="number">4</span>) }; <span class="comment">// for rebuilding chars split before boundary is reached</span>
+
+  <span class="comment">// Stream offset</span>
+  <span class="keyword">this</span>.offset = -<span class="number">1</span>;
+}
+
+<span class="comment">// Slow code to string converter (only used when throwing syntax errors)</span>
+Parser.toknam = <span class="function"><span class="keyword">function</span> <span class="params">(code)</span> {</span>
+  <span class="keyword">var</span> keys = Object.keys(C);
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, l = keys.length; i &lt; l; i++) {
+    <span class="keyword">var</span> key = keys[i];
+    <span class="keyword">if</span> (C[key] === code) { <span class="keyword">return</span> key; }
+  }
+  <span class="keyword">return</span> code &amp;&amp; (<span class="string">"0x"</span> + code.toString(<span class="number">16</span>));
+};
+
+<span class="keyword">var</span> proto = Parser.prototype;
+proto.onError = <span class="function"><span class="keyword">function</span> <span class="params">(err)</span> {</span> <span class="keyword">throw</span> err; };
+proto.charError = <span class="function"><span class="keyword">function</span> <span class="params">(buffer, i)</span> {</span>
+  <span class="keyword">this</span>.tState = STOP;
+  <span class="keyword">this</span>.onError(<span class="keyword">new</span> Error(<span class="string">"Unexpected "</span> + JSON.stringify(String.fromCharCode(buffer[i])) + <span class="string">" at position "</span> + i + <span class="string">" in state "</span> + Parser.toknam(<span class="keyword">this</span>.tState)));
+};
+proto.appendStringChar = <span class="function"><span class="keyword">function</span> <span class="params">(char)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.stringBufferOffset >= STRING_BUFFER_SIZE) {
+    <span class="keyword">this</span>.string += <span class="keyword">this</span>.stringBuffer.toString(<span class="string">'utf8'</span>);
+    <span class="keyword">this</span>.stringBufferOffset = <span class="number">0</span>;
+  }
+
+  <span class="keyword">this</span>.stringBuffer[<span class="keyword">this</span>.stringBufferOffset++] = char;
+};
+proto.appendStringBuf = <span class="function"><span class="keyword">function</span> <span class="params">(buf, start, end)</span> {</span>
+  <span class="keyword">var</span> size = buf.length;
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> start === <span class="string">'number'</span>) {
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> end === <span class="string">'number'</span>) {
+      <span class="keyword">if</span> (end &lt; <span class="number">0</span>) {
+        <span class="comment">// adding a negative end decreeses the size</span>
+        size = buf.length - start + end;
+      } <span class="keyword">else</span> {
+        size = end - start;
+      }
+    } <span class="keyword">else</span> {
+      size = buf.length - start;
+    }
+  }
+
+  <span class="keyword">if</span> (size &lt; <span class="number">0</span>) {
+    size = <span class="number">0</span>;
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">this</span>.stringBufferOffset + size > STRING_BUFFER_SIZE) {
+    <span class="keyword">this</span>.string += <span class="keyword">this</span>.stringBuffer.toString(<span class="string">'utf8'</span>, <span class="number">0</span>, <span class="keyword">this</span>.stringBufferOffset);
+    <span class="keyword">this</span>.stringBufferOffset = <span class="number">0</span>;
+  }
+
+  buf.copy(<span class="keyword">this</span>.stringBuffer, <span class="keyword">this</span>.stringBufferOffset, start, end);
+  <span class="keyword">this</span>.stringBufferOffset += size;
+};
+proto.write = <span class="function"><span class="keyword">function</span> <span class="params">(buffer)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> buffer === <span class="string">"string"</span>) buffer = <span class="keyword">new</span> Buffer(buffer);
+  <span class="keyword">var</span> n;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, l = buffer.length; i &lt; l; i++) {
+    <span class="keyword">if</span> (<span class="keyword">this</span>.tState === START){
+      n = buffer[i];
+      <span class="keyword">this</span>.offset++;
+      <span class="keyword">if</span>(n === <span class="number">0x7b</span>){ <span class="keyword">this</span>.onToken(LEFT_BRACE, <span class="string">"{"</span>); <span class="comment">// {</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x7d</span>){ <span class="keyword">this</span>.onToken(RIGHT_BRACE, <span class="string">"}"</span>); <span class="comment">// }</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x5b</span>){ <span class="keyword">this</span>.onToken(LEFT_BRACKET, <span class="string">"["</span>); <span class="comment">// [</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x5d</span>){ <span class="keyword">this</span>.onToken(RIGHT_BRACKET, <span class="string">"]"</span>); <span class="comment">// ]</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x3a</span>){ <span class="keyword">this</span>.onToken(COLON, <span class="string">":"</span>);  <span class="comment">// :</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x2c</span>){ <span class="keyword">this</span>.onToken(COMMA, <span class="string">","</span>); <span class="comment">// ,</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x74</span>){ <span class="keyword">this</span>.tState = TRUE1;  <span class="comment">// t</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x66</span>){ <span class="keyword">this</span>.tState = FALSE1;  <span class="comment">// f</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x6e</span>){ <span class="keyword">this</span>.tState = NULL1; <span class="comment">// n</span>
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x22</span>){ <span class="comment">// "</span>
+        <span class="keyword">this</span>.string = <span class="string">""</span>;
+        <span class="keyword">this</span>.stringBufferOffset = <span class="number">0</span>;
+        <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x2d</span>){ <span class="keyword">this</span>.string = <span class="string">"-"</span>; <span class="keyword">this</span>.tState = NUMBER1; <span class="comment">// -</span>
+      }<span class="keyword">else</span>{
+        <span class="keyword">if</span> (n >= <span class="number">0x30</span> &amp;&amp; n &lt; <span class="number">0x40</span>) { <span class="comment">// 1-9</span>
+          <span class="keyword">this</span>.string = String.fromCharCode(n); <span class="keyword">this</span>.tState = NUMBER3;
+        } <span class="keyword">else</span> <span class="keyword">if</span> (n === <span class="number">0x20</span> || n === <span class="number">0x09</span> || n === <span class="number">0x0a</span> || n === <span class="number">0x0d</span>) {
+          <span class="comment">// whitespace</span>
+        } <span class="keyword">else</span> {
+          <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i);
+        }
+      }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === STRING1){ <span class="comment">// After open quote</span>
+      n = buffer[i]; <span class="comment">// get current byte from buffer</span>
+      <span class="comment">// check for carry over of a multi byte char split between data chunks</span>
+      <span class="comment">// &amp; fill temp buffer it with start of this data chunk up to the boundary limit set in the last iteration</span>
+      <span class="keyword">if</span> (<span class="keyword">this</span>.bytes_remaining > <span class="number">0</span>) {
+        <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; <span class="keyword">this</span>.bytes_remaining; j++) {
+          <span class="keyword">this</span>.temp_buffs[<span class="keyword">this</span>.bytes_in_sequence][<span class="keyword">this</span>.bytes_in_sequence - <span class="keyword">this</span>.bytes_remaining + j] = buffer[j];
+        }
+
+        <span class="keyword">this</span>.appendStringBuf(<span class="keyword">this</span>.temp_buffs[<span class="keyword">this</span>.bytes_in_sequence]);
+        <span class="keyword">this</span>.bytes_in_sequence = <span class="keyword">this</span>.bytes_remaining = <span class="number">0</span>;
+        i = i + j - <span class="number">1</span>;
+      } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.bytes_remaining === <span class="number">0</span> &amp;&amp; n >= <span class="number">128</span>) { <span class="comment">// else if no remainder bytes carried over, parse multi byte (>=128) chars one at a time</span>
+        <span class="keyword">if</span> (n &lt;= <span class="number">193</span> || n > <span class="number">244</span>) {
+          <span class="keyword">return</span> <span class="keyword">this</span>.onError(<span class="keyword">new</span> Error(<span class="string">"Invalid UTF-8 character at position "</span> + i + <span class="string">" in state "</span> + Parser.toknam(<span class="keyword">this</span>.tState)));
+        }
+        <span class="keyword">if</span> ((n >= <span class="number">194</span>) &amp;&amp; (n &lt;= <span class="number">223</span>)) <span class="keyword">this</span>.bytes_in_sequence = <span class="number">2</span>;
+        <span class="keyword">if</span> ((n >= <span class="number">224</span>) &amp;&amp; (n &lt;= <span class="number">239</span>)) <span class="keyword">this</span>.bytes_in_sequence = <span class="number">3</span>;
+        <span class="keyword">if</span> ((n >= <span class="number">240</span>) &amp;&amp; (n &lt;= <span class="number">244</span>)) <span class="keyword">this</span>.bytes_in_sequence = <span class="number">4</span>;
+        <span class="keyword">if</span> ((<span class="keyword">this</span>.bytes_in_sequence + i) > buffer.length) { <span class="comment">// if bytes needed to complete char fall outside buffer length, we have a boundary split</span>
+          <span class="keyword">for</span> (<span class="keyword">var</span> k = <span class="number">0</span>; k &lt;= (buffer.length - <span class="number">1</span> - i); k++) {
+            <span class="keyword">this</span>.temp_buffs[<span class="keyword">this</span>.bytes_in_sequence][k] = buffer[i + k]; <span class="comment">// fill temp buffer of correct size with bytes available in this chunk</span>
+          }
+          <span class="keyword">this</span>.bytes_remaining = (i + <span class="keyword">this</span>.bytes_in_sequence) - buffer.length;
+          i = buffer.length - <span class="number">1</span>;
+        } <span class="keyword">else</span> {
+          <span class="keyword">this</span>.appendStringBuf(buffer, i, i + <span class="keyword">this</span>.bytes_in_sequence);
+          i = i + <span class="keyword">this</span>.bytes_in_sequence - <span class="number">1</span>;
+        }
+      } <span class="keyword">else</span> <span class="keyword">if</span> (n === <span class="number">0x22</span>) {
+        <span class="keyword">this</span>.tState = START;
+        <span class="keyword">this</span>.string += <span class="keyword">this</span>.stringBuffer.toString(<span class="string">'utf8'</span>, <span class="number">0</span>, <span class="keyword">this</span>.stringBufferOffset);
+        <span class="keyword">this</span>.stringBufferOffset = <span class="number">0</span>;
+        <span class="keyword">this</span>.onToken(STRING, <span class="keyword">this</span>.string);
+        <span class="keyword">this</span>.offset += Buffer.byteLength(<span class="keyword">this</span>.string, <span class="string">'utf8'</span>) + <span class="number">1</span>;
+        <span class="keyword">this</span>.string = <span class="literal">undefined</span>;
+      }
+      <span class="keyword">else</span> <span class="keyword">if</span> (n === <span class="number">0x5c</span>) {
+        <span class="keyword">this</span>.tState = STRING2;
+      }
+      <span class="keyword">else</span> <span class="keyword">if</span> (n >= <span class="number">0x20</span>) { <span class="keyword">this</span>.appendStringChar(n); }
+      <span class="keyword">else</span> {
+          <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i);
+      }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === STRING2){ <span class="comment">// After backslash</span>
+      n = buffer[i];
+      <span class="keyword">if</span>(n === <span class="number">0x22</span>){ <span class="keyword">this</span>.appendStringChar(n); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x5c</span>){ <span class="keyword">this</span>.appendStringChar(BACK_SLASH); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x2f</span>){ <span class="keyword">this</span>.appendStringChar(FORWARD_SLASH); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x62</span>){ <span class="keyword">this</span>.appendStringChar(BACKSPACE); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x66</span>){ <span class="keyword">this</span>.appendStringChar(FORM_FEED); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x6e</span>){ <span class="keyword">this</span>.appendStringChar(NEWLINE); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x72</span>){ <span class="keyword">this</span>.appendStringChar(CARRIAGE_RETURN); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x74</span>){ <span class="keyword">this</span>.appendStringChar(TAB); <span class="keyword">this</span>.tState = STRING1;
+      }<span class="keyword">else</span> <span class="keyword">if</span>(n === <span class="number">0x75</span>){ <span class="keyword">this</span>.unicode = <span class="string">""</span>; <span class="keyword">this</span>.tState = STRING3;
+      }<span class="keyword">else</span>{
+        <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i);
+      }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === STRING3 || <span class="keyword">this</span>.tState === STRING4 || <span class="keyword">this</span>.tState === STRING5 || <span class="keyword">this</span>.tState === STRING6){ <span class="comment">// unicode hex codes</span>
+      n = buffer[i];
+      <span class="comment">// 0-9 A-F a-f</span>
+      <span class="keyword">if</span> ((n >= <span class="number">0x30</span> &amp;&amp; n &lt; <span class="number">0x40</span>) || (n > <span class="number">0x40</span> &amp;&amp; n &lt;= <span class="number">0x46</span>) || (n > <span class="number">0x60</span> &amp;&amp; n &lt;= <span class="number">0x66</span>)) {
+        <span class="keyword">this</span>.unicode += String.fromCharCode(n);
+        <span class="keyword">if</span> (<span class="keyword">this</span>.tState++ === STRING6) {
+          <span class="keyword">var</span> intVal = parseInt(<span class="keyword">this</span>.unicode, <span class="number">16</span>);
+          <span class="keyword">this</span>.unicode = <span class="literal">undefined</span>;
+          <span class="keyword">if</span> (<span class="keyword">this</span>.highSurrogate !== <span class="literal">undefined</span> &amp;&amp; intVal >= <span class="number">0xDC00</span> &amp;&amp; intVal &lt; (<span class="number">0xDFFF</span> + <span class="number">1</span>)) { <span class="comment">//&lt;56320,57343> - lowSurrogate</span>
+            <span class="keyword">this</span>.appendStringBuf(<span class="keyword">new</span> Buffer(String.fromCharCode(<span class="keyword">this</span>.highSurrogate, intVal)));
+            <span class="keyword">this</span>.highSurrogate = <span class="literal">undefined</span>;
+          } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.highSurrogate === <span class="literal">undefined</span> &amp;&amp; intVal >= <span class="number">0xD800</span> &amp;&amp; intVal &lt; (<span class="number">0xDBFF</span> + <span class="number">1</span>)) { <span class="comment">//&lt;55296,56319> - highSurrogate</span>
+            <span class="keyword">this</span>.highSurrogate = intVal;
+          } <span class="keyword">else</span> {
+            <span class="keyword">if</span> (<span class="keyword">this</span>.highSurrogate !== <span class="literal">undefined</span>) {
+              <span class="keyword">this</span>.appendStringBuf(<span class="keyword">new</span> Buffer(String.fromCharCode(<span class="keyword">this</span>.highSurrogate)));
+              <span class="keyword">this</span>.highSurrogate = <span class="literal">undefined</span>;
+            }
+            <span class="keyword">this</span>.appendStringBuf(<span class="keyword">new</span> Buffer(String.fromCharCode(intVal)));
+          }
+          <span class="keyword">this</span>.tState = STRING1;
+        }
+      } <span class="keyword">else</span> {
+        <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i);
+      }
+    } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === NUMBER1 || <span class="keyword">this</span>.tState === NUMBER3) {
+        n = buffer[i];
+
+        <span class="keyword">switch</span> (n) {
+          <span class="keyword">case</span> <span class="number">0x30</span>: <span class="comment">// 0</span>
+          <span class="keyword">case</span> <span class="number">0x31</span>: <span class="comment">// 1</span>
+          <span class="keyword">case</span> <span class="number">0x32</span>: <span class="comment">// 2</span>
+          <span class="keyword">case</span> <span class="number">0x33</span>: <span class="comment">// 3</span>
+          <span class="keyword">case</span> <span class="number">0x34</span>: <span class="comment">// 4</span>
+          <span class="keyword">case</span> <span class="number">0x35</span>: <span class="comment">// 5</span>
+          <span class="keyword">case</span> <span class="number">0x36</span>: <span class="comment">// 6</span>
+          <span class="keyword">case</span> <span class="number">0x37</span>: <span class="comment">// 7</span>
+          <span class="keyword">case</span> <span class="number">0x38</span>: <span class="comment">// 8</span>
+          <span class="keyword">case</span> <span class="number">0x39</span>: <span class="comment">// 9</span>
+          <span class="keyword">case</span> <span class="number">0x2e</span>: <span class="comment">// .</span>
+          <span class="keyword">case</span> <span class="number">0x65</span>: <span class="comment">// e</span>
+          <span class="keyword">case</span> <span class="number">0x45</span>: <span class="comment">// E</span>
+          <span class="keyword">case</span> <span class="number">0x2b</span>: <span class="comment">// +</span>
+          <span class="keyword">case</span> <span class="number">0x2d</span>: <span class="comment">// -</span>
+            <span class="keyword">this</span>.string += String.fromCharCode(n);
+            <span class="keyword">this</span>.tState = NUMBER3;
+            <span class="keyword">break</span>;
+          <span class="keyword">default</span>:
+            <span class="keyword">this</span>.tState = START;
+            <span class="keyword">var</span> result = Number(<span class="keyword">this</span>.string);
+
+            <span class="keyword">if</span> (isNaN(result)){
+              <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i);
+            }
+
+            <span class="keyword">if</span> ((<span class="keyword">this</span>.string.match(<span class="regexp">/[0-9]+/</span>) == <span class="keyword">this</span>.string) &amp;&amp; (result.toString() != <span class="keyword">this</span>.string)) {
+              <span class="comment">// Long string of digits which is an ID string and not valid and/or safe JavaScript integer Number</span>
+              <span class="keyword">this</span>.onToken(STRING, <span class="keyword">this</span>.string);
+            } <span class="keyword">else</span> {
+              <span class="keyword">this</span>.onToken(NUMBER, result);
+            }
+
+            <span class="keyword">this</span>.offset += <span class="keyword">this</span>.string.length - <span class="number">1</span>;
+            <span class="keyword">this</span>.string = <span class="literal">undefined</span>;
+            i--;
+            <span class="keyword">break</span>;
+        }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === TRUE1){ <span class="comment">// r</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x72</span>) { <span class="keyword">this</span>.tState = TRUE2; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === TRUE2){ <span class="comment">// u</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x75</span>) { <span class="keyword">this</span>.tState = TRUE3; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === TRUE3){ <span class="comment">// e</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x65</span>) { <span class="keyword">this</span>.tState = START; <span class="keyword">this</span>.onToken(TRUE, <span class="literal">true</span>); <span class="keyword">this</span>.offset+= <span class="number">3</span>; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === FALSE1){ <span class="comment">// a</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x61</span>) { <span class="keyword">this</span>.tState = FALSE2; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === FALSE2){ <span class="comment">// l</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x6c</span>) { <span class="keyword">this</span>.tState = FALSE3; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === FALSE3){ <span class="comment">// s</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x73</span>) { <span class="keyword">this</span>.tState = FALSE4; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === FALSE4){ <span class="comment">// e</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x65</span>) { <span class="keyword">this</span>.tState = START; <span class="keyword">this</span>.onToken(FALSE, <span class="literal">false</span>); <span class="keyword">this</span>.offset+= <span class="number">4</span>; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === NULL1){ <span class="comment">// u</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x75</span>) { <span class="keyword">this</span>.tState = NULL2; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === NULL2){ <span class="comment">// l</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x6c</span>) { <span class="keyword">this</span>.tState = NULL3; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }<span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.tState === NULL3){ <span class="comment">// l</span>
+      <span class="keyword">if</span> (buffer[i] === <span class="number">0x6c</span>) { <span class="keyword">this</span>.tState = START; <span class="keyword">this</span>.onToken(NULL, <span class="literal">null</span>); <span class="keyword">this</span>.offset += <span class="number">3</span>; }
+      <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.charError(buffer, i); }
+    }
+  }
+};
+proto.onToken = <span class="function"><span class="keyword">function</span> <span class="params">(token, value)</span> {</span>
+  <span class="comment">// Override this to get events</span>
+};
+
+proto.parseError = <span class="function"><span class="keyword">function</span> <span class="params">(token, value)</span> {</span>
+  <span class="keyword">this</span>.tState = STOP;
+  <span class="keyword">this</span>.onError(<span class="keyword">new</span> Error(<span class="string">"Unexpected "</span> + Parser.toknam(token) + (value ? (<span class="string">"("</span> + JSON.stringify(value) + <span class="string">")"</span>) : <span class="string">""</span>) + <span class="string">" in state "</span> + Parser.toknam(<span class="keyword">this</span>.state)));
+};
+proto.push = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.stack.push({value: <span class="keyword">this</span>.value, key: <span class="keyword">this</span>.key, mode: <span class="keyword">this</span>.mode});
+};
+proto.pop = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> value = <span class="keyword">this</span>.value;
+  <span class="keyword">var</span> parent = <span class="keyword">this</span>.stack.pop();
+  <span class="keyword">this</span>.value = parent.value;
+  <span class="keyword">this</span>.key = parent.key;
+  <span class="keyword">this</span>.mode = parent.mode;
+  <span class="keyword">this</span>.emit(value);
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.mode) { <span class="keyword">this</span>.state = VALUE; }
+};
+proto.emit = <span class="function"><span class="keyword">function</span> <span class="params">(value)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>.mode) { <span class="keyword">this</span>.state = COMMA; }
+  <span class="keyword">this</span>.onValue(value);
+};
+proto.onValue = <span class="function"><span class="keyword">function</span> <span class="params">(value)</span> {</span>
+  <span class="comment">// Override me</span>
+};
+proto.onToken = <span class="function"><span class="keyword">function</span> <span class="params">(token, value)</span> {</span>
+  <span class="keyword">if</span>(<span class="keyword">this</span>.state === VALUE){
+    <span class="keyword">if</span>(token === STRING || token === NUMBER || token === TRUE || token === FALSE || token === NULL){
+      <span class="keyword">if</span> (<span class="keyword">this</span>.value) {
+        <span class="keyword">this</span>.value[<span class="keyword">this</span>.key] = value;
+      }
+      <span class="keyword">this</span>.emit(value);
+    }<span class="keyword">else</span> <span class="keyword">if</span>(token === LEFT_BRACE){
+      <span class="keyword">this</span>.push();
+      <span class="keyword">if</span> (<span class="keyword">this</span>.value) {
+        <span class="keyword">this</span>.value = <span class="keyword">this</span>.value[<span class="keyword">this</span>.key] = {};
+      } <span class="keyword">else</span> {
+        <span class="keyword">this</span>.value = {};
+      }
+      <span class="keyword">this</span>.key = <span class="literal">undefined</span>;
+      <span class="keyword">this</span>.state = KEY;
+      <span class="keyword">this</span>.mode = OBJECT;
+    }<span class="keyword">else</span> <span class="keyword">if</span>(token === LEFT_BRACKET){
+      <span class="keyword">this</span>.push();
+      <span class="keyword">if</span> (<span class="keyword">this</span>.value) {
+        <span class="keyword">this</span>.value = <span class="keyword">this</span>.value[<span class="keyword">this</span>.key] = [];
+      } <span class="keyword">else</span> {
+        <span class="keyword">this</span>.value = [];
+      }
+      <span class="keyword">this</span>.key = <span class="number">0</span>;
+      <span class="keyword">this</span>.mode = ARRAY;
+      <span class="keyword">this</span>.state = VALUE;
+    }<span class="keyword">else</span> <span class="keyword">if</span>(token === RIGHT_BRACE){
+      <span class="keyword">if</span> (<span class="keyword">this</span>.mode === OBJECT) {
+        <span class="keyword">this</span>.pop();
+      } <span class="keyword">else</span> {
+        <span class="keyword">return</span> <span class="keyword">this</span>.parseError(token, value);
+      }
+    }<span class="keyword">else</span> <span class="keyword">if</span>(token === RIGHT_BRACKET){
+      <span class="keyword">if</span> (<span class="keyword">this</span>.mode === ARRAY) {
+        <span class="keyword">this</span>.pop();
+      } <span class="keyword">else</span> {
+        <span class="keyword">return</span> <span class="keyword">this</span>.parseError(token, value);
+      }
+    }<span class="keyword">else</span>{
+      <span class="keyword">return</span> <span class="keyword">this</span>.parseError(token, value);
+    }
+  }<span class="keyword">else</span> <span class="keyword">if</span>(<span class="keyword">this</span>.state === KEY){
+    <span class="keyword">if</span> (token === STRING) {
+      <span class="keyword">this</span>.key = value;
+      <span class="keyword">this</span>.state = COLON;
+    } <span class="keyword">else</span> <span class="keyword">if</span> (token === RIGHT_BRACE) {
+      <span class="keyword">this</span>.pop();
+    } <span class="keyword">else</span> {
+      <span class="keyword">return</span> <span class="keyword">this</span>.parseError(token, value);
+    }
+  }<span class="keyword">else</span> <span class="keyword">if</span>(<span class="keyword">this</span>.state === COLON){
+    <span class="keyword">if</span> (token === COLON) { <span class="keyword">this</span>.state = VALUE; }
+    <span class="keyword">else</span> { <span class="keyword">return</span> <span class="keyword">this</span>.parseError(token, value); }
+  }<span class="keyword">else</span> <span class="keyword">if</span>(<span class="keyword">this</span>.state === COMMA){
+    <span class="keyword">if</span> (token === COMMA) {
+      <span class="keyword">if</span> (<span class="keyword">this</span>.mode === ARRAY) { <span class="keyword">this</span>.key++; <span class="keyword">this</span>.state = VALUE; }
+      <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">this</span>.mode === OBJECT) { <span class="keyword">this</span>.state = KEY; }
+
+    } <span class="keyword">else</span> <span class="keyword">if</span> (token === RIGHT_BRACKET &amp;&amp; <span class="keyword">this</span>.mode === ARRAY || token === RIGHT_BRACE &amp;&amp; <span class="keyword">this</span>.mode === OBJECT) {
+      <span class="keyword">this</span>.pop();
+    } <span class="keyword">else</span> {
+      <span class="keyword">return</span> <span class="keyword">this</span>.parseError(token, value);
+    }
+  }<span class="keyword">else</span>{
+    <span class="keyword">return</span> <span class="keyword">this</span>.parseError(token, value);
+  }
+};
+
+Parser.C = C;
+
+module.exports = Parser;
+</code></pre>

@@ -1,0 +1,508 @@
+<h1>assert.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> objectAssign = require(<span class="string">'object-assign'</span>);
+
+<span class="comment">// compare and isBuffer taken from https://github.com/feross/buffer/blob/680e9e5e488f22aac27599a57dc844a6315928dd/index.js</span>
+<span class="comment">// original notice:</span>
+
+<span class="comment">/*!
+ * The buffer module from node.js, for the browser.
+ *
+ * @author   Feross Aboukhadijeh &lt;feross@feross.org> &lt;http://feross.org>
+ * @license  MIT
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">compare</span><span class="params">(a, b)</span> {</span>
+  <span class="keyword">if</span> (a === b) {
+    <span class="keyword">return</span> <span class="number">0</span>;
+  }
+
+  <span class="keyword">var</span> x = a.length;
+  <span class="keyword">var</span> y = b.length;
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, len = Math.min(x, y); i &lt; len; ++i) {
+    <span class="keyword">if</span> (a[i] !== b[i]) {
+      x = a[i];
+      y = b[i];
+      <span class="keyword">break</span>;
+    }
+  }
+
+  <span class="keyword">if</span> (x &lt; y) {
+    <span class="keyword">return</span> -<span class="number">1</span>;
+  }
+  <span class="keyword">if</span> (y &lt; x) {
+    <span class="keyword">return</span> <span class="number">1</span>;
+  }
+  <span class="keyword">return</span> <span class="number">0</span>;
+}
+<span class="function"><span class="keyword">function</span> <span class="title">isBuffer</span><span class="params">(b)</span> {</span>
+  <span class="keyword">if</span> (global.Buffer &amp;&amp; <span class="keyword">typeof</span> global.Buffer.isBuffer === <span class="string">'function'</span>) {
+    <span class="keyword">return</span> global.Buffer.isBuffer(b);
+  }
+  <span class="keyword">return</span> !!(b != <span class="literal">null</span> &amp;&amp; b._isBuffer);
+}
+
+<span class="comment">// based on node assert, original notice:</span>
+<span class="comment">// NB: The URL to the CommonJS spec is kept just for tradition.</span>
+<span class="comment">//     node-assert has evolved a lot since then, both in API and behavior.</span>
+
+<span class="comment">// http://wiki.commonjs.org/wiki/Unit_Testing/1.0</span>
+<span class="comment">//</span>
+<span class="comment">// THIS IS NOT TESTED NOR LIKELY TO WORK OUTSIDE V8!</span>
+<span class="comment">//</span>
+<span class="comment">// Originally from narwhal.js (http://narwhaljs.org)</span>
+<span class="comment">// Copyright (c) 2009 Thomas Robinson &lt;280north.com></span>
+<span class="comment">//</span>
+<span class="comment">// Permission is hereby granted, free of charge, to any person obtaining a copy</span>
+<span class="comment">// of this software and associated documentation files (the 'Software'), to</span>
+<span class="comment">// deal in the Software without restriction, including without limitation the</span>
+<span class="comment">// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or</span>
+<span class="comment">// sell copies of the Software, and to permit persons to whom the Software is</span>
+<span class="comment">// furnished to do so, subject to the following conditions:</span>
+<span class="comment">//</span>
+<span class="comment">// The above copyright notice and this permission notice shall be included in</span>
+<span class="comment">// all copies or substantial portions of the Software.</span>
+<span class="comment">//</span>
+<span class="comment">// THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR</span>
+<span class="comment">// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,</span>
+<span class="comment">// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE</span>
+<span class="comment">// AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN</span>
+<span class="comment">// ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION</span>
+<span class="comment">// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</span>
+
+<span class="keyword">var</span> util = require(<span class="string">'util/'</span>);
+<span class="keyword">var</span> hasOwn = Object.prototype.hasOwnProperty;
+<span class="keyword">var</span> pSlice = Array.prototype.slice;
+<span class="keyword">var</span> functionsHaveNames = (<span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="function"><span class="keyword">function</span> <span class="title">foo</span><span class="params">()</span> {</span>}.name === <span class="string">'foo'</span>;
+}());
+<span class="function"><span class="keyword">function</span> <span class="title">pToString</span> <span class="params">(obj)</span> {</span>
+  <span class="keyword">return</span> Object.prototype.toString.call(obj);
+}
+<span class="function"><span class="keyword">function</span> <span class="title">isView</span><span class="params">(arrbuf)</span> {</span>
+  <span class="keyword">if</span> (isBuffer(arrbuf)) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> global.ArrayBuffer !== <span class="string">'function'</span>) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> ArrayBuffer.isView === <span class="string">'function'</span>) {
+    <span class="keyword">return</span> ArrayBuffer.isView(arrbuf);
+  }
+  <span class="keyword">if</span> (!arrbuf) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+  <span class="keyword">if</span> (arrbuf <span class="keyword">instanceof</span> DataView) {
+    <span class="keyword">return</span> <span class="literal">true</span>;
+  }
+  <span class="keyword">if</span> (arrbuf.buffer &amp;&amp; arrbuf.buffer <span class="keyword">instanceof</span> ArrayBuffer) {
+    <span class="keyword">return</span> <span class="literal">true</span>;
+  }
+  <span class="keyword">return</span> <span class="literal">false</span>;
+}
+<span class="comment">// 1. The assert module provides functions that throw</span>
+<span class="comment">// AssertionError's when particular conditions are not met. The</span>
+<span class="comment">// assert module must conform to the following interface.</span>
+
+<span class="keyword">var</span> assert = module.exports = ok;
+
+<span class="comment">// 2. The AssertionError is defined in assert.</span>
+<span class="comment">// new assert.AssertionError({ message: message,</span>
+<span class="comment">//                             actual: actual,</span>
+<span class="comment">//                             expected: expected })</span>
+
+<span class="keyword">var</span> regex = <span class="regexp">/\s*function\s+([^\(\s]*)\s*/</span>;
+<span class="comment">// based on https://github.com/ljharb/function.prototype.name/blob/adeeeec8bfcc6068b187d7d9fb3d5bb1d3a30899/implementation.js</span>
+<span class="function"><span class="keyword">function</span> <span class="title">getName</span><span class="params">(func)</span> {</span>
+  <span class="keyword">if</span> (!util.isFunction(func)) {
+    <span class="keyword">return</span>;
+  }
+  <span class="keyword">if</span> (functionsHaveNames) {
+    <span class="keyword">return</span> func.name;
+  }
+  <span class="keyword">var</span> str = func.toString();
+  <span class="keyword">var</span> match = str.match(regex);
+  <span class="keyword">return</span> match &amp;&amp; match[<span class="number">1</span>];
+}
+assert.AssertionError = <span class="function"><span class="keyword">function</span> <span class="title">AssertionError</span><span class="params">(options)</span> {</span>
+  <span class="keyword">this</span>.name = <span class="string">'AssertionError'</span>;
+  <span class="keyword">this</span>.actual = options.actual;
+  <span class="keyword">this</span>.expected = options.expected;
+  <span class="keyword">this</span>.operator = options.operator;
+  <span class="keyword">if</span> (options.message) {
+    <span class="keyword">this</span>.message = options.message;
+    <span class="keyword">this</span>.generatedMessage = <span class="literal">false</span>;
+  } <span class="keyword">else</span> {
+    <span class="keyword">this</span>.message = getMessage(<span class="keyword">this</span>);
+    <span class="keyword">this</span>.generatedMessage = <span class="literal">true</span>;
+  }
+  <span class="keyword">var</span> stackStartFunction = options.stackStartFunction || fail;
+  <span class="keyword">if</span> (Error.captureStackTrace) {
+    Error.captureStackTrace(<span class="keyword">this</span>, stackStartFunction);
+  } <span class="keyword">else</span> {
+    <span class="comment">// non v8 browsers so we can have a stacktrace</span>
+    <span class="keyword">var</span> err = <span class="keyword">new</span> Error();
+    <span class="keyword">if</span> (err.stack) {
+      <span class="keyword">var</span> out = err.stack;
+
+      <span class="comment">// try to strip useless frames</span>
+      <span class="keyword">var</span> fn_name = getName(stackStartFunction);
+      <span class="keyword">var</span> idx = out.indexOf(<span class="string">'\n'</span> + fn_name);
+      <span class="keyword">if</span> (idx >= <span class="number">0</span>) {
+        <span class="comment">// once we have located the function frame</span>
+        <span class="comment">// we need to strip out everything before it (and its line)</span>
+        <span class="keyword">var</span> next_line = out.indexOf(<span class="string">'\n'</span>, idx + <span class="number">1</span>);
+        out = out.substring(next_line + <span class="number">1</span>);
+      }
+
+      <span class="keyword">this</span>.stack = out;
+    }
+  }
+};
+
+<span class="comment">// assert.AssertionError instanceof Error</span>
+util.inherits(assert.AssertionError, Error);
+
+<span class="function"><span class="keyword">function</span> <span class="title">truncate</span><span class="params">(s, n)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> s === <span class="string">'string'</span>) {
+    <span class="keyword">return</span> s.length &lt; n ? s : s.slice(<span class="number">0</span>, n);
+  } <span class="keyword">else</span> {
+    <span class="keyword">return</span> s;
+  }
+}
+<span class="function"><span class="keyword">function</span> <span class="title">inspect</span><span class="params">(something)</span> {</span>
+  <span class="keyword">if</span> (functionsHaveNames || !util.isFunction(something)) {
+    <span class="keyword">return</span> util.inspect(something);
+  }
+  <span class="keyword">var</span> rawname = getName(something);
+  <span class="keyword">var</span> name = rawname ? <span class="string">': '</span> + rawname : <span class="string">''</span>;
+  <span class="keyword">return</span> <span class="string">'[Function'</span> +  name + <span class="string">']'</span>;
+}
+<span class="function"><span class="keyword">function</span> <span class="title">getMessage</span><span class="params">(self)</span> {</span>
+  <span class="keyword">return</span> truncate(inspect(self.actual), <span class="number">128</span>) + <span class="string">' '</span> +
+         self.operator + <span class="string">' '</span> +
+         truncate(inspect(self.expected), <span class="number">128</span>);
+}
+
+<span class="comment">// At present only the three keys mentioned above are used and</span>
+<span class="comment">// understood by the spec. Implementations or sub modules can pass</span>
+<span class="comment">// other keys to the AssertionError's constructor - they will be</span>
+<span class="comment">// ignored.</span>
+
+<span class="comment">// 3. All of the following functions must throw an AssertionError</span>
+<span class="comment">// when a corresponding condition is not met, with a message that</span>
+<span class="comment">// may be undefined if not provided.  All assertion methods provide</span>
+<span class="comment">// both the actual and expected values to the assertion error for</span>
+<span class="comment">// display purposes.</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">fail</span><span class="params">(actual, expected, message, operator, stackStartFunction)</span> {</span>
+  <span class="keyword">throw</span> <span class="keyword">new</span> assert.AssertionError({
+    message: message,
+    actual: actual,
+    expected: expected,
+    operator: operator,
+    stackStartFunction: stackStartFunction
+  });
+}
+
+<span class="comment">// EXTENSION! allows for well behaved errors defined elsewhere.</span>
+assert.fail = fail;
+
+<span class="comment">// 4. Pure assertion tests whether a value is truthy, as determined</span>
+<span class="comment">// by !!guard.</span>
+<span class="comment">// assert.ok(guard, message_opt);</span>
+<span class="comment">// This statement is equivalent to assert.equal(true, !!guard,</span>
+<span class="comment">// message_opt);. To test strictly for the value true, use</span>
+<span class="comment">// assert.strictEqual(true, guard, message_opt);.</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">ok</span><span class="params">(value, message)</span> {</span>
+  <span class="keyword">if</span> (!value) fail(value, <span class="literal">true</span>, message, <span class="string">'=='</span>, assert.ok);
+}
+assert.ok = ok;
+
+<span class="comment">// 5. The equality assertion tests shallow, coercive equality with</span>
+<span class="comment">// ==.</span>
+<span class="comment">// assert.equal(actual, expected, message_opt);</span>
+
+assert.equal = <span class="function"><span class="keyword">function</span> <span class="title">equal</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (actual != expected) fail(actual, expected, message, <span class="string">'=='</span>, assert.equal);
+};
+
+<span class="comment">// 6. The non-equality assertion tests for whether two objects are not equal</span>
+<span class="comment">// with != assert.notEqual(actual, expected, message_opt);</span>
+
+assert.notEqual = <span class="function"><span class="keyword">function</span> <span class="title">notEqual</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (actual == expected) {
+    fail(actual, expected, message, <span class="string">'!='</span>, assert.notEqual);
+  }
+};
+
+<span class="comment">// 7. The equivalence assertion tests a deep equality relation.</span>
+<span class="comment">// assert.deepEqual(actual, expected, message_opt);</span>
+
+assert.deepEqual = <span class="function"><span class="keyword">function</span> <span class="title">deepEqual</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (!_deepEqual(actual, expected, <span class="literal">false</span>)) {
+    fail(actual, expected, message, <span class="string">'deepEqual'</span>, assert.deepEqual);
+  }
+};
+
+assert.deepStrictEqual = <span class="function"><span class="keyword">function</span> <span class="title">deepStrictEqual</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (!_deepEqual(actual, expected, <span class="literal">true</span>)) {
+    fail(actual, expected, message, <span class="string">'deepStrictEqual'</span>, assert.deepStrictEqual);
+  }
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">_deepEqual</span><span class="params">(actual, expected, strict, memos)</span> {</span>
+  <span class="comment">// 7.1. All identical values are equivalent, as determined by ===.</span>
+  <span class="keyword">if</span> (actual === expected) {
+    <span class="keyword">return</span> <span class="literal">true</span>;
+  } <span class="keyword">else</span> <span class="keyword">if</span> (isBuffer(actual) &amp;&amp; isBuffer(expected)) {
+    <span class="keyword">return</span> compare(actual, expected) === <span class="number">0</span>;
+
+  <span class="comment">// 7.2. If the expected value is a Date object, the actual value is</span>
+  <span class="comment">// equivalent if it is also a Date object that refers to the same time.</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (util.isDate(actual) &amp;&amp; util.isDate(expected)) {
+    <span class="keyword">return</span> actual.getTime() === expected.getTime();
+
+  <span class="comment">// 7.3 If the expected value is a RegExp object, the actual value is</span>
+  <span class="comment">// equivalent if it is also a RegExp object with the same source and</span>
+  <span class="comment">// properties (`global`, `multiline`, `lastIndex`, `ignoreCase`).</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (util.isRegExp(actual) &amp;&amp; util.isRegExp(expected)) {
+    <span class="keyword">return</span> actual.source === expected.source &amp;&amp;
+           actual.global === expected.global &amp;&amp;
+           actual.multiline === expected.multiline &amp;&amp;
+           actual.lastIndex === expected.lastIndex &amp;&amp;
+           actual.ignoreCase === expected.ignoreCase;
+
+  <span class="comment">// 7.4. Other pairs that do not both pass typeof value == 'object',</span>
+  <span class="comment">// equivalence is determined by ==.</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> ((actual === <span class="literal">null</span> || <span class="keyword">typeof</span> actual !== <span class="string">'object'</span>) &amp;&amp;
+             (expected === <span class="literal">null</span> || <span class="keyword">typeof</span> expected !== <span class="string">'object'</span>)) {
+    <span class="keyword">return</span> strict ? actual === expected : actual == expected;
+
+  <span class="comment">// If both values are instances of typed arrays, wrap their underlying</span>
+  <span class="comment">// ArrayBuffers in a Buffer each to increase performance</span>
+  <span class="comment">// This optimization requires the arrays to have the same type as checked by</span>
+  <span class="comment">// Object.prototype.toString (aka pToString). Never perform binary</span>
+  <span class="comment">// comparisons for Float*Arrays, though, since e.g. +0 === -0 but their</span>
+  <span class="comment">// bit patterns are not identical.</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (isView(actual) &amp;&amp; isView(expected) &amp;&amp;
+             pToString(actual) === pToString(expected) &amp;&amp;
+             !(actual <span class="keyword">instanceof</span> Float32Array ||
+               actual <span class="keyword">instanceof</span> Float64Array)) {
+    <span class="keyword">return</span> compare(<span class="keyword">new</span> Uint8Array(actual.buffer),
+                   <span class="keyword">new</span> Uint8Array(expected.buffer)) === <span class="number">0</span>;
+
+  <span class="comment">// 7.5 For all other Object pairs, including Array objects, equivalence is</span>
+  <span class="comment">// determined by having the same number of owned properties (as verified</span>
+  <span class="comment">// with Object.prototype.hasOwnProperty.call), the same set of keys</span>
+  <span class="comment">// (although not necessarily the same order), equivalent values for every</span>
+  <span class="comment">// corresponding key, and an identical 'prototype' property. Note: this</span>
+  <span class="comment">// accounts for both named and indexed properties on Arrays.</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (isBuffer(actual) !== isBuffer(expected)) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  } <span class="keyword">else</span> {
+    memos = memos || {actual: [], expected: []};
+
+    <span class="keyword">var</span> actualIndex = memos.actual.indexOf(actual);
+    <span class="keyword">if</span> (actualIndex !== -<span class="number">1</span>) {
+      <span class="keyword">if</span> (actualIndex === memos.expected.indexOf(expected)) {
+        <span class="keyword">return</span> <span class="literal">true</span>;
+      }
+    }
+
+    memos.actual.push(actual);
+    memos.expected.push(expected);
+
+    <span class="keyword">return</span> objEquiv(actual, expected, strict, memos);
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">isArguments</span><span class="params">(object)</span> {</span>
+  <span class="keyword">return</span> Object.prototype.toString.call(object) == <span class="string">'[object Arguments]'</span>;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">objEquiv</span><span class="params">(a, b, strict, actualVisitedObjects)</span> {</span>
+  <span class="keyword">if</span> (a === <span class="literal">null</span> || a === <span class="literal">undefined</span> || b === <span class="literal">null</span> || b === <span class="literal">undefined</span>)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  <span class="comment">// if one is a primitive, the other must be same</span>
+  <span class="keyword">if</span> (util.isPrimitive(a) || util.isPrimitive(b))
+    <span class="keyword">return</span> a === b;
+  <span class="keyword">if</span> (strict &amp;&amp; Object.getPrototypeOf(a) !== Object.getPrototypeOf(b))
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  <span class="keyword">var</span> aIsArgs = isArguments(a);
+  <span class="keyword">var</span> bIsArgs = isArguments(b);
+  <span class="keyword">if</span> ((aIsArgs &amp;&amp; !bIsArgs) || (!aIsArgs &amp;&amp; bIsArgs))
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  <span class="keyword">if</span> (aIsArgs) {
+    a = pSlice.call(a);
+    b = pSlice.call(b);
+    <span class="keyword">return</span> _deepEqual(a, b, strict);
+  }
+  <span class="keyword">var</span> ka = objectKeys(a);
+  <span class="keyword">var</span> kb = objectKeys(b);
+  <span class="keyword">var</span> key, i;
+  <span class="comment">// having the same number of owned properties (keys incorporates</span>
+  <span class="comment">// hasOwnProperty)</span>
+  <span class="keyword">if</span> (ka.length !== kb.length)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  <span class="comment">//the same set of keys (although not necessarily the same order),</span>
+  ka.sort();
+  kb.sort();
+  <span class="comment">//~~~cheap key test</span>
+  <span class="keyword">for</span> (i = ka.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+    <span class="keyword">if</span> (ka[i] !== kb[i])
+      <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+  <span class="comment">//equivalent values for every corresponding key, and</span>
+  <span class="comment">//~~~possibly expensive deep test</span>
+  <span class="keyword">for</span> (i = ka.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+    key = ka[i];
+    <span class="keyword">if</span> (!_deepEqual(a[key], b[key], strict, actualVisitedObjects))
+      <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+  <span class="keyword">return</span> <span class="literal">true</span>;
+}
+
+<span class="comment">// 8. The non-equivalence assertion tests for any deep inequality.</span>
+<span class="comment">// assert.notDeepEqual(actual, expected, message_opt);</span>
+
+assert.notDeepEqual = <span class="function"><span class="keyword">function</span> <span class="title">notDeepEqual</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (_deepEqual(actual, expected, <span class="literal">false</span>)) {
+    fail(actual, expected, message, <span class="string">'notDeepEqual'</span>, assert.notDeepEqual);
+  }
+};
+
+assert.notDeepStrictEqual = notDeepStrictEqual;
+<span class="function"><span class="keyword">function</span> <span class="title">notDeepStrictEqual</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (_deepEqual(actual, expected, <span class="literal">true</span>)) {
+    fail(actual, expected, message, <span class="string">'notDeepStrictEqual'</span>, notDeepStrictEqual);
+  }
+}
+
+
+<span class="comment">// 9. The strict equality assertion tests strict equality, as determined by ===.</span>
+<span class="comment">// assert.strictEqual(actual, expected, message_opt);</span>
+
+assert.strictEqual = <span class="function"><span class="keyword">function</span> <span class="title">strictEqual</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (actual !== expected) {
+    fail(actual, expected, message, <span class="string">'==='</span>, assert.strictEqual);
+  }
+};
+
+<span class="comment">// 10. The strict non-equality assertion tests for strict inequality, as</span>
+<span class="comment">// determined by !==.  assert.notStrictEqual(actual, expected, message_opt);</span>
+
+assert.notStrictEqual = <span class="function"><span class="keyword">function</span> <span class="title">notStrictEqual</span><span class="params">(actual, expected, message)</span> {</span>
+  <span class="keyword">if</span> (actual === expected) {
+    fail(actual, expected, message, <span class="string">'!=='</span>, assert.notStrictEqual);
+  }
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">expectedException</span><span class="params">(actual, expected)</span> {</span>
+  <span class="keyword">if</span> (!actual || !expected) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  <span class="keyword">if</span> (Object.prototype.toString.call(expected) == <span class="string">'[object RegExp]'</span>) {
+    <span class="keyword">return</span> expected.test(actual);
+  }
+
+  <span class="keyword">try</span> {
+    <span class="keyword">if</span> (actual <span class="keyword">instanceof</span> expected) {
+      <span class="keyword">return</span> <span class="literal">true</span>;
+    }
+  } <span class="keyword">catch</span> (e) {
+    <span class="comment">// Ignore.  The instanceof check doesn't work for arrow functions.</span>
+  }
+
+  <span class="keyword">if</span> (Error.isPrototypeOf(expected)) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  <span class="keyword">return</span> expected.call({}, actual) === <span class="literal">true</span>;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">_tryBlock</span><span class="params">(block)</span> {</span>
+  <span class="keyword">var</span> error;
+  <span class="keyword">try</span> {
+    block();
+  } <span class="keyword">catch</span> (e) {
+    error = e;
+  }
+  <span class="keyword">return</span> error;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">_throws</span><span class="params">(shouldThrow, block, expected, message)</span> {</span>
+  <span class="keyword">var</span> actual;
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> block !== <span class="string">'function'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'"block" argument must be a function'</span>);
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> expected === <span class="string">'string'</span>) {
+    message = expected;
+    expected = <span class="literal">null</span>;
+  }
+
+  actual = _tryBlock(block);
+
+  message = (expected &amp;&amp; expected.name ? <span class="string">' ('</span> + expected.name + <span class="string">').'</span> : <span class="string">'.'</span>) +
+            (message ? <span class="string">' '</span> + message : <span class="string">'.'</span>);
+
+  <span class="keyword">if</span> (shouldThrow &amp;&amp; !actual) {
+    fail(actual, expected, <span class="string">'Missing expected exception'</span> + message);
+  }
+
+  <span class="keyword">var</span> userProvidedMessage = <span class="keyword">typeof</span> message === <span class="string">'string'</span>;
+  <span class="keyword">var</span> isUnwantedException = !shouldThrow &amp;&amp; util.isError(actual);
+  <span class="keyword">var</span> isUnexpectedException = !shouldThrow &amp;&amp; actual &amp;&amp; !expected;
+
+  <span class="keyword">if</span> ((isUnwantedException &amp;&amp;
+      userProvidedMessage &amp;&amp;
+      expectedException(actual, expected)) ||
+      isUnexpectedException) {
+    fail(actual, expected, <span class="string">'Got unwanted exception'</span> + message);
+  }
+
+  <span class="keyword">if</span> ((shouldThrow &amp;&amp; actual &amp;&amp; expected &amp;&amp;
+      !expectedException(actual, expected)) || (!shouldThrow &amp;&amp; actual)) {
+    <span class="keyword">throw</span> actual;
+  }
+}
+
+<span class="comment">// 11. Expected to throw an error:</span>
+<span class="comment">// assert.throws(block, Error_opt, message_opt);</span>
+
+assert.throws = <span class="keyword">function</span>(block, <span class="comment">/*optional*/</span>error, <span class="comment">/*optional*/</span>message) {
+  _throws(<span class="literal">true</span>, block, error, message);
+};
+
+<span class="comment">// EXTENSION! This is annoying to write outside this module.</span>
+assert.doesNotThrow = <span class="keyword">function</span>(block, <span class="comment">/*optional*/</span>error, <span class="comment">/*optional*/</span>message) {
+  _throws(<span class="literal">false</span>, block, error, message);
+};
+
+assert.ifError = <span class="keyword">function</span>(err) { <span class="keyword">if</span> (err) <span class="keyword">throw</span> err; };
+
+<span class="comment">// Expose a strict only variant of assert</span>
+<span class="function"><span class="keyword">function</span> <span class="title">strict</span><span class="params">(value, message)</span> {</span>
+  <span class="keyword">if</span> (!value) fail(value, <span class="literal">true</span>, message, <span class="string">'=='</span>, strict);
+}
+assert.strict = objectAssign(strict, assert, {
+  equal: assert.strictEqual,
+  deepEqual: assert.deepStrictEqual,
+  notEqual: assert.notStrictEqual,
+  notDeepEqual: assert.notDeepStrictEqual
+});
+assert.strict.strict = assert.strict;
+
+<span class="keyword">var</span> objectKeys = Object.keys || <span class="function"><span class="keyword">function</span> <span class="params">(obj)</span> {</span>
+  <span class="keyword">var</span> keys = [];
+  <span class="keyword">for</span> (<span class="keyword">var</span> key <span class="keyword">in</span> obj) {
+    <span class="keyword">if</span> (hasOwn.call(obj, key)) keys.push(key);
+  }
+  <span class="keyword">return</span> keys;
+};
+</code></pre>

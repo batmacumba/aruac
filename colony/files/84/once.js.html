@@ -1,0 +1,44 @@
+<h1>once.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> wrappy = require(<span class="string">'wrappy'</span>)
+module.exports = wrappy(once)
+module.exports.strict = wrappy(onceStrict)
+
+once.proto = once(<span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  Object.defineProperty(Function.prototype, <span class="string">'once'</span>, {
+    value: <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+      <span class="keyword">return</span> once(<span class="keyword">this</span>)
+    },
+    configurable: <span class="literal">true</span>
+  })
+
+  Object.defineProperty(Function.prototype, <span class="string">'onceStrict'</span>, {
+    value: <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+      <span class="keyword">return</span> onceStrict(<span class="keyword">this</span>)
+    },
+    configurable: <span class="literal">true</span>
+  })
+})
+
+<span class="function"><span class="keyword">function</span> <span class="title">once</span> <span class="params">(fn)</span> {</span>
+  <span class="keyword">var</span> f = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">if</span> (f.called) <span class="keyword">return</span> f.value
+    f.called = <span class="literal">true</span>
+    <span class="keyword">return</span> f.value = fn.apply(<span class="keyword">this</span>, arguments)
+  }
+  f.called = <span class="literal">false</span>
+  <span class="keyword">return</span> f
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">onceStrict</span> <span class="params">(fn)</span> {</span>
+  <span class="keyword">var</span> f = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">if</span> (f.called)
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(f.onceError)
+    f.called = <span class="literal">true</span>
+    <span class="keyword">return</span> f.value = fn.apply(<span class="keyword">this</span>, arguments)
+  }
+  <span class="keyword">var</span> name = fn.name || <span class="string">'Function wrapped with `once`'</span>
+  f.onceError = name + <span class="string">" shouldn't be called more than once"</span>
+  f.called = <span class="literal">false</span>
+  <span class="keyword">return</span> f
+}
+</code></pre>

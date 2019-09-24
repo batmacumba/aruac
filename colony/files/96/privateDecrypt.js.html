@@ -1,0 +1,107 @@
+<h1>privateDecrypt.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> parseKeys = require(<span class="string">'parse-asn1'</span>)
+<span class="keyword">var</span> mgf = require(<span class="string">'./mgf'</span>)
+<span class="keyword">var</span> xor = require(<span class="string">'./xor'</span>)
+<span class="keyword">var</span> BN = require(<span class="string">'bn.js'</span>)
+<span class="keyword">var</span> crt = require(<span class="string">'browserify-rsa'</span>)
+<span class="keyword">var</span> createHash = require(<span class="string">'create-hash'</span>)
+<span class="keyword">var</span> withPublic = require(<span class="string">'./withPublic'</span>)
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+
+module.exports = <span class="function"><span class="keyword">function</span> <span class="title">privateDecrypt</span> <span class="params">(privateKey, enc, reverse)</span> {</span>
+  <span class="keyword">var</span> padding
+  <span class="keyword">if</span> (privateKey.padding) {
+    padding = privateKey.padding
+  } <span class="keyword">else</span> <span class="keyword">if</span> (reverse) {
+    padding = <span class="number">1</span>
+  } <span class="keyword">else</span> {
+    padding = <span class="number">4</span>
+  }
+
+  <span class="keyword">var</span> key = parseKeys(privateKey)
+  <span class="keyword">var</span> k = key.modulus.byteLength()
+  <span class="keyword">if</span> (enc.length > k || <span class="keyword">new</span> BN(enc).cmp(key.modulus) >= <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'decryption error'</span>)
+  }
+  <span class="keyword">var</span> msg
+  <span class="keyword">if</span> (reverse) {
+    msg = withPublic(<span class="keyword">new</span> BN(enc), key)
+  } <span class="keyword">else</span> {
+    msg = crt(enc, key)
+  }
+  <span class="keyword">var</span> zBuffer = Buffer.alloc(k - msg.length)
+  msg = Buffer.concat([zBuffer, msg], k)
+  <span class="keyword">if</span> (padding === <span class="number">4</span>) {
+    <span class="keyword">return</span> oaep(key, msg)
+  } <span class="keyword">else</span> <span class="keyword">if</span> (padding === <span class="number">1</span>) {
+    <span class="keyword">return</span> pkcs1(key, msg, reverse)
+  } <span class="keyword">else</span> <span class="keyword">if</span> (padding === <span class="number">3</span>) {
+    <span class="keyword">return</span> msg
+  } <span class="keyword">else</span> {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'unknown padding'</span>)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">oaep</span> <span class="params">(key, msg)</span> {</span>
+  <span class="keyword">var</span> k = key.modulus.byteLength()
+  <span class="keyword">var</span> iHash = createHash(<span class="string">'sha1'</span>).update(Buffer.alloc(<span class="number">0</span>)).digest()
+  <span class="keyword">var</span> hLen = iHash.length
+  <span class="keyword">if</span> (msg[<span class="number">0</span>] !== <span class="number">0</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'decryption error'</span>)
+  }
+  <span class="keyword">var</span> maskedSeed = msg.slice(<span class="number">1</span>, hLen + <span class="number">1</span>)
+  <span class="keyword">var</span> maskedDb = msg.slice(hLen + <span class="number">1</span>)
+  <span class="keyword">var</span> seed = xor(maskedSeed, mgf(maskedDb, hLen))
+  <span class="keyword">var</span> db = xor(maskedDb, mgf(seed, k - hLen - <span class="number">1</span>))
+  <span class="keyword">if</span> (compare(iHash, db.slice(<span class="number">0</span>, hLen))) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'decryption error'</span>)
+  }
+  <span class="keyword">var</span> i = hLen
+  <span class="keyword">while</span> (db[i] === <span class="number">0</span>) {
+    i++
+  }
+  <span class="keyword">if</span> (db[i++] !== <span class="number">1</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'decryption error'</span>)
+  }
+  <span class="keyword">return</span> db.slice(i)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">pkcs1</span> <span class="params">(key, msg, reverse)</span> {</span>
+  <span class="keyword">var</span> p1 = msg.slice(<span class="number">0</span>, <span class="number">2</span>)
+  <span class="keyword">var</span> i = <span class="number">2</span>
+  <span class="keyword">var</span> status = <span class="number">0</span>
+  <span class="keyword">while</span> (msg[i++] !== <span class="number">0</span>) {
+    <span class="keyword">if</span> (i >= msg.length) {
+      status++
+      <span class="keyword">break</span>
+    }
+  }
+  <span class="keyword">var</span> ps = msg.slice(<span class="number">2</span>, i - <span class="number">1</span>)
+
+  <span class="keyword">if</span> ((p1.toString(<span class="string">'hex'</span>) !== <span class="string">'0002'</span> &amp;&amp; !reverse) || (p1.toString(<span class="string">'hex'</span>) !== <span class="string">'0001'</span> &amp;&amp; reverse)) {
+    status++
+  }
+  <span class="keyword">if</span> (ps.length &lt; <span class="number">8</span>) {
+    status++
+  }
+  <span class="keyword">if</span> (status) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'decryption error'</span>)
+  }
+  <span class="keyword">return</span> msg.slice(i)
+}
+<span class="function"><span class="keyword">function</span> <span class="title">compare</span> <span class="params">(a, b)</span> {</span>
+  a = Buffer.from(a)
+  b = Buffer.from(b)
+  <span class="keyword">var</span> dif = <span class="number">0</span>
+  <span class="keyword">var</span> len = a.length
+  <span class="keyword">if</span> (a.length !== b.length) {
+    dif++
+    len = Math.min(a.length, b.length)
+  }
+  <span class="keyword">var</span> i = -<span class="number">1</span>
+  <span class="keyword">while</span> (++i &lt; len) {
+    dif += (a[i] ^ b[i])
+  }
+  <span class="keyword">return</span> dif
+}
+</code></pre>

@@ -1,0 +1,151 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> indexOf = <span class="function"><span class="keyword">function</span> <span class="params">(xs, item)</span> {</span>
+    <span class="keyword">if</span> (xs.indexOf) <span class="keyword">return</span> xs.indexOf(item);
+    <span class="keyword">else</span> <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; xs.length; i++) {
+        <span class="keyword">if</span> (xs[i] === item) <span class="keyword">return</span> i;
+    }
+    <span class="keyword">return</span> -<span class="number">1</span>;
+};
+<span class="keyword">var</span> Object_keys = <span class="function"><span class="keyword">function</span> <span class="params">(obj)</span> {</span>
+    <span class="keyword">if</span> (Object.keys) <span class="keyword">return</span> Object.keys(obj)
+    <span class="keyword">else</span> {
+        <span class="keyword">var</span> res = [];
+        <span class="keyword">for</span> (<span class="keyword">var</span> key <span class="keyword">in</span> obj) res.push(key)
+        <span class="keyword">return</span> res;
+    }
+};
+
+<span class="keyword">var</span> forEach = <span class="function"><span class="keyword">function</span> <span class="params">(xs, fn)</span> {</span>
+    <span class="keyword">if</span> (xs.forEach) <span class="keyword">return</span> xs.forEach(fn)
+    <span class="keyword">else</span> <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; xs.length; i++) {
+        fn(xs[i], i, xs);
+    }
+};
+
+<span class="keyword">var</span> defineProp = (<span class="keyword">function</span>() {
+    <span class="keyword">try</span> {
+        Object.defineProperty({}, <span class="string">'_'</span>, {});
+        <span class="keyword">return</span> <span class="keyword">function</span>(obj, name, value) {
+            Object.defineProperty(obj, name, {
+                writable: <span class="literal">true</span>,
+                enumerable: <span class="literal">false</span>,
+                configurable: <span class="literal">true</span>,
+                value: value
+            })
+        };
+    } <span class="keyword">catch</span>(e) {
+        <span class="keyword">return</span> <span class="keyword">function</span>(obj, name, value) {
+            obj[name] = value;
+        };
+    }
+}());
+
+<span class="keyword">var</span> globals = [<span class="string">'Array'</span>, <span class="string">'Boolean'</span>, <span class="string">'Date'</span>, <span class="string">'Error'</span>, <span class="string">'EvalError'</span>, <span class="string">'Function'</span>,
+<span class="string">'Infinity'</span>, <span class="string">'JSON'</span>, <span class="string">'Math'</span>, <span class="string">'NaN'</span>, <span class="string">'Number'</span>, <span class="string">'Object'</span>, <span class="string">'RangeError'</span>,
+<span class="string">'ReferenceError'</span>, <span class="string">'RegExp'</span>, <span class="string">'String'</span>, <span class="string">'SyntaxError'</span>, <span class="string">'TypeError'</span>, <span class="string">'URIError'</span>,
+<span class="string">'decodeURI'</span>, <span class="string">'decodeURIComponent'</span>, <span class="string">'encodeURI'</span>, <span class="string">'encodeURIComponent'</span>, <span class="string">'escape'</span>,
+<span class="string">'eval'</span>, <span class="string">'isFinite'</span>, <span class="string">'isNaN'</span>, <span class="string">'parseFloat'</span>, <span class="string">'parseInt'</span>, <span class="string">'undefined'</span>, <span class="string">'unescape'</span>];
+
+<span class="function"><span class="keyword">function</span> <span class="title">Context</span><span class="params">()</span> {</span>}
+Context.prototype = {};
+
+<span class="keyword">var</span> Script = exports.Script = <span class="function"><span class="keyword">function</span> <span class="title">NodeScript</span> <span class="params">(code)</span> {</span>
+    <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> Script)) <span class="keyword">return</span> <span class="keyword">new</span> Script(code);
+    <span class="keyword">this</span>.code = code;
+};
+
+Script.prototype.runInContext = <span class="function"><span class="keyword">function</span> <span class="params">(context)</span> {</span>
+    <span class="keyword">if</span> (!(context <span class="keyword">instanceof</span> Context)) {
+        <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">"needs a 'context' argument."</span>);
+    }
+    
+    <span class="keyword">var</span> iframe = document.createElement(<span class="string">'iframe'</span>);
+    <span class="keyword">if</span> (!iframe.style) iframe.style = {};
+    iframe.style.display = <span class="string">'none'</span>;
+    
+    document.body.appendChild(iframe);
+    
+    <span class="keyword">var</span> win = iframe.contentWindow;
+    <span class="keyword">var</span> wEval = win.eval, wExecScript = win.execScript;
+
+    <span class="keyword">if</span> (!wEval &amp;&amp; wExecScript) {
+        <span class="comment">// win.eval() magically appears when this is called in IE:</span>
+        wExecScript.call(win, <span class="string">'null'</span>);
+        wEval = win.eval;
+    }
+    
+    forEach(Object_keys(context), <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+        win[key] = context[key];
+    });
+    forEach(globals, <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+        <span class="keyword">if</span> (context[key]) {
+            win[key] = context[key];
+        }
+    });
+    
+    <span class="keyword">var</span> winKeys = Object_keys(win);
+
+    <span class="keyword">var</span> res = wEval.call(win, <span class="keyword">this</span>.code);
+    
+    forEach(Object_keys(win), <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+        <span class="comment">// Avoid copying circular objects like `top` and `window` by only</span>
+        <span class="comment">// updating existing context properties or new properties in the `win`</span>
+        <span class="comment">// that was only introduced after the eval.</span>
+        <span class="keyword">if</span> (key <span class="keyword">in</span> context || indexOf(winKeys, key) === -<span class="number">1</span>) {
+            context[key] = win[key];
+        }
+    });
+
+    forEach(globals, <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+        <span class="keyword">if</span> (!(key <span class="keyword">in</span> context)) {
+            defineProp(context, key, win[key]);
+        }
+    });
+    
+    document.body.removeChild(iframe);
+    
+    <span class="keyword">return</span> res;
+};
+
+Script.prototype.runInThisContext = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">return</span> eval(<span class="keyword">this</span>.code); <span class="comment">// maybe...</span>
+};
+
+Script.prototype.runInNewContext = <span class="function"><span class="keyword">function</span> <span class="params">(context)</span> {</span>
+    <span class="keyword">var</span> ctx = Script.createContext(context);
+    <span class="keyword">var</span> res = <span class="keyword">this</span>.runInContext(ctx);
+
+    <span class="keyword">if</span> (context) {
+        forEach(Object_keys(ctx), <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+            context[key] = ctx[key];
+        });
+    }
+
+    <span class="keyword">return</span> res;
+};
+
+forEach(Object_keys(Script.prototype), <span class="function"><span class="keyword">function</span> <span class="params">(name)</span> {</span>
+    exports[name] = Script[name] = <span class="function"><span class="keyword">function</span> <span class="params">(code)</span> {</span>
+        <span class="keyword">var</span> s = Script(code);
+        <span class="keyword">return</span> s[name].apply(s, [].slice.call(arguments, <span class="number">1</span>));
+    };
+});
+
+exports.isContext = <span class="function"><span class="keyword">function</span> <span class="params">(context)</span> {</span>
+    <span class="keyword">return</span> context <span class="keyword">instanceof</span> Context;
+};
+
+exports.createScript = <span class="function"><span class="keyword">function</span> <span class="params">(code)</span> {</span>
+    <span class="keyword">return</span> exports.Script(code);
+};
+
+exports.createContext = Script.createContext = <span class="function"><span class="keyword">function</span> <span class="params">(context)</span> {</span>
+    <span class="keyword">var</span> copy = <span class="keyword">new</span> Context();
+    <span class="keyword">if</span>(<span class="keyword">typeof</span> context === <span class="string">'object'</span>) {
+        forEach(Object_keys(context), <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+            copy[key] = context[key];
+        });
+    }
+    <span class="keyword">return</span> copy;
+};
+</code></pre>

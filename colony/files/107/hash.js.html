@@ -1,0 +1,83 @@
+<h1>hash.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+
+<span class="comment">// prototype class for hash functions</span>
+<span class="function"><span class="keyword">function</span> <span class="title">Hash</span> <span class="params">(blockSize, finalSize)</span> {</span>
+  <span class="keyword">this</span>._block = Buffer.alloc(blockSize)
+  <span class="keyword">this</span>._finalSize = finalSize
+  <span class="keyword">this</span>._blockSize = blockSize
+  <span class="keyword">this</span>._len = <span class="number">0</span>
+}
+
+Hash.prototype.update = <span class="function"><span class="keyword">function</span> <span class="params">(data, enc)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> data === <span class="string">'string'</span>) {
+    enc = enc || <span class="string">'utf8'</span>
+    data = Buffer.from(data, enc)
+  }
+
+  <span class="keyword">var</span> block = <span class="keyword">this</span>._block
+  <span class="keyword">var</span> blockSize = <span class="keyword">this</span>._blockSize
+  <span class="keyword">var</span> length = data.length
+  <span class="keyword">var</span> accum = <span class="keyword">this</span>._len
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> offset = <span class="number">0</span>; offset &lt; length;) {
+    <span class="keyword">var</span> assigned = accum % blockSize
+    <span class="keyword">var</span> remainder = Math.min(length - offset, blockSize - assigned)
+
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; remainder; i++) {
+      block[assigned + i] = data[offset + i]
+    }
+
+    accum += remainder
+    offset += remainder
+
+    <span class="keyword">if</span> ((accum % blockSize) === <span class="number">0</span>) {
+      <span class="keyword">this</span>._update(block)
+    }
+  }
+
+  <span class="keyword">this</span>._len += length
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+Hash.prototype.digest = <span class="function"><span class="keyword">function</span> <span class="params">(enc)</span> {</span>
+  <span class="keyword">var</span> rem = <span class="keyword">this</span>._len % <span class="keyword">this</span>._blockSize
+
+  <span class="keyword">this</span>._block[rem] = <span class="number">0x80</span>
+
+  <span class="comment">// zero (rem + 1) trailing bits, where (rem + 1) is the smallest</span>
+  <span class="comment">// non-negative solution to the equation (length + 1 + (rem + 1)) === finalSize mod blockSize</span>
+  <span class="keyword">this</span>._block.fill(<span class="number">0</span>, rem + <span class="number">1</span>)
+
+  <span class="keyword">if</span> (rem >= <span class="keyword">this</span>._finalSize) {
+    <span class="keyword">this</span>._update(<span class="keyword">this</span>._block)
+    <span class="keyword">this</span>._block.fill(<span class="number">0</span>)
+  }
+
+  <span class="keyword">var</span> bits = <span class="keyword">this</span>._len * <span class="number">8</span>
+
+  <span class="comment">// uint32</span>
+  <span class="keyword">if</span> (bits &lt;= <span class="number">0xffffffff</span>) {
+    <span class="keyword">this</span>._block.writeUInt32BE(bits, <span class="keyword">this</span>._blockSize - <span class="number">4</span>)
+
+  <span class="comment">// uint64</span>
+  } <span class="keyword">else</span> {
+    <span class="keyword">var</span> lowBits = (bits &amp; <span class="number">0xffffffff</span>) >>> <span class="number">0</span>
+    <span class="keyword">var</span> highBits = (bits - lowBits) / <span class="number">0x100000000</span>
+
+    <span class="keyword">this</span>._block.writeUInt32BE(highBits, <span class="keyword">this</span>._blockSize - <span class="number">8</span>)
+    <span class="keyword">this</span>._block.writeUInt32BE(lowBits, <span class="keyword">this</span>._blockSize - <span class="number">4</span>)
+  }
+
+  <span class="keyword">this</span>._update(<span class="keyword">this</span>._block)
+  <span class="keyword">var</span> hash = <span class="keyword">this</span>._hash()
+
+  <span class="keyword">return</span> enc ? hash.toString(enc) : hash
+}
+
+Hash.prototype._update = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'_update must be implemented by subclass'</span>)
+}
+
+module.exports = Hash
+</code></pre>

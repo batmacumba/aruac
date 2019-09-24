@@ -1,0 +1,304 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="comment">// .dirname, .basename, and .extname methods are extracted from Node.js v8.11.1,</span>
+<span class="comment">// backported and transplited with Babel, with backwards-compat fixes</span>
+
+<span class="comment">// Copyright Joyent, Inc. and other Node contributors.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is hereby granted, free of charge, to any person obtaining a</span>
+<span class="comment">// copy of this software and associated documentation files (the</span>
+<span class="comment">// "Software"), to deal in the Software without restriction, including</span>
+<span class="comment">// without limitation the rights to use, copy, modify, merge, publish,</span>
+<span class="comment">// distribute, sublicense, and/or sell copies of the Software, and to permit</span>
+<span class="comment">// persons to whom the Software is furnished to do so, subject to the</span>
+<span class="comment">// following conditions:</span>
+<span class="comment">//</span>
+<span class="comment">// The above copyright notice and this permission notice shall be included</span>
+<span class="comment">// in all copies or substantial portions of the Software.</span>
+<span class="comment">//</span>
+<span class="comment">// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS</span>
+<span class="comment">// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF</span>
+<span class="comment">// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN</span>
+<span class="comment">// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,</span>
+<span class="comment">// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR</span>
+<span class="comment">// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE</span>
+<span class="comment">// USE OR OTHER DEALINGS IN THE SOFTWARE.</span>
+
+<span class="comment">// resolves . and .. elements in a path array with directory names there</span>
+<span class="comment">// must be no slashes, empty elements, or device names (c:\) in the array</span>
+<span class="comment">// (so also no leading and trailing slashes - it does not distinguish</span>
+<span class="comment">// relative and absolute paths)</span>
+<span class="function"><span class="keyword">function</span> <span class="title">normalizeArray</span><span class="params">(parts, allowAboveRoot)</span> {</span>
+  <span class="comment">// if the path tries to go above the root, `up` ends up > 0</span>
+  <span class="keyword">var</span> up = <span class="number">0</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = parts.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+    <span class="keyword">var</span> last = parts[i];
+    <span class="keyword">if</span> (last === <span class="string">'.'</span>) {
+      parts.splice(i, <span class="number">1</span>);
+    } <span class="keyword">else</span> <span class="keyword">if</span> (last === <span class="string">'..'</span>) {
+      parts.splice(i, <span class="number">1</span>);
+      up++;
+    } <span class="keyword">else</span> <span class="keyword">if</span> (up) {
+      parts.splice(i, <span class="number">1</span>);
+      up--;
+    }
+  }
+
+  <span class="comment">// if the path is allowed to go above the root, restore leading ..s</span>
+  <span class="keyword">if</span> (allowAboveRoot) {
+    <span class="keyword">for</span> (; up--; up) {
+      parts.unshift(<span class="string">'..'</span>);
+    }
+  }
+
+  <span class="keyword">return</span> parts;
+}
+
+<span class="comment">// path.resolve([from ...], to)</span>
+<span class="comment">// posix version</span>
+exports.resolve = <span class="keyword">function</span>() {
+  <span class="keyword">var</span> resolvedPath = <span class="string">''</span>,
+      resolvedAbsolute = <span class="literal">false</span>;
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = arguments.length - <span class="number">1</span>; i >= -<span class="number">1</span> &amp;&amp; !resolvedAbsolute; i--) {
+    <span class="keyword">var</span> path = (i >= <span class="number">0</span>) ? arguments[i] : process.cwd();
+
+    <span class="comment">// Skip empty and invalid entries</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> path !== <span class="string">'string'</span>) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Arguments to path.resolve must be strings'</span>);
+    } <span class="keyword">else</span> <span class="keyword">if</span> (!path) {
+      <span class="keyword">continue</span>;
+    }
+
+    resolvedPath = path + <span class="string">'/'</span> + resolvedPath;
+    resolvedAbsolute = path.charAt(<span class="number">0</span>) === <span class="string">'/'</span>;
+  }
+
+  <span class="comment">// At this point the path should be resolved to a full absolute path, but</span>
+  <span class="comment">// handle relative paths to be safe (might happen when process.cwd() fails)</span>
+
+  <span class="comment">// Normalize the path</span>
+  resolvedPath = normalizeArray(filter(resolvedPath.split(<span class="string">'/'</span>), <span class="keyword">function</span>(p) {
+    <span class="keyword">return</span> !!p;
+  }), !resolvedAbsolute).join(<span class="string">'/'</span>);
+
+  <span class="keyword">return</span> ((resolvedAbsolute ? <span class="string">'/'</span> : <span class="string">''</span>) + resolvedPath) || <span class="string">'.'</span>;
+};
+
+<span class="comment">// path.normalize(path)</span>
+<span class="comment">// posix version</span>
+exports.normalize = <span class="keyword">function</span>(path) {
+  <span class="keyword">var</span> isAbsolute = exports.isAbsolute(path),
+      trailingSlash = substr(path, -<span class="number">1</span>) === <span class="string">'/'</span>;
+
+  <span class="comment">// Normalize the path</span>
+  path = normalizeArray(filter(path.split(<span class="string">'/'</span>), <span class="keyword">function</span>(p) {
+    <span class="keyword">return</span> !!p;
+  }), !isAbsolute).join(<span class="string">'/'</span>);
+
+  <span class="keyword">if</span> (!path &amp;&amp; !isAbsolute) {
+    path = <span class="string">'.'</span>;
+  }
+  <span class="keyword">if</span> (path &amp;&amp; trailingSlash) {
+    path += <span class="string">'/'</span>;
+  }
+
+  <span class="keyword">return</span> (isAbsolute ? <span class="string">'/'</span> : <span class="string">''</span>) + path;
+};
+
+<span class="comment">// posix version</span>
+exports.isAbsolute = <span class="keyword">function</span>(path) {
+  <span class="keyword">return</span> path.charAt(<span class="number">0</span>) === <span class="string">'/'</span>;
+};
+
+<span class="comment">// posix version</span>
+exports.join = <span class="keyword">function</span>() {
+  <span class="keyword">var</span> paths = Array.prototype.slice.call(arguments, <span class="number">0</span>);
+  <span class="keyword">return</span> exports.normalize(filter(paths, <span class="keyword">function</span>(p, index) {
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> p !== <span class="string">'string'</span>) {
+      <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Arguments to path.join must be strings'</span>);
+    }
+    <span class="keyword">return</span> p;
+  }).join(<span class="string">'/'</span>));
+};
+
+
+<span class="comment">// path.relative(from, to)</span>
+<span class="comment">// posix version</span>
+exports.relative = <span class="keyword">function</span>(from, to) {
+  from = exports.resolve(from).substr(<span class="number">1</span>);
+  to = exports.resolve(to).substr(<span class="number">1</span>);
+
+  <span class="function"><span class="keyword">function</span> <span class="title">trim</span><span class="params">(arr)</span> {</span>
+    <span class="keyword">var</span> start = <span class="number">0</span>;
+    <span class="keyword">for</span> (; start &lt; arr.length; start++) {
+      <span class="keyword">if</span> (arr[start] !== <span class="string">''</span>) <span class="keyword">break</span>;
+    }
+
+    <span class="keyword">var</span> end = arr.length - <span class="number">1</span>;
+    <span class="keyword">for</span> (; end >= <span class="number">0</span>; end--) {
+      <span class="keyword">if</span> (arr[end] !== <span class="string">''</span>) <span class="keyword">break</span>;
+    }
+
+    <span class="keyword">if</span> (start > end) <span class="keyword">return</span> [];
+    <span class="keyword">return</span> arr.slice(start, end - start + <span class="number">1</span>);
+  }
+
+  <span class="keyword">var</span> fromParts = trim(from.split(<span class="string">'/'</span>));
+  <span class="keyword">var</span> toParts = trim(to.split(<span class="string">'/'</span>));
+
+  <span class="keyword">var</span> length = Math.min(fromParts.length, toParts.length);
+  <span class="keyword">var</span> samePartsLength = length;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; length; i++) {
+    <span class="keyword">if</span> (fromParts[i] !== toParts[i]) {
+      samePartsLength = i;
+      <span class="keyword">break</span>;
+    }
+  }
+
+  <span class="keyword">var</span> outputParts = [];
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = samePartsLength; i &lt; fromParts.length; i++) {
+    outputParts.push(<span class="string">'..'</span>);
+  }
+
+  outputParts = outputParts.concat(toParts.slice(samePartsLength));
+
+  <span class="keyword">return</span> outputParts.join(<span class="string">'/'</span>);
+};
+
+exports.sep = <span class="string">'/'</span>;
+exports.delimiter = <span class="string">':'</span>;
+
+exports.dirname = <span class="function"><span class="keyword">function</span> <span class="params">(path)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> path !== <span class="string">'string'</span>) path = path + <span class="string">''</span>;
+  <span class="keyword">if</span> (path.length === <span class="number">0</span>) <span class="keyword">return</span> <span class="string">'.'</span>;
+  <span class="keyword">var</span> code = path.charCodeAt(<span class="number">0</span>);
+  <span class="keyword">var</span> hasRoot = code === <span class="number">47</span> <span class="comment">/*/*/</span>;
+  <span class="keyword">var</span> end = -<span class="number">1</span>;
+  <span class="keyword">var</span> matchedSlash = <span class="literal">true</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = path.length - <span class="number">1</span>; i >= <span class="number">1</span>; --i) {
+    code = path.charCodeAt(i);
+    <span class="keyword">if</span> (code === <span class="number">47</span> <span class="comment">/*/*/</span>) {
+        <span class="keyword">if</span> (!matchedSlash) {
+          end = i;
+          <span class="keyword">break</span>;
+        }
+      } <span class="keyword">else</span> {
+      <span class="comment">// We saw the first non-path separator</span>
+      matchedSlash = <span class="literal">false</span>;
+    }
+  }
+
+  <span class="keyword">if</span> (end === -<span class="number">1</span>) <span class="keyword">return</span> hasRoot ? <span class="string">'/'</span> : <span class="string">'.'</span>;
+  <span class="keyword">if</span> (hasRoot &amp;&amp; end === <span class="number">1</span>) {
+    <span class="comment">// return '//';</span>
+    <span class="comment">// Backwards-compat fix:</span>
+    <span class="keyword">return</span> <span class="string">'/'</span>;
+  }
+  <span class="keyword">return</span> path.slice(<span class="number">0</span>, end);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">basename</span><span class="params">(path)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> path !== <span class="string">'string'</span>) path = path + <span class="string">''</span>;
+
+  <span class="keyword">var</span> start = <span class="number">0</span>;
+  <span class="keyword">var</span> end = -<span class="number">1</span>;
+  <span class="keyword">var</span> matchedSlash = <span class="literal">true</span>;
+  <span class="keyword">var</span> i;
+
+  <span class="keyword">for</span> (i = path.length - <span class="number">1</span>; i >= <span class="number">0</span>; --i) {
+    <span class="keyword">if</span> (path.charCodeAt(i) === <span class="number">47</span> <span class="comment">/*/*/</span>) {
+        <span class="comment">// If we reached a path separator that was not part of a set of path</span>
+        <span class="comment">// separators at the end of the string, stop now</span>
+        <span class="keyword">if</span> (!matchedSlash) {
+          start = i + <span class="number">1</span>;
+          <span class="keyword">break</span>;
+        }
+      } <span class="keyword">else</span> <span class="keyword">if</span> (end === -<span class="number">1</span>) {
+      <span class="comment">// We saw the first non-path separator, mark this as the end of our</span>
+      <span class="comment">// path component</span>
+      matchedSlash = <span class="literal">false</span>;
+      end = i + <span class="number">1</span>;
+    }
+  }
+
+  <span class="keyword">if</span> (end === -<span class="number">1</span>) <span class="keyword">return</span> <span class="string">''</span>;
+  <span class="keyword">return</span> path.slice(start, end);
+}
+
+<span class="comment">// Uses a mixed approach for backwards-compatibility, as ext behavior changed</span>
+<span class="comment">// in new Node.js versions, so only basename() above is backported here</span>
+exports.basename = <span class="function"><span class="keyword">function</span> <span class="params">(path, ext)</span> {</span>
+  <span class="keyword">var</span> f = basename(path);
+  <span class="keyword">if</span> (ext &amp;&amp; f.substr(-<span class="number">1</span> * ext.length) === ext) {
+    f = f.substr(<span class="number">0</span>, f.length - ext.length);
+  }
+  <span class="keyword">return</span> f;
+};
+
+exports.extname = <span class="function"><span class="keyword">function</span> <span class="params">(path)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> path !== <span class="string">'string'</span>) path = path + <span class="string">''</span>;
+  <span class="keyword">var</span> startDot = -<span class="number">1</span>;
+  <span class="keyword">var</span> startPart = <span class="number">0</span>;
+  <span class="keyword">var</span> end = -<span class="number">1</span>;
+  <span class="keyword">var</span> matchedSlash = <span class="literal">true</span>;
+  <span class="comment">// Track the state of characters (if any) we see before our first dot and</span>
+  <span class="comment">// after any path separator we find</span>
+  <span class="keyword">var</span> preDotState = <span class="number">0</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = path.length - <span class="number">1</span>; i >= <span class="number">0</span>; --i) {
+    <span class="keyword">var</span> code = path.charCodeAt(i);
+    <span class="keyword">if</span> (code === <span class="number">47</span> <span class="comment">/*/*/</span>) {
+        <span class="comment">// If we reached a path separator that was not part of a set of path</span>
+        <span class="comment">// separators at the end of the string, stop now</span>
+        <span class="keyword">if</span> (!matchedSlash) {
+          startPart = i + <span class="number">1</span>;
+          <span class="keyword">break</span>;
+        }
+        <span class="keyword">continue</span>;
+      }
+    <span class="keyword">if</span> (end === -<span class="number">1</span>) {
+      <span class="comment">// We saw the first non-path separator, mark this as the end of our</span>
+      <span class="comment">// extension</span>
+      matchedSlash = <span class="literal">false</span>;
+      end = i + <span class="number">1</span>;
+    }
+    <span class="keyword">if</span> (code === <span class="number">46</span> <span class="comment">/*.*/</span>) {
+        <span class="comment">// If this is our first dot, mark it as the start of our extension</span>
+        <span class="keyword">if</span> (startDot === -<span class="number">1</span>)
+          startDot = i;
+        <span class="keyword">else</span> <span class="keyword">if</span> (preDotState !== <span class="number">1</span>)
+          preDotState = <span class="number">1</span>;
+    } <span class="keyword">else</span> <span class="keyword">if</span> (startDot !== -<span class="number">1</span>) {
+      <span class="comment">// We saw a non-dot and non-path separator before our dot, so we should</span>
+      <span class="comment">// have a good chance at having a non-empty extension</span>
+      preDotState = -<span class="number">1</span>;
+    }
+  }
+
+  <span class="keyword">if</span> (startDot === -<span class="number">1</span> || end === -<span class="number">1</span> ||
+      <span class="comment">// We saw a non-dot character immediately before the dot</span>
+      preDotState === <span class="number">0</span> ||
+      <span class="comment">// The (right-most) trimmed path component is exactly '..'</span>
+      preDotState === <span class="number">1</span> &amp;&amp; startDot === end - <span class="number">1</span> &amp;&amp; startDot === startPart + <span class="number">1</span>) {
+    <span class="keyword">return</span> <span class="string">''</span>;
+  }
+  <span class="keyword">return</span> path.slice(startDot, end);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">filter</span> <span class="params">(xs, f)</span> {</span>
+    <span class="keyword">if</span> (xs.filter) <span class="keyword">return</span> xs.filter(f);
+    <span class="keyword">var</span> res = [];
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; xs.length; i++) {
+        <span class="keyword">if</span> (f(xs[i], i, xs)) res.push(xs[i]);
+    }
+    <span class="keyword">return</span> res;
+}
+
+<span class="comment">// String.prototype.substr - negative index don't work in IE8</span>
+<span class="keyword">var</span> substr = <span class="string">'ab'</span>.substr(-<span class="number">1</span>) === <span class="string">'b'</span>
+    ? <span class="function"><span class="keyword">function</span> <span class="params">(str, start, len)</span> {</span> <span class="keyword">return</span> str.substr(start, len) }
+    : <span class="function"><span class="keyword">function</span> <span class="params">(str, start, len)</span> {</span>
+        <span class="keyword">if</span> (start &lt; <span class="number">0</span>) start = str.length + start;
+        <span class="keyword">return</span> str.substr(start, len);
+    }
+;
+</code></pre>

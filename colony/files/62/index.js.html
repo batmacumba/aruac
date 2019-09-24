@@ -1,0 +1,33 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> http = require(<span class="string">'http'</span>)
+<span class="keyword">var</span> url = require(<span class="string">'url'</span>)
+
+<span class="keyword">var</span> https = module.exports
+
+<span class="keyword">for</span> (<span class="keyword">var</span> key <span class="keyword">in</span> http) {
+  <span class="keyword">if</span> (http.hasOwnProperty(key)) https[key] = http[key]
+}
+
+https.request = <span class="function"><span class="keyword">function</span> <span class="params">(params, cb)</span> {</span>
+  params = validateParams(params)
+  <span class="keyword">return</span> http.request.call(<span class="keyword">this</span>, params, cb)
+}
+
+https.get = <span class="function"><span class="keyword">function</span> <span class="params">(params, cb)</span> {</span>
+  params = validateParams(params)
+  <span class="keyword">return</span> http.get.call(<span class="keyword">this</span>, params, cb)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">validateParams</span> <span class="params">(params)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> params === <span class="string">'string'</span>) {
+    params = url.parse(params)
+  }
+  <span class="keyword">if</span> (!params.protocol) {
+    params.protocol = <span class="string">'https:'</span>
+  }
+  <span class="keyword">if</span> (params.protocol !== <span class="string">'https:'</span>) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'Protocol "'</span> + params.protocol + <span class="string">'" not supported. Expected "https:"'</span>)
+  }
+  <span class="keyword">return</span> params
+}
+</code></pre>

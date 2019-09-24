@@ -1,0 +1,249 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>
+
+<span class="keyword">var</span> Parser = require(<span class="string">'jsonparse'</span>)
+  , through = require(<span class="string">'through'</span>)
+
+<span class="keyword">var</span> bufferFrom = Buffer.from &amp;&amp; Buffer.from !== Uint8Array.from
+
+<span class="comment">/*
+
+  the value of this.stack that creationix's jsonparse has is weird.
+
+  it makes this code ugly, but his problem is way harder that mine,
+  so i'll forgive him.
+
+*/</span>
+
+exports.parse = <span class="function"><span class="keyword">function</span> <span class="params">(path, map)</span> {</span>
+  <span class="keyword">var</span> header, footer
+  <span class="keyword">var</span> parser = <span class="keyword">new</span> Parser()
+  <span class="keyword">var</span> stream = through(<span class="function"><span class="keyword">function</span> <span class="params">(chunk)</span> {</span>
+    <span class="keyword">if</span>(<span class="string">'string'</span> === <span class="keyword">typeof</span> chunk)
+      chunk = bufferFrom ? Buffer.from(chunk) : <span class="keyword">new</span> Buffer(chunk)
+    parser.write(chunk)
+  },
+  <span class="function"><span class="keyword">function</span> <span class="params">(data)</span> {</span>
+    <span class="keyword">if</span>(data)
+      stream.write(data)
+    <span class="keyword">if</span> (header)
+        stream.emit(<span class="string">'header'</span>, header)
+    <span class="keyword">if</span> (footer)
+      stream.emit(<span class="string">'footer'</span>, footer)
+    stream.queue(<span class="literal">null</span>)
+  })
+
+  <span class="keyword">if</span>(<span class="string">'string'</span> === <span class="keyword">typeof</span> path)
+    path = path.split(<span class="string">'.'</span>).map(<span class="function"><span class="keyword">function</span> <span class="params">(e)</span> {</span>
+      <span class="keyword">if</span> (e === <span class="string">'$*'</span>)
+        <span class="keyword">return</span> {emitKey: <span class="literal">true</span>}
+      <span class="keyword">else</span> <span class="keyword">if</span> (e === <span class="string">'*'</span>)
+        <span class="keyword">return</span> <span class="literal">true</span>
+      <span class="keyword">else</span> <span class="keyword">if</span> (e === <span class="string">''</span>) <span class="comment">// '..'.split('.') returns an empty string</span>
+        <span class="keyword">return</span> {recurse: <span class="literal">true</span>}
+      <span class="keyword">else</span>
+        <span class="keyword">return</span> e
+    })
+
+
+  <span class="keyword">var</span> count = <span class="number">0</span>, _key
+  <span class="keyword">if</span>(!path || !path.length)
+    path = <span class="literal">null</span>
+
+  parser.onValue = <span class="function"><span class="keyword">function</span> <span class="params">(value)</span> {</span>
+    <span class="keyword">if</span> (!<span class="keyword">this</span>.root)
+      stream.root = value
+
+    <span class="keyword">if</span>(! path) <span class="keyword">return</span>
+
+    <span class="keyword">var</span> i = <span class="number">0</span> <span class="comment">// iterates on path</span>
+    <span class="keyword">var</span> j  = <span class="number">0</span> <span class="comment">// iterates on stack</span>
+    <span class="keyword">var</span> emitKey = <span class="literal">false</span>;
+    <span class="keyword">var</span> emitPath = <span class="literal">false</span>;
+    <span class="keyword">while</span> (i &lt; path.length) {
+      <span class="keyword">var</span> key = path[i]
+      <span class="keyword">var</span> c
+      j++
+
+      <span class="keyword">if</span> (key &amp;&amp; !key.recurse) {
+        c = (j === <span class="keyword">this</span>.stack.length) ? <span class="keyword">this</span> : <span class="keyword">this</span>.stack[j]
+        <span class="keyword">if</span> (!c) <span class="keyword">return</span>
+        <span class="keyword">if</span> (! check(key, c.key)) {
+          setHeaderFooter(c.key, value)
+          <span class="keyword">return</span>
+        }
+        emitKey = !!key.emitKey;
+        emitPath = !!key.emitPath;
+        i++
+      } <span class="keyword">else</span> {
+        i++
+        <span class="keyword">var</span> nextKey = path[i]
+        <span class="keyword">if</span> (! nextKey) <span class="keyword">return</span>
+        <span class="keyword">while</span> (<span class="literal">true</span>) {
+          c = (j === <span class="keyword">this</span>.stack.length) ? <span class="keyword">this</span> : <span class="keyword">this</span>.stack[j]
+          <span class="keyword">if</span> (!c) <span class="keyword">return</span>
+          <span class="keyword">if</span> (check(nextKey, c.key)) {
+            i++;
+            <span class="keyword">if</span> (!Object.isFrozen(<span class="keyword">this</span>.stack[j]))
+              <span class="keyword">this</span>.stack[j].value = <span class="literal">null</span>
+            <span class="keyword">break</span>
+          } <span class="keyword">else</span> {
+            setHeaderFooter(c.key, value)
+          }
+          j++
+        }
+      }
+
+    }
+
+    <span class="comment">// emit header</span>
+    <span class="keyword">if</span> (header) {
+      stream.emit(<span class="string">'header'</span>, header);
+      header = <span class="literal">false</span>;
+    }
+    <span class="keyword">if</span> (j !== <span class="keyword">this</span>.stack.length) <span class="keyword">return</span>
+
+    count ++
+    <span class="keyword">var</span> actualPath = <span class="keyword">this</span>.stack.slice(<span class="number">1</span>).map(<span class="keyword">function</span>(element) { <span class="keyword">return</span> element.key }).concat([<span class="keyword">this</span>.key])
+    <span class="keyword">var</span> data = value
+    <span class="keyword">if</span>(<span class="literal">null</span> != data)
+      <span class="keyword">if</span>(<span class="literal">null</span> != (data = map ? map(data, actualPath) : data)) {
+        <span class="keyword">if</span> (emitKey || emitPath) {
+          data = { value: data };
+          <span class="keyword">if</span> (emitKey)
+            data[<span class="string">"key"</span>] = <span class="keyword">this</span>.key;
+          <span class="keyword">if</span> (emitPath)
+            data[<span class="string">"path"</span>] = actualPath;
+        }
+
+        stream.queue(data)
+      }
+    <span class="keyword">if</span> (<span class="keyword">this</span>.value) <span class="keyword">delete</span> <span class="keyword">this</span>.value[<span class="keyword">this</span>.key]
+    <span class="keyword">for</span>(<span class="keyword">var</span> k <span class="keyword">in</span> <span class="keyword">this</span>.stack)
+      <span class="keyword">if</span> (!Object.isFrozen(<span class="keyword">this</span>.stack[k]))
+        <span class="keyword">this</span>.stack[k].value = <span class="literal">null</span>
+  }
+  parser._onToken = parser.onToken;
+
+  parser.onToken = <span class="function"><span class="keyword">function</span> <span class="params">(token, value)</span> {</span>
+    parser._onToken(token, value);
+    <span class="keyword">if</span> (<span class="keyword">this</span>.stack.length === <span class="number">0</span>) {
+      <span class="keyword">if</span> (stream.root) {
+        <span class="keyword">if</span>(!path)
+          stream.queue(stream.root)
+        count = <span class="number">0</span>;
+        stream.root = <span class="literal">null</span>;
+      }
+    }
+  }
+
+  parser.onError = <span class="function"><span class="keyword">function</span> <span class="params">(err)</span> {</span>
+    <span class="keyword">if</span>(err.message.indexOf(<span class="string">"at position"</span>) > -<span class="number">1</span>)
+      err.message = <span class="string">"Invalid JSON ("</span> + err.message + <span class="string">")"</span>;
+    stream.emit(<span class="string">'error'</span>, err)
+  }
+
+  <span class="keyword">return</span> stream
+
+  <span class="function"><span class="keyword">function</span> <span class="title">setHeaderFooter</span><span class="params">(key, value)</span> {</span>
+    <span class="comment">// header has not been emitted yet</span>
+    <span class="keyword">if</span> (header !== <span class="literal">false</span>) {
+      header = header || {}
+      header[key] = value
+    }
+
+    <span class="comment">// footer has not been emitted yet but header has</span>
+    <span class="keyword">if</span> (footer !== <span class="literal">false</span> &amp;&amp; header === <span class="literal">false</span>) {
+      footer = footer || {}
+      footer[key] = value
+    }
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">check</span> <span class="params">(x, y)</span> {</span>
+  <span class="keyword">if</span> (<span class="string">'string'</span> === <span class="keyword">typeof</span> x)
+    <span class="keyword">return</span> y == x
+  <span class="keyword">else</span> <span class="keyword">if</span> (x &amp;&amp; <span class="string">'function'</span> === <span class="keyword">typeof</span> x.exec)
+    <span class="keyword">return</span> x.exec(y)
+  <span class="keyword">else</span> <span class="keyword">if</span> (<span class="string">'boolean'</span> === <span class="keyword">typeof</span> x || <span class="string">'object'</span> === <span class="keyword">typeof</span> x)
+    <span class="keyword">return</span> x
+  <span class="keyword">else</span> <span class="keyword">if</span> (<span class="string">'function'</span> === <span class="keyword">typeof</span> x)
+    <span class="keyword">return</span> x(y)
+  <span class="keyword">return</span> <span class="literal">false</span>
+}
+
+exports.stringify = <span class="function"><span class="keyword">function</span> <span class="params">(op, sep, cl, indent)</span> {</span>
+  indent = indent || <span class="number">0</span>
+  <span class="keyword">if</span> (op === <span class="literal">false</span>){
+    op = <span class="string">''</span>
+    sep = <span class="string">'\n'</span>
+    cl = <span class="string">''</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (op == <span class="literal">null</span>) {
+
+    op = <span class="string">'[\n'</span>
+    sep = <span class="string">'\n,\n'</span>
+    cl = <span class="string">'\n]\n'</span>
+
+  }
+
+  <span class="comment">//else, what ever you like</span>
+
+  <span class="keyword">var</span> stream
+    , first = <span class="literal">true</span>
+    , anyData = <span class="literal">false</span>
+  stream = through(<span class="function"><span class="keyword">function</span> <span class="params">(data)</span> {</span>
+    anyData = <span class="literal">true</span>
+    <span class="keyword">try</span> {
+      <span class="keyword">var</span> json = JSON.stringify(data, <span class="literal">null</span>, indent)
+    } <span class="keyword">catch</span> (err) {
+      <span class="keyword">return</span> stream.emit(<span class="string">'error'</span>, err)
+    }
+    <span class="keyword">if</span>(first) { first = <span class="literal">false</span> ; stream.queue(op + json)}
+    <span class="keyword">else</span> stream.queue(sep + json)
+  },
+  <span class="function"><span class="keyword">function</span> <span class="params">(data)</span> {</span>
+    <span class="keyword">if</span>(!anyData)
+      stream.queue(op)
+    stream.queue(cl)
+    stream.queue(<span class="literal">null</span>)
+  })
+
+  <span class="keyword">return</span> stream
+}
+
+exports.stringifyObject = <span class="function"><span class="keyword">function</span> <span class="params">(op, sep, cl, indent)</span> {</span>
+  indent = indent || <span class="number">0</span>
+  <span class="keyword">if</span> (op === <span class="literal">false</span>){
+    op = <span class="string">''</span>
+    sep = <span class="string">'\n'</span>
+    cl = <span class="string">''</span>
+  } <span class="keyword">else</span> <span class="keyword">if</span> (op == <span class="literal">null</span>) {
+
+    op = <span class="string">'{\n'</span>
+    sep = <span class="string">'\n,\n'</span>
+    cl = <span class="string">'\n}\n'</span>
+
+  }
+
+  <span class="comment">//else, what ever you like</span>
+
+  <span class="keyword">var</span> first = <span class="literal">true</span>
+  <span class="keyword">var</span> anyData = <span class="literal">false</span>
+  <span class="keyword">var</span> stream = through(<span class="function"><span class="keyword">function</span> <span class="params">(data)</span> {</span>
+    anyData = <span class="literal">true</span>
+    <span class="keyword">var</span> json = JSON.stringify(data[<span class="number">0</span>]) + <span class="string">':'</span> + JSON.stringify(data[<span class="number">1</span>], <span class="literal">null</span>, indent)
+    <span class="keyword">if</span>(first) { first = <span class="literal">false</span> ; <span class="keyword">this</span>.queue(op + json)}
+    <span class="keyword">else</span> <span class="keyword">this</span>.queue(sep + json)
+  },
+  <span class="function"><span class="keyword">function</span> <span class="params">(data)</span> {</span>
+    <span class="keyword">if</span>(!anyData) <span class="keyword">this</span>.queue(op)
+    <span class="keyword">this</span>.queue(cl)
+
+    <span class="keyword">this</span>.queue(<span class="literal">null</span>)
+  })
+
+  <span class="keyword">return</span> stream
+}
+
+
+</code></pre>

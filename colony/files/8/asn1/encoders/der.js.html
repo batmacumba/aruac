@@ -1,0 +1,297 @@
+<h1>der.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>);
+<span class="keyword">var</span> Buffer = require(<span class="string">'buffer'</span>).Buffer;
+
+<span class="keyword">var</span> asn1 = require(<span class="string">'../../asn1'</span>);
+<span class="keyword">var</span> base = asn1.base;
+
+<span class="comment">// Import DER constants</span>
+<span class="keyword">var</span> der = asn1.constants.der;
+
+<span class="function"><span class="keyword">function</span> <span class="title">DEREncoder</span><span class="params">(entity)</span> {</span>
+  <span class="keyword">this</span>.enc = <span class="string">'der'</span>;
+  <span class="keyword">this</span>.name = entity.name;
+  <span class="keyword">this</span>.entity = entity;
+
+  <span class="comment">// Construct base tree</span>
+  <span class="keyword">this</span>.tree = <span class="keyword">new</span> DERNode();
+  <span class="keyword">this</span>.tree._init(entity.body);
+};
+module.exports = DEREncoder;
+
+DEREncoder.prototype.encode = <span class="function"><span class="keyword">function</span> <span class="title">encode</span><span class="params">(data, reporter)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.tree._encode(data, reporter).join();
+};
+
+<span class="comment">// Tree methods</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">DERNode</span><span class="params">(parent)</span> {</span>
+  base.Node.call(<span class="keyword">this</span>, <span class="string">'der'</span>, parent);
+}
+inherits(DERNode, base.Node);
+
+DERNode.prototype._encodeComposite = <span class="function"><span class="keyword">function</span> <span class="title">encodeComposite</span><span class="params">(tag,
+                                                              primitive,
+                                                              cls,
+                                                              content)</span> {</span>
+  <span class="keyword">var</span> encodedTag = encodeTag(tag, primitive, cls, <span class="keyword">this</span>.reporter);
+
+  <span class="comment">// Short form</span>
+  <span class="keyword">if</span> (content.length &lt; <span class="number">0x80</span>) {
+    <span class="keyword">var</span> header = <span class="keyword">new</span> Buffer(<span class="number">2</span>);
+    header[<span class="number">0</span>] = encodedTag;
+    header[<span class="number">1</span>] = content.length;
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer([ header, content ]);
+  }
+
+  <span class="comment">// Long form</span>
+  <span class="comment">// Count octets required to store length</span>
+  <span class="keyword">var</span> lenOctets = <span class="number">1</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = content.length; i >= <span class="number">0x100</span>; i >>= <span class="number">8</span>)
+    lenOctets++;
+
+  <span class="keyword">var</span> header = <span class="keyword">new</span> Buffer(<span class="number">1</span> + <span class="number">1</span> + lenOctets);
+  header[<span class="number">0</span>] = encodedTag;
+  header[<span class="number">1</span>] = <span class="number">0x80</span> | lenOctets;
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">1</span> + lenOctets, j = content.length; j > <span class="number">0</span>; i--, j >>= <span class="number">8</span>)
+    header[i] = j &amp; <span class="number">0xff</span>;
+
+  <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer([ header, content ]);
+};
+
+DERNode.prototype._encodeStr = <span class="function"><span class="keyword">function</span> <span class="title">encodeStr</span><span class="params">(str, tag)</span> {</span>
+  <span class="keyword">if</span> (tag === <span class="string">'bitstr'</span>) {
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer([ str.unused | <span class="number">0</span>, str.data ]);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'bmpstr'</span>) {
+    <span class="keyword">var</span> buf = <span class="keyword">new</span> Buffer(str.length * <span class="number">2</span>);
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; str.length; i++) {
+      buf.writeUInt16BE(str.charCodeAt(i), i * <span class="number">2</span>);
+    }
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(buf);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'numstr'</span>) {
+    <span class="keyword">if</span> (!<span class="keyword">this</span>._isNumstr(str)) {
+      <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'Encoding of string type: numstr supports '</span> +
+                                 <span class="string">'only digits and space'</span>);
+    }
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(str);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'printstr'</span>) {
+    <span class="keyword">if</span> (!<span class="keyword">this</span>._isPrintstr(str)) {
+      <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'Encoding of string type: printstr supports '</span> +
+                                 <span class="string">'only latin upper and lower case letters, '</span> +
+                                 <span class="string">'digits, space, apostrophe, left and rigth '</span> +
+                                 <span class="string">'parenthesis, plus sign, comma, hyphen, '</span> +
+                                 <span class="string">'dot, slash, colon, equal sign, '</span> +
+                                 <span class="string">'question mark'</span>);
+    }
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(str);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (<span class="regexp">/str$/</span>.test(tag)) {
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(str);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'objDesc'</span>) {
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(str);
+  } <span class="keyword">else</span> {
+    <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'Encoding of string type: '</span> + tag +
+                               <span class="string">' unsupported'</span>);
+  }
+};
+
+DERNode.prototype._encodeObjid = <span class="function"><span class="keyword">function</span> <span class="title">encodeObjid</span><span class="params">(id, values, relative)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> id === <span class="string">'string'</span>) {
+    <span class="keyword">if</span> (!values)
+      <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'string objid given, but no values map found'</span>);
+    <span class="keyword">if</span> (!values.hasOwnProperty(id))
+      <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'objid not found in values map'</span>);
+    id = values[id].split(<span class="regexp">/[\s\.]+/g</span>);
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; id.length; i++)
+      id[i] |= <span class="number">0</span>;
+  } <span class="keyword">else</span> <span class="keyword">if</span> (Array.isArray(id)) {
+    id = id.slice();
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; id.length; i++)
+      id[i] |= <span class="number">0</span>;
+  }
+
+  <span class="keyword">if</span> (!Array.isArray(id)) {
+    <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'objid() should be either array or string, '</span> +
+                               <span class="string">'got: '</span> + JSON.stringify(id));
+  }
+
+  <span class="keyword">if</span> (!relative) {
+    <span class="keyword">if</span> (id[<span class="number">1</span>] >= <span class="number">40</span>)
+      <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'Second objid identifier OOB'</span>);
+    id.splice(<span class="number">0</span>, <span class="number">2</span>, id[<span class="number">0</span>] * <span class="number">40</span> + id[<span class="number">1</span>]);
+  }
+
+  <span class="comment">// Count number of octets</span>
+  <span class="keyword">var</span> size = <span class="number">0</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; id.length; i++) {
+    <span class="keyword">var</span> ident = id[i];
+    <span class="keyword">for</span> (size++; ident >= <span class="number">0x80</span>; ident >>= <span class="number">7</span>)
+      size++;
+  }
+
+  <span class="keyword">var</span> objid = <span class="keyword">new</span> Buffer(size);
+  <span class="keyword">var</span> offset = objid.length - <span class="number">1</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = id.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+    <span class="keyword">var</span> ident = id[i];
+    objid[offset--] = ident &amp; <span class="number">0x7f</span>;
+    <span class="keyword">while</span> ((ident >>= <span class="number">7</span>) > <span class="number">0</span>)
+      objid[offset--] = <span class="number">0x80</span> | (ident &amp; <span class="number">0x7f</span>);
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(objid);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">two</span><span class="params">(num)</span> {</span>
+  <span class="keyword">if</span> (num &lt; <span class="number">10</span>)
+    <span class="keyword">return</span> <span class="string">'0'</span> + num;
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> num;
+}
+
+DERNode.prototype._encodeTime = <span class="function"><span class="keyword">function</span> <span class="title">encodeTime</span><span class="params">(time, tag)</span> {</span>
+  <span class="keyword">var</span> str;
+  <span class="keyword">var</span> date = <span class="keyword">new</span> Date(time);
+
+  <span class="keyword">if</span> (tag === <span class="string">'gentime'</span>) {
+    str = [
+      two(date.getFullYear()),
+      two(date.getUTCMonth() + <span class="number">1</span>),
+      two(date.getUTCDate()),
+      two(date.getUTCHours()),
+      two(date.getUTCMinutes()),
+      two(date.getUTCSeconds()),
+      <span class="string">'Z'</span>
+    ].join(<span class="string">''</span>);
+  } <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'utctime'</span>) {
+    str = [
+      two(date.getFullYear() % <span class="number">100</span>),
+      two(date.getUTCMonth() + <span class="number">1</span>),
+      two(date.getUTCDate()),
+      two(date.getUTCHours()),
+      two(date.getUTCMinutes()),
+      two(date.getUTCSeconds()),
+      <span class="string">'Z'</span>
+    ].join(<span class="string">''</span>);
+  } <span class="keyword">else</span> {
+    <span class="keyword">this</span>.reporter.error(<span class="string">'Encoding '</span> + tag + <span class="string">' time is not supported yet'</span>);
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>._encodeStr(str, <span class="string">'octstr'</span>);
+};
+
+DERNode.prototype._encodeNull = <span class="function"><span class="keyword">function</span> <span class="title">encodeNull</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(<span class="string">''</span>);
+};
+
+DERNode.prototype._encodeInt = <span class="function"><span class="keyword">function</span> <span class="title">encodeInt</span><span class="params">(num, values)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> num === <span class="string">'string'</span>) {
+    <span class="keyword">if</span> (!values)
+      <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'String int or enum given, but no values map'</span>);
+    <span class="keyword">if</span> (!values.hasOwnProperty(num)) {
+      <span class="keyword">return</span> <span class="keyword">this</span>.reporter.error(<span class="string">'Values map doesn\'t contain: '</span> +
+                                 JSON.stringify(num));
+    }
+    num = values[num];
+  }
+
+  <span class="comment">// Bignum, assume big endian</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> num !== <span class="string">'number'</span> &amp;&amp; !Buffer.isBuffer(num)) {
+    <span class="keyword">var</span> numArray = num.toArray();
+    <span class="keyword">if</span> (!num.sign &amp;&amp; numArray[<span class="number">0</span>] &amp; <span class="number">0x80</span>) {
+      numArray.unshift(<span class="number">0</span>);
+    }
+    num = <span class="keyword">new</span> Buffer(numArray);
+  }
+
+  <span class="keyword">if</span> (Buffer.isBuffer(num)) {
+    <span class="keyword">var</span> size = num.length;
+    <span class="keyword">if</span> (num.length === <span class="number">0</span>)
+      size++;
+
+    <span class="keyword">var</span> out = <span class="keyword">new</span> Buffer(size);
+    num.copy(out);
+    <span class="keyword">if</span> (num.length === <span class="number">0</span>)
+      out[<span class="number">0</span>] = <span class="number">0</span>
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(out);
+  }
+
+  <span class="keyword">if</span> (num &lt; <span class="number">0x80</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(num);
+
+  <span class="keyword">if</span> (num &lt; <span class="number">0x100</span>)
+    <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer([<span class="number">0</span>, num]);
+
+  <span class="keyword">var</span> size = <span class="number">1</span>;
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = num; i >= <span class="number">0x100</span>; i >>= <span class="number">8</span>)
+    size++;
+
+  <span class="keyword">var</span> out = <span class="keyword">new</span> Array(size);
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = out.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+    out[i] = num &amp; <span class="number">0xff</span>;
+    num >>= <span class="number">8</span>;
+  }
+  <span class="keyword">if</span>(out[<span class="number">0</span>] &amp; <span class="number">0x80</span>) {
+    out.unshift(<span class="number">0</span>);
+  }
+
+  <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(<span class="keyword">new</span> Buffer(out));
+};
+
+DERNode.prototype._encodeBool = <span class="function"><span class="keyword">function</span> <span class="title">encodeBool</span><span class="params">(value)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._createEncoderBuffer(value ? <span class="number">0xff</span> : <span class="number">0</span>);
+};
+
+DERNode.prototype._use = <span class="function"><span class="keyword">function</span> <span class="title">use</span><span class="params">(entity, obj)</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> entity === <span class="string">'function'</span>)
+    entity = entity(obj);
+  <span class="keyword">return</span> entity._getEncoder(<span class="string">'der'</span>).tree;
+};
+
+DERNode.prototype._skipDefault = <span class="function"><span class="keyword">function</span> <span class="title">skipDefault</span><span class="params">(dataBuffer, reporter, parent)</span> {</span>
+  <span class="keyword">var</span> state = <span class="keyword">this</span>._baseState;
+  <span class="keyword">var</span> i;
+  <span class="keyword">if</span> (state[<span class="string">'default'</span>] === <span class="literal">null</span>)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="keyword">var</span> data = dataBuffer.join();
+  <span class="keyword">if</span> (state.defaultBuffer === <span class="literal">undefined</span>)
+    state.defaultBuffer = <span class="keyword">this</span>._encodeValue(state[<span class="string">'default'</span>], reporter, parent).join();
+
+  <span class="keyword">if</span> (data.length !== state.defaultBuffer.length)
+    <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="keyword">for</span> (i=<span class="number">0</span>; i &lt; data.length; i++)
+    <span class="keyword">if</span> (data[i] !== state.defaultBuffer[i])
+      <span class="keyword">return</span> <span class="literal">false</span>;
+
+  <span class="keyword">return</span> <span class="literal">true</span>;
+};
+
+<span class="comment">// Utility methods</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">encodeTag</span><span class="params">(tag, primitive, cls, reporter)</span> {</span>
+  <span class="keyword">var</span> res;
+
+  <span class="keyword">if</span> (tag === <span class="string">'seqof'</span>)
+    tag = <span class="string">'seq'</span>;
+  <span class="keyword">else</span> <span class="keyword">if</span> (tag === <span class="string">'setof'</span>)
+    tag = <span class="string">'set'</span>;
+
+  <span class="keyword">if</span> (der.tagByName.hasOwnProperty(tag))
+    res = der.tagByName[tag];
+  <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">typeof</span> tag === <span class="string">'number'</span> &amp;&amp; (tag | <span class="number">0</span>) === tag)
+    res = tag;
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> reporter.error(<span class="string">'Unknown tag: '</span> + tag);
+
+  <span class="keyword">if</span> (res >= <span class="number">0x1f</span>)
+    <span class="keyword">return</span> reporter.error(<span class="string">'Multi-octet tag encoding unsupported'</span>);
+
+  <span class="keyword">if</span> (!primitive)
+    res |= <span class="number">0x20</span>;
+
+  res |= (der.tagClassByName[cls || <span class="string">'universal'</span>] &lt;&lt; <span class="number">6</span>);
+
+  <span class="keyword">return</span> res;
+}
+</code></pre>

@@ -1,0 +1,101 @@
+<h1>sha1.js</h1>
+<pre><code class="lang-js"><span class="comment">/*
+ * A JavaScript implementation of the Secure Hash Algorithm, SHA-1, as defined
+ * in FIPS PUB 180-1
+ * Version 2.1a Copyright Paul Johnston 2000 - 2002.
+ * Other contributors: Greg Holt, Andrew Kepert, Ydnar, Lostinet
+ * Distributed under the BSD License
+ * See http://pajhome.org.uk/crypt/md5 for details.
+ */</span>
+
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>)
+<span class="keyword">var</span> Hash = require(<span class="string">'./hash'</span>)
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+
+<span class="keyword">var</span> K = [
+  <span class="number">0x5a827999</span>, <span class="number">0x6ed9eba1</span>, <span class="number">0x8f1bbcdc</span> | <span class="number">0</span>, <span class="number">0xca62c1d6</span> | <span class="number">0</span>
+]
+
+<span class="keyword">var</span> W = <span class="keyword">new</span> Array(<span class="number">80</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">Sha1</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>.init()
+  <span class="keyword">this</span>._w = W
+
+  Hash.call(<span class="keyword">this</span>, <span class="number">64</span>, <span class="number">56</span>)
+}
+
+inherits(Sha1, Hash)
+
+Sha1.prototype.init = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">this</span>._a = <span class="number">0x67452301</span>
+  <span class="keyword">this</span>._b = <span class="number">0xefcdab89</span>
+  <span class="keyword">this</span>._c = <span class="number">0x98badcfe</span>
+  <span class="keyword">this</span>._d = <span class="number">0x10325476</span>
+  <span class="keyword">this</span>._e = <span class="number">0xc3d2e1f0</span>
+
+  <span class="keyword">return</span> <span class="keyword">this</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">rotl1</span> <span class="params">(num)</span> {</span>
+  <span class="keyword">return</span> (num &lt;&lt; <span class="number">1</span>) | (num >>> <span class="number">31</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">rotl5</span> <span class="params">(num)</span> {</span>
+  <span class="keyword">return</span> (num &lt;&lt; <span class="number">5</span>) | (num >>> <span class="number">27</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">rotl30</span> <span class="params">(num)</span> {</span>
+  <span class="keyword">return</span> (num &lt;&lt; <span class="number">30</span>) | (num >>> <span class="number">2</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">ft</span> <span class="params">(s, b, c, d)</span> {</span>
+  <span class="keyword">if</span> (s === <span class="number">0</span>) <span class="keyword">return</span> (b &amp; c) | ((~b) &amp; d)
+  <span class="keyword">if</span> (s === <span class="number">2</span>) <span class="keyword">return</span> (b &amp; c) | (b &amp; d) | (c &amp; d)
+  <span class="keyword">return</span> b ^ c ^ d
+}
+
+Sha1.prototype._update = <span class="function"><span class="keyword">function</span> <span class="params">(M)</span> {</span>
+  <span class="keyword">var</span> W = <span class="keyword">this</span>._w
+
+  <span class="keyword">var</span> a = <span class="keyword">this</span>._a | <span class="number">0</span>
+  <span class="keyword">var</span> b = <span class="keyword">this</span>._b | <span class="number">0</span>
+  <span class="keyword">var</span> c = <span class="keyword">this</span>._c | <span class="number">0</span>
+  <span class="keyword">var</span> d = <span class="keyword">this</span>._d | <span class="number">0</span>
+  <span class="keyword">var</span> e = <span class="keyword">this</span>._e | <span class="number">0</span>
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">16</span>; ++i) W[i] = M.readInt32BE(i * <span class="number">4</span>)
+  <span class="keyword">for</span> (; i &lt; <span class="number">80</span>; ++i) W[i] = rotl1(W[i - <span class="number">3</span>] ^ W[i - <span class="number">8</span>] ^ W[i - <span class="number">14</span>] ^ W[i - <span class="number">16</span>])
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; <span class="number">80</span>; ++j) {
+    <span class="keyword">var</span> s = ~~(j / <span class="number">20</span>)
+    <span class="keyword">var</span> t = (rotl5(a) + ft(s, b, c, d) + e + W[j] + K[s]) | <span class="number">0</span>
+
+    e = d
+    d = c
+    c = rotl30(b)
+    b = a
+    a = t
+  }
+
+  <span class="keyword">this</span>._a = (a + <span class="keyword">this</span>._a) | <span class="number">0</span>
+  <span class="keyword">this</span>._b = (b + <span class="keyword">this</span>._b) | <span class="number">0</span>
+  <span class="keyword">this</span>._c = (c + <span class="keyword">this</span>._c) | <span class="number">0</span>
+  <span class="keyword">this</span>._d = (d + <span class="keyword">this</span>._d) | <span class="number">0</span>
+  <span class="keyword">this</span>._e = (e + <span class="keyword">this</span>._e) | <span class="number">0</span>
+}
+
+Sha1.prototype._hash = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> H = Buffer.allocUnsafe(<span class="number">20</span>)
+
+  H.writeInt32BE(<span class="keyword">this</span>._a | <span class="number">0</span>, <span class="number">0</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._b | <span class="number">0</span>, <span class="number">4</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._c | <span class="number">0</span>, <span class="number">8</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._d | <span class="number">0</span>, <span class="number">12</span>)
+  H.writeInt32BE(<span class="keyword">this</span>._e | <span class="number">0</span>, <span class="number">16</span>)
+
+  <span class="keyword">return</span> H
+}
+
+module.exports = Sha1
+</code></pre>

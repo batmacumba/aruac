@@ -1,0 +1,347 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="comment">// builtin</span>
+<span class="keyword">var</span> fs = require(<span class="string">'fs'</span>);
+<span class="keyword">var</span> path = require(<span class="string">'path'</span>);
+
+<span class="comment">// vendor</span>
+<span class="keyword">var</span> resv = require(<span class="string">'resolve'</span>);
+
+<span class="comment">// given a path, create an array of node_module paths for it</span>
+<span class="comment">// borrowed from substack/resolve</span>
+<span class="function"><span class="keyword">function</span> <span class="title">nodeModulesPaths</span> <span class="params">(start, cb)</span> {</span>
+    <span class="keyword">var</span> splitRe = process.platform === <span class="string">'win32'</span> ? <span class="regexp">/[\/\\]/</span> : <span class="regexp">/\/+/</span>;
+    <span class="keyword">var</span> parts = start.split(splitRe);
+
+    <span class="keyword">var</span> dirs = [];
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = parts.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+        <span class="keyword">if</span> (parts[i] === <span class="string">'node_modules'</span>) <span class="keyword">continue</span>;
+        <span class="keyword">var</span> dir = path.join.apply(
+            path, parts.slice(<span class="number">0</span>, i + <span class="number">1</span>).concat([<span class="string">'node_modules'</span>])
+        );
+        <span class="keyword">if</span> (!parts[<span class="number">0</span>].match(<span class="regexp">/([A-Za-z]:)/</span>)) {
+            dir = <span class="string">'/'</span> + dir;
+        }
+        dirs.push(dir);
+    }
+    <span class="keyword">return</span> dirs;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">find_shims_in_package</span><span class="params">(pkgJson, cur_path, shims, browser)</span> {</span>
+    <span class="keyword">try</span> {
+        <span class="keyword">var</span> info = JSON.parse(pkgJson);
+    }
+    <span class="keyword">catch</span> (err) {
+        err.message = pkgJson + <span class="string">' : '</span> + err.message
+        <span class="keyword">throw</span> err;
+    }
+
+    <span class="keyword">var</span> replacements = getReplacements(info, browser);
+
+    <span class="comment">// no replacements, skip shims</span>
+    <span class="keyword">if</span> (!replacements) {
+        <span class="keyword">return</span>;
+    }
+
+    <span class="comment">// if browser mapping is a string</span>
+    <span class="comment">// then it just replaces the main entry point</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> replacements === <span class="string">'string'</span>) {
+        <span class="keyword">var</span> key = path.resolve(cur_path, info.main || <span class="string">'index.js'</span>);
+        shims[key] = path.resolve(cur_path, replacements);
+        <span class="keyword">return</span>;
+    }
+
+    <span class="comment">// http://nodejs.org/api/modules.html#modules_loading_from_node_modules_folders</span>
+    Object.keys(replacements).forEach(<span class="keyword">function</span>(key) {
+        <span class="keyword">var</span> val;
+        <span class="keyword">if</span> (replacements[key] === <span class="literal">false</span>) {
+            val = path.normalize(__dirname + <span class="string">'/empty.js'</span>);
+        }
+        <span class="keyword">else</span> {
+            val = replacements[key];
+            <span class="comment">// if target is a relative path, then resolve</span>
+            <span class="comment">// otherwise we assume target is a module</span>
+            <span class="keyword">if</span> (val[<span class="number">0</span>] === <span class="string">'.'</span>) {
+                val = path.resolve(cur_path, val);
+            }
+        }
+
+        <span class="keyword">if</span> (key[<span class="number">0</span>] === <span class="string">'/'</span> || key[<span class="number">0</span>] === <span class="string">'.'</span>) {
+            <span class="comment">// if begins with / ../ or ./ then we must resolve to a full path</span>
+            key = path.resolve(cur_path, key);
+        }
+        shims[key] = val;
+    });
+
+    [ <span class="string">'.js'</span>, <span class="string">'.json'</span> ].forEach(<span class="function"><span class="keyword">function</span> <span class="params">(ext)</span> {</span>
+        Object.keys(shims).forEach(<span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+            <span class="keyword">if</span> (!shims[key + ext]) {
+                shims[key + ext] = shims[key];
+            }
+        });
+    });
+}
+
+<span class="comment">// paths is mutated</span>
+<span class="comment">// load shims from first package.json file found</span>
+<span class="function"><span class="keyword">function</span> <span class="title">load_shims</span><span class="params">(paths, browser, cb)</span> {</span>
+    <span class="comment">// identify if our file should be replaced per the browser field</span>
+    <span class="comment">// original filename|id -> replacement</span>
+    <span class="keyword">var</span> shims = Object.create(<span class="literal">null</span>);
+
+    (<span class="function"><span class="keyword">function</span> <span class="title">next</span><span class="params">()</span> {</span>
+        <span class="keyword">var</span> cur_path = paths.shift();
+        <span class="keyword">if</span> (!cur_path) {
+            <span class="keyword">return</span> cb(<span class="literal">null</span>, shims);
+        }
+
+        <span class="keyword">var</span> pkg_path = path.join(cur_path, <span class="string">'package.json'</span>);
+
+        fs.readFile(pkg_path, <span class="string">'utf8'</span>, <span class="keyword">function</span>(err, data) {
+            <span class="keyword">if</span> (err) {
+                <span class="comment">// ignore paths we can't open</span>
+                <span class="comment">// avoids an exists check</span>
+                <span class="keyword">if</span> (err.code === <span class="string">'ENOENT'</span>) {
+                    <span class="keyword">return</span> next();
+                }
+
+                <span class="keyword">return</span> cb(err);
+            }
+            <span class="keyword">try</span> {
+                find_shims_in_package(data, cur_path, shims, browser);
+                <span class="keyword">return</span> cb(<span class="literal">null</span>, shims);
+            }
+            <span class="keyword">catch</span> (err) {
+                <span class="keyword">return</span> cb(err);
+            }
+        });
+    })();
+};
+
+<span class="comment">// paths is mutated</span>
+<span class="comment">// synchronously load shims from first package.json file found</span>
+<span class="function"><span class="keyword">function</span> <span class="title">load_shims_sync</span><span class="params">(paths, browser)</span> {</span>
+    <span class="comment">// identify if our file should be replaced per the browser field</span>
+    <span class="comment">// original filename|id -> replacement</span>
+    <span class="keyword">var</span> shims = Object.create(<span class="literal">null</span>);
+    <span class="keyword">var</span> cur_path;
+
+    <span class="keyword">while</span> (cur_path = paths.shift()) {
+        <span class="keyword">var</span> pkg_path = path.join(cur_path, <span class="string">'package.json'</span>);
+
+        <span class="keyword">try</span> {
+            <span class="keyword">var</span> data = fs.readFileSync(pkg_path, <span class="string">'utf8'</span>);
+            find_shims_in_package(data, cur_path, shims, browser);
+            <span class="keyword">return</span> shims;
+        }
+        <span class="keyword">catch</span> (err) {
+            <span class="comment">// ignore paths we can't open</span>
+            <span class="comment">// avoids an exists check</span>
+            <span class="keyword">if</span> (err.code === <span class="string">'ENOENT'</span>) {
+                <span class="keyword">continue</span>;
+            }
+
+            <span class="keyword">throw</span> err;
+        }
+    }
+    <span class="keyword">return</span> shims;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">build_resolve_opts</span><span class="params">(opts, base)</span> {</span>
+    <span class="keyword">var</span> packageFilter = opts.packageFilter;
+    <span class="keyword">var</span> browser = normalizeBrowserFieldName(opts.browser)
+
+    opts.basedir = base;
+    opts.packageFilter = <span class="function"><span class="keyword">function</span> <span class="params">(info, pkgdir)</span> {</span>
+        <span class="keyword">if</span> (packageFilter) info = packageFilter(info, pkgdir);
+
+        <span class="keyword">var</span> replacements = getReplacements(info, browser);
+
+        <span class="comment">// no browser field, keep info unchanged</span>
+        <span class="keyword">if</span> (!replacements) {
+            <span class="keyword">return</span> info;
+        }
+
+        info[browser] = replacements;
+
+        <span class="comment">// replace main</span>
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> replacements === <span class="string">'string'</span>) {
+            info.main = replacements;
+            <span class="keyword">return</span> info;
+        }
+
+        <span class="keyword">var</span> replace_main = replacements[info.main || <span class="string">'./index.js'</span>] ||
+            replacements[<span class="string">'./'</span> + info.main || <span class="string">'./index.js'</span>];
+
+        info.main = replace_main || info.main;
+        <span class="keyword">return</span> info;
+    };
+
+    <span class="keyword">var</span> pathFilter = opts.pathFilter;
+    opts.pathFilter = <span class="keyword">function</span>(info, resvPath, relativePath) {
+        <span class="keyword">if</span> (relativePath[<span class="number">0</span>] != <span class="string">'.'</span>) {
+            relativePath = <span class="string">'./'</span> + relativePath;
+        }
+        <span class="keyword">var</span> mappedPath;
+        <span class="keyword">if</span> (pathFilter) {
+            mappedPath = pathFilter.apply(<span class="keyword">this</span>, arguments);
+        }
+        <span class="keyword">if</span> (mappedPath) {
+            <span class="keyword">return</span> mappedPath;
+        }
+
+        <span class="keyword">var</span> replacements = info[browser];
+        <span class="keyword">if</span> (!replacements) {
+            <span class="keyword">return</span>;
+        }
+
+        mappedPath = replacements[relativePath];
+        <span class="keyword">if</span> (!mappedPath &amp;&amp; path.extname(relativePath) === <span class="string">''</span>) {
+            mappedPath = replacements[relativePath + <span class="string">'.js'</span>];
+            <span class="keyword">if</span> (!mappedPath) {
+                mappedPath = replacements[relativePath + <span class="string">'.json'</span>];
+            }
+        }
+        <span class="keyword">return</span> mappedPath;
+    };
+
+    <span class="keyword">return</span> opts;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">resolve</span><span class="params">(id, opts, cb)</span> {</span>
+
+    <span class="comment">// opts.filename</span>
+    <span class="comment">// opts.paths</span>
+    <span class="comment">// opts.modules</span>
+    <span class="comment">// opts.packageFilter</span>
+
+    opts = opts || {};
+    opts.filename = opts.filename || <span class="string">''</span>;
+
+    <span class="keyword">var</span> base = path.dirname(opts.filename);
+
+    <span class="keyword">if</span> (opts.basedir) {
+        base = opts.basedir;
+    }
+
+    <span class="keyword">var</span> paths = nodeModulesPaths(base);
+
+    <span class="keyword">if</span> (opts.paths) {
+        paths.push.apply(paths, opts.paths);
+    }
+
+    paths = paths.map(<span class="keyword">function</span>(p) {
+        <span class="keyword">return</span> path.dirname(p);
+    });
+
+    <span class="comment">// we must always load shims because the browser field could shim out a module</span>
+    load_shims(paths, opts.browser, <span class="keyword">function</span>(err, shims) {
+        <span class="keyword">if</span> (err) {
+            <span class="keyword">return</span> cb(err);
+        }
+
+        <span class="keyword">var</span> resid = path.resolve(opts.basedir || path.dirname(opts.filename), id);
+        <span class="keyword">if</span> (shims[id] || shims[resid]) {
+            <span class="keyword">var</span> xid = shims[id] ? id : resid;
+            <span class="comment">// if the shim was is an absolute path, it was fully resolved</span>
+            <span class="keyword">if</span> (shims[xid][<span class="number">0</span>] === <span class="string">'/'</span>) {
+                <span class="keyword">return</span> resv(shims[xid], build_resolve_opts(opts, base), <span class="keyword">function</span>(err, full, pkg) {
+                    cb(<span class="literal">null</span>, full, pkg);
+                });
+            }
+
+            <span class="comment">// module -> alt-module shims</span>
+            id = shims[xid];
+        }
+
+        <span class="keyword">var</span> modules = opts.modules || Object.create(<span class="literal">null</span>);
+        <span class="keyword">var</span> shim_path = modules[id];
+        <span class="keyword">if</span> (shim_path) {
+            <span class="keyword">return</span> cb(<span class="literal">null</span>, shim_path);
+        }
+
+        <span class="comment">// our browser field resolver</span>
+        <span class="comment">// if browser field is an object tho?</span>
+        <span class="keyword">var</span> full = resv(id, build_resolve_opts(opts, base), <span class="keyword">function</span>(err, full, pkg) {
+            <span class="keyword">if</span> (err) {
+                <span class="keyword">return</span> cb(err);
+            }
+
+            <span class="keyword">var</span> resolved = (shims) ? shims[full] || full : full;
+            cb(<span class="literal">null</span>, resolved, pkg);
+        });
+    });
+};
+
+resolve.sync = <span class="function"><span class="keyword">function</span> <span class="params">(id, opts)</span> {</span>
+
+    <span class="comment">// opts.filename</span>
+    <span class="comment">// opts.paths</span>
+    <span class="comment">// opts.modules</span>
+    <span class="comment">// opts.packageFilter</span>
+
+    opts = opts || {};
+    opts.filename = opts.filename || <span class="string">''</span>;
+
+    <span class="keyword">var</span> base = path.dirname(opts.filename);
+
+    <span class="keyword">if</span> (opts.basedir) {
+        base = opts.basedir;
+    }
+
+    <span class="keyword">var</span> paths = nodeModulesPaths(base);
+
+    <span class="keyword">if</span> (opts.paths) {
+        paths.push.apply(paths, opts.paths);
+    }
+
+    paths = paths.map(<span class="keyword">function</span>(p) {
+        <span class="keyword">return</span> path.dirname(p);
+    });
+
+    <span class="comment">// we must always load shims because the browser field could shim out a module</span>
+    <span class="keyword">var</span> shims = load_shims_sync(paths, opts.browser);
+    <span class="keyword">var</span> resid = path.resolve(opts.basedir || path.dirname(opts.filename), id);
+
+    <span class="keyword">if</span> (shims[id] || shims[resid]) {
+        <span class="keyword">var</span> xid = shims[id] ? id : resid;
+        <span class="comment">// if the shim was is an absolute path, it was fully resolved</span>
+        <span class="keyword">if</span> (shims[xid][<span class="number">0</span>] === <span class="string">'/'</span>) {
+            <span class="keyword">return</span> resv.sync(shims[xid], build_resolve_opts(opts, base));
+        }
+
+        <span class="comment">// module -> alt-module shims</span>
+        id = shims[xid];
+    }
+
+    <span class="keyword">var</span> modules = opts.modules || Object.create(<span class="literal">null</span>);
+    <span class="keyword">var</span> shim_path = modules[id];
+    <span class="keyword">if</span> (shim_path) {
+        <span class="keyword">return</span> shim_path;
+    }
+
+    <span class="comment">// our browser field resolver</span>
+    <span class="comment">// if browser field is an object tho?</span>
+    <span class="keyword">var</span> full = resv.sync(id, build_resolve_opts(opts, base));
+
+    <span class="keyword">return</span> (shims) ? shims[full] || full : full;
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">normalizeBrowserFieldName</span><span class="params">(browser)</span> {</span>
+    <span class="keyword">return</span> browser || <span class="string">'browser'</span>;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">getReplacements</span><span class="params">(info, browser)</span> {</span>
+    browser = normalizeBrowserFieldName(browser);
+    <span class="keyword">var</span> replacements = info[browser] || info.browser;
+
+    <span class="comment">// support legacy browserify field for easier migration from legacy</span>
+    <span class="comment">// many packages used this field historically</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> info.browserify === <span class="string">'string'</span> &amp;&amp; !replacements) {
+        replacements = info.browserify;
+    }
+
+    <span class="keyword">return</span> replacements;
+}
+
+module.exports = resolve;
+</code></pre>

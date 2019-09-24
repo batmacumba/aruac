@@ -1,0 +1,45 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="comment">/**
+ * Modules
+ */</span>
+
+<span class="keyword">var</span> path = require(<span class="string">'path'</span>)
+
+<span class="comment">/**
+ * Vars
+ */</span>
+
+<span class="keyword">var</span> relative = path.relative
+<span class="keyword">var</span> lastCwd = process.cwd()
+<span class="keyword">var</span> cache = Object.create(<span class="literal">null</span>)
+
+<span class="comment">/**
+ * Expose cachedPathRelative
+ */</span>
+
+module.exports = cachedPathRelative
+
+<span class="comment">/**
+ * cachedPathRelative
+ */</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">cachedPathRelative</span> <span class="params">(from, to)</span> {</span>
+  <span class="comment">// If the current working directory changes, we need</span>
+  <span class="comment">// to invalidate the cache</span>
+  <span class="keyword">var</span> cwd = process.cwd()
+  <span class="keyword">if</span> (cwd !== lastCwd) {
+    cache = {}
+    lastCwd = cwd
+  }
+
+  <span class="keyword">if</span> (cache[from] &amp;&amp; cache[from][to]) <span class="keyword">return</span> cache[from][to]
+
+  <span class="keyword">var</span> result = relative.call(path, from, to)
+
+  cache[from] = cache[from] || {}
+  cache[from][to] = result
+
+  <span class="keyword">return</span> result
+
+}
+</code></pre>

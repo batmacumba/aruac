@@ -1,0 +1,21 @@
+<h1>readable.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> Stream = require(<span class="string">'stream'</span>);
+<span class="keyword">if</span> (process.env.READABLE_STREAM === <span class="string">'disable'</span> &amp;&amp; Stream) {
+  module.exports = Stream;
+  exports = module.exports = Stream.Readable;
+  exports.Readable = Stream.Readable;
+  exports.Writable = Stream.Writable;
+  exports.Duplex = Stream.Duplex;
+  exports.Transform = Stream.Transform;
+  exports.PassThrough = Stream.PassThrough;
+  exports.Stream = Stream;
+} <span class="keyword">else</span> {
+  exports = module.exports = require(<span class="string">'./lib/_stream_readable.js'</span>);
+  exports.Stream = Stream || exports;
+  exports.Readable = exports;
+  exports.Writable = require(<span class="string">'./lib/_stream_writable.js'</span>);
+  exports.Duplex = require(<span class="string">'./lib/_stream_duplex.js'</span>);
+  exports.Transform = require(<span class="string">'./lib/_stream_transform.js'</span>);
+  exports.PassThrough = require(<span class="string">'./lib/_stream_passthrough.js'</span>);
+}
+</code></pre>

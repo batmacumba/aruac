@@ -1,0 +1,69 @@
+<h1>base64.js</h1>
+<pre><code class="lang-js"><span class="comment">/* -*- Mode: js; js-indent-level: 2; -*- */</span>
+<span class="comment">/*
+ * Copyright 2011 Mozilla Foundation and contributors
+ * Licensed under the New BSD license. See LICENSE or:
+ * http://opensource.org/licenses/BSD-3-Clause
+ */</span>
+
+<span class="keyword">var</span> intToCharMap = <span class="string">'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'</span>.split(<span class="string">''</span>);
+
+<span class="comment">/**
+ * Encode an integer in the range of 0 to 63 to a single base 64 digit.
+ */</span>
+exports.encode = <span class="function"><span class="keyword">function</span> <span class="params">(number)</span> {</span>
+  <span class="keyword">if</span> (<span class="number">0</span> &lt;= number &amp;&amp; number &lt; intToCharMap.length) {
+    <span class="keyword">return</span> intToCharMap[number];
+  }
+  <span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">"Must be between 0 and 63: "</span> + number);
+};
+
+<span class="comment">/**
+ * Decode a single base 64 character code digit to an integer. Returns -1 on
+ * failure.
+ */</span>
+exports.decode = <span class="function"><span class="keyword">function</span> <span class="params">(charCode)</span> {</span>
+  <span class="keyword">var</span> bigA = <span class="number">65</span>;     <span class="comment">// 'A'</span>
+  <span class="keyword">var</span> bigZ = <span class="number">90</span>;     <span class="comment">// 'Z'</span>
+
+  <span class="keyword">var</span> littleA = <span class="number">97</span>;  <span class="comment">// 'a'</span>
+  <span class="keyword">var</span> littleZ = <span class="number">122</span>; <span class="comment">// 'z'</span>
+
+  <span class="keyword">var</span> zero = <span class="number">48</span>;     <span class="comment">// '0'</span>
+  <span class="keyword">var</span> nine = <span class="number">57</span>;     <span class="comment">// '9'</span>
+
+  <span class="keyword">var</span> plus = <span class="number">43</span>;     <span class="comment">// '+'</span>
+  <span class="keyword">var</span> slash = <span class="number">47</span>;    <span class="comment">// '/'</span>
+
+  <span class="keyword">var</span> littleOffset = <span class="number">26</span>;
+  <span class="keyword">var</span> numberOffset = <span class="number">52</span>;
+
+  <span class="comment">// 0 - 25: ABCDEFGHIJKLMNOPQRSTUVWXYZ</span>
+  <span class="keyword">if</span> (bigA &lt;= charCode &amp;&amp; charCode &lt;= bigZ) {
+    <span class="keyword">return</span> (charCode - bigA);
+  }
+
+  <span class="comment">// 26 - 51: abcdefghijklmnopqrstuvwxyz</span>
+  <span class="keyword">if</span> (littleA &lt;= charCode &amp;&amp; charCode &lt;= littleZ) {
+    <span class="keyword">return</span> (charCode - littleA + littleOffset);
+  }
+
+  <span class="comment">// 52 - 61: 0123456789</span>
+  <span class="keyword">if</span> (zero &lt;= charCode &amp;&amp; charCode &lt;= nine) {
+    <span class="keyword">return</span> (charCode - zero + numberOffset);
+  }
+
+  <span class="comment">// 62: +</span>
+  <span class="keyword">if</span> (charCode == plus) {
+    <span class="keyword">return</span> <span class="number">62</span>;
+  }
+
+  <span class="comment">// 63: /</span>
+  <span class="keyword">if</span> (charCode == slash) {
+    <span class="keyword">return</span> <span class="number">63</span>;
+  }
+
+  <span class="comment">// Invalid base64 digit.</span>
+  <span class="keyword">return</span> -<span class="number">1</span>;
+};
+</code></pre>

@@ -1,0 +1,92 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="comment">/*
+object-assign
+(c) Sindre Sorhus
+@license MIT
+*/</span>
+
+<span class="string">'use strict'</span>;
+<span class="comment">/* eslint-disable no-unused-vars */</span>
+<span class="keyword">var</span> getOwnPropertySymbols = Object.getOwnPropertySymbols;
+<span class="keyword">var</span> hasOwnProperty = Object.prototype.hasOwnProperty;
+<span class="keyword">var</span> propIsEnumerable = Object.prototype.propertyIsEnumerable;
+
+<span class="function"><span class="keyword">function</span> <span class="title">toObject</span><span class="params">(val)</span> {</span>
+	<span class="keyword">if</span> (val === <span class="literal">null</span> || val === <span class="literal">undefined</span>) {
+		<span class="keyword">throw</span> <span class="keyword">new</span> TypeError(<span class="string">'Object.assign cannot be called with null or undefined'</span>);
+	}
+
+	<span class="keyword">return</span> Object(val);
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">shouldUseNative</span><span class="params">()</span> {</span>
+	<span class="keyword">try</span> {
+		<span class="keyword">if</span> (!Object.assign) {
+			<span class="keyword">return</span> <span class="literal">false</span>;
+		}
+
+		<span class="comment">// Detect buggy property enumeration order in older V8 versions.</span>
+
+		<span class="comment">// https://bugs.chromium.org/p/v8/issues/detail?id=4118</span>
+		<span class="keyword">var</span> test1 = <span class="keyword">new</span> String(<span class="string">'abc'</span>);  <span class="comment">// eslint-disable-line no-new-wrappers</span>
+		test1[<span class="number">5</span>] = <span class="string">'de'</span>;
+		<span class="keyword">if</span> (Object.getOwnPropertyNames(test1)[<span class="number">0</span>] === <span class="string">'5'</span>) {
+			<span class="keyword">return</span> <span class="literal">false</span>;
+		}
+
+		<span class="comment">// https://bugs.chromium.org/p/v8/issues/detail?id=3056</span>
+		<span class="keyword">var</span> test2 = {};
+		<span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">10</span>; i++) {
+			test2[<span class="string">'_'</span> + String.fromCharCode(i)] = i;
+		}
+		<span class="keyword">var</span> order2 = Object.getOwnPropertyNames(test2).map(<span class="function"><span class="keyword">function</span> <span class="params">(n)</span> {</span>
+			<span class="keyword">return</span> test2[n];
+		});
+		<span class="keyword">if</span> (order2.join(<span class="string">''</span>) !== <span class="string">'0123456789'</span>) {
+			<span class="keyword">return</span> <span class="literal">false</span>;
+		}
+
+		<span class="comment">// https://bugs.chromium.org/p/v8/issues/detail?id=3056</span>
+		<span class="keyword">var</span> test3 = {};
+		<span class="string">'abcdefghijklmnopqrst'</span>.split(<span class="string">''</span>).forEach(<span class="function"><span class="keyword">function</span> <span class="params">(letter)</span> {</span>
+			test3[letter] = letter;
+		});
+		<span class="keyword">if</span> (Object.keys(Object.assign({}, test3)).join(<span class="string">''</span>) !==
+				<span class="string">'abcdefghijklmnopqrst'</span>) {
+			<span class="keyword">return</span> <span class="literal">false</span>;
+		}
+
+		<span class="keyword">return</span> <span class="literal">true</span>;
+	} <span class="keyword">catch</span> (err) {
+		<span class="comment">// We don't expect any of the above to throw, but better to be safe.</span>
+		<span class="keyword">return</span> <span class="literal">false</span>;
+	}
+}
+
+module.exports = shouldUseNative() ? Object.assign : <span class="function"><span class="keyword">function</span> <span class="params">(target, source)</span> {</span>
+	<span class="keyword">var</span> from;
+	<span class="keyword">var</span> to = toObject(target);
+	<span class="keyword">var</span> symbols;
+
+	<span class="keyword">for</span> (<span class="keyword">var</span> s = <span class="number">1</span>; s &lt; arguments.length; s++) {
+		from = Object(arguments[s]);
+
+		<span class="keyword">for</span> (<span class="keyword">var</span> key <span class="keyword">in</span> from) {
+			<span class="keyword">if</span> (hasOwnProperty.call(from, key)) {
+				to[key] = from[key];
+			}
+		}
+
+		<span class="keyword">if</span> (getOwnPropertySymbols) {
+			symbols = getOwnPropertySymbols(from);
+			<span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; symbols.length; i++) {
+				<span class="keyword">if</span> (propIsEnumerable.call(from, symbols[i])) {
+					to[symbols[i]] = from[symbols[i]];
+				}
+			}
+		}
+	}
+
+	<span class="keyword">return</span> to;
+};
+</code></pre>

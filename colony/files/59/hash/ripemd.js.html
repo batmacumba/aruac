@@ -1,0 +1,148 @@
+<h1>ripemd.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> utils = require(<span class="string">'./utils'</span>);
+<span class="keyword">var</span> common = require(<span class="string">'./common'</span>);
+
+<span class="keyword">var</span> rotl32 = utils.rotl32;
+<span class="keyword">var</span> sum32 = utils.sum32;
+<span class="keyword">var</span> sum32_3 = utils.sum32_3;
+<span class="keyword">var</span> sum32_4 = utils.sum32_4;
+<span class="keyword">var</span> BlockHash = common.BlockHash;
+
+<span class="function"><span class="keyword">function</span> <span class="title">RIPEMD160</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> RIPEMD160))
+    <span class="keyword">return</span> <span class="keyword">new</span> RIPEMD160();
+
+  BlockHash.call(<span class="keyword">this</span>);
+
+  <span class="keyword">this</span>.h = [ <span class="number">0x67452301</span>, <span class="number">0xefcdab89</span>, <span class="number">0x98badcfe</span>, <span class="number">0x10325476</span>, <span class="number">0xc3d2e1f0</span> ];
+  <span class="keyword">this</span>.endian = <span class="string">'little'</span>;
+}
+utils.inherits(RIPEMD160, BlockHash);
+exports.ripemd160 = RIPEMD160;
+
+RIPEMD160.blockSize = <span class="number">512</span>;
+RIPEMD160.outSize = <span class="number">160</span>;
+RIPEMD160.hmacStrength = <span class="number">192</span>;
+RIPEMD160.padLength = <span class="number">64</span>;
+
+RIPEMD160.prototype._update = <span class="function"><span class="keyword">function</span> <span class="title">update</span><span class="params">(msg, start)</span> {</span>
+  <span class="keyword">var</span> A = <span class="keyword">this</span>.h[<span class="number">0</span>];
+  <span class="keyword">var</span> B = <span class="keyword">this</span>.h[<span class="number">1</span>];
+  <span class="keyword">var</span> C = <span class="keyword">this</span>.h[<span class="number">2</span>];
+  <span class="keyword">var</span> D = <span class="keyword">this</span>.h[<span class="number">3</span>];
+  <span class="keyword">var</span> E = <span class="keyword">this</span>.h[<span class="number">4</span>];
+  <span class="keyword">var</span> Ah = A;
+  <span class="keyword">var</span> Bh = B;
+  <span class="keyword">var</span> Ch = C;
+  <span class="keyword">var</span> Dh = D;
+  <span class="keyword">var</span> Eh = E;
+  <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; <span class="number">80</span>; j++) {
+    <span class="keyword">var</span> T = sum32(
+      rotl32(
+        sum32_4(A, f(j, B, C, D), msg[r[j] + start], K(j)),
+        s[j]),
+      E);
+    A = E;
+    E = D;
+    D = rotl32(C, <span class="number">10</span>);
+    C = B;
+    B = T;
+    T = sum32(
+      rotl32(
+        sum32_4(Ah, f(<span class="number">79</span> - j, Bh, Ch, Dh), msg[rh[j] + start], Kh(j)),
+        sh[j]),
+      Eh);
+    Ah = Eh;
+    Eh = Dh;
+    Dh = rotl32(Ch, <span class="number">10</span>);
+    Ch = Bh;
+    Bh = T;
+  }
+  T = sum32_3(<span class="keyword">this</span>.h[<span class="number">1</span>], C, Dh);
+  <span class="keyword">this</span>.h[<span class="number">1</span>] = sum32_3(<span class="keyword">this</span>.h[<span class="number">2</span>], D, Eh);
+  <span class="keyword">this</span>.h[<span class="number">2</span>] = sum32_3(<span class="keyword">this</span>.h[<span class="number">3</span>], E, Ah);
+  <span class="keyword">this</span>.h[<span class="number">3</span>] = sum32_3(<span class="keyword">this</span>.h[<span class="number">4</span>], A, Bh);
+  <span class="keyword">this</span>.h[<span class="number">4</span>] = sum32_3(<span class="keyword">this</span>.h[<span class="number">0</span>], B, Ch);
+  <span class="keyword">this</span>.h[<span class="number">0</span>] = T;
+};
+
+RIPEMD160.prototype._digest = <span class="function"><span class="keyword">function</span> <span class="title">digest</span><span class="params">(enc)</span> {</span>
+  <span class="keyword">if</span> (enc === <span class="string">'hex'</span>)
+    <span class="keyword">return</span> utils.toHex32(<span class="keyword">this</span>.h, <span class="string">'little'</span>);
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> utils.split32(<span class="keyword">this</span>.h, <span class="string">'little'</span>);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">f</span><span class="params">(j, x, y, z)</span> {</span>
+  <span class="keyword">if</span> (j &lt;= <span class="number">15</span>)
+    <span class="keyword">return</span> x ^ y ^ z;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">31</span>)
+    <span class="keyword">return</span> (x &amp; y) | ((~x) &amp; z);
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">47</span>)
+    <span class="keyword">return</span> (x | (~y)) ^ z;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">63</span>)
+    <span class="keyword">return</span> (x &amp; z) | (y &amp; (~z));
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> x ^ (y | (~z));
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">K</span><span class="params">(j)</span> {</span>
+  <span class="keyword">if</span> (j &lt;= <span class="number">15</span>)
+    <span class="keyword">return</span> <span class="number">0x00000000</span>;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">31</span>)
+    <span class="keyword">return</span> <span class="number">0x5a827999</span>;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">47</span>)
+    <span class="keyword">return</span> <span class="number">0x6ed9eba1</span>;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">63</span>)
+    <span class="keyword">return</span> <span class="number">0x8f1bbcdc</span>;
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> <span class="number">0xa953fd4e</span>;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">Kh</span><span class="params">(j)</span> {</span>
+  <span class="keyword">if</span> (j &lt;= <span class="number">15</span>)
+    <span class="keyword">return</span> <span class="number">0x50a28be6</span>;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">31</span>)
+    <span class="keyword">return</span> <span class="number">0x5c4dd124</span>;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">47</span>)
+    <span class="keyword">return</span> <span class="number">0x6d703ef3</span>;
+  <span class="keyword">else</span> <span class="keyword">if</span> (j &lt;= <span class="number">63</span>)
+    <span class="keyword">return</span> <span class="number">0x7a6d76e9</span>;
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> <span class="number">0x00000000</span>;
+}
+
+<span class="keyword">var</span> r = [
+  <span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>, <span class="number">11</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">15</span>,
+  <span class="number">7</span>, <span class="number">4</span>, <span class="number">13</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">3</span>, <span class="number">12</span>, <span class="number">0</span>, <span class="number">9</span>, <span class="number">5</span>, <span class="number">2</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">8</span>,
+  <span class="number">3</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">4</span>, <span class="number">9</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">7</span>, <span class="number">0</span>, <span class="number">6</span>, <span class="number">13</span>, <span class="number">11</span>, <span class="number">5</span>, <span class="number">12</span>,
+  <span class="number">1</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">4</span>, <span class="number">13</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">15</span>, <span class="number">14</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">2</span>,
+  <span class="number">4</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">8</span>, <span class="number">11</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">13</span>
+];
+
+<span class="keyword">var</span> rh = [
+  <span class="number">5</span>, <span class="number">14</span>, <span class="number">7</span>, <span class="number">0</span>, <span class="number">9</span>, <span class="number">2</span>, <span class="number">11</span>, <span class="number">4</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">3</span>, <span class="number">12</span>,
+  <span class="number">6</span>, <span class="number">11</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">0</span>, <span class="number">13</span>, <span class="number">5</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">4</span>, <span class="number">9</span>, <span class="number">1</span>, <span class="number">2</span>,
+  <span class="number">15</span>, <span class="number">5</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">4</span>, <span class="number">13</span>,
+  <span class="number">8</span>, <span class="number">6</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">11</span>, <span class="number">15</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">13</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">10</span>, <span class="number">14</span>,
+  <span class="number">12</span>, <span class="number">15</span>, <span class="number">10</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">5</span>, <span class="number">8</span>, <span class="number">7</span>, <span class="number">6</span>, <span class="number">2</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">0</span>, <span class="number">3</span>, <span class="number">9</span>, <span class="number">11</span>
+];
+
+<span class="keyword">var</span> s = [
+  <span class="number">11</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">8</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">8</span>,
+  <span class="number">7</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">11</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">15</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">15</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">7</span>, <span class="number">13</span>, <span class="number">12</span>,
+  <span class="number">11</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">14</span>, <span class="number">9</span>, <span class="number">13</span>, <span class="number">15</span>, <span class="number">14</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">5</span>,
+  <span class="number">11</span>, <span class="number">12</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">9</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">14</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">5</span>, <span class="number">12</span>,
+  <span class="number">9</span>, <span class="number">15</span>, <span class="number">5</span>, <span class="number">11</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">5</span>, <span class="number">6</span>
+];
+
+<span class="keyword">var</span> sh = [
+  <span class="number">8</span>, <span class="number">9</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">15</span>, <span class="number">15</span>, <span class="number">5</span>, <span class="number">7</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">11</span>, <span class="number">14</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">6</span>,
+  <span class="number">9</span>, <span class="number">13</span>, <span class="number">15</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">7</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">13</span>, <span class="number">11</span>,
+  <span class="number">9</span>, <span class="number">7</span>, <span class="number">15</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">6</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">5</span>, <span class="number">14</span>, <span class="number">13</span>, <span class="number">13</span>, <span class="number">7</span>, <span class="number">5</span>,
+  <span class="number">15</span>, <span class="number">5</span>, <span class="number">8</span>, <span class="number">11</span>, <span class="number">14</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">12</span>, <span class="number">9</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">15</span>, <span class="number">8</span>,
+  <span class="number">8</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">9</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">5</span>, <span class="number">15</span>, <span class="number">13</span>, <span class="number">11</span>, <span class="number">11</span>
+];
+</code></pre>

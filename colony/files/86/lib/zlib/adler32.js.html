@@ -1,0 +1,53 @@
+<h1>adler32.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="comment">// Note: adler32 takes 12% for level 0 and 2% for level 6.</span>
+<span class="comment">// It isn't worth it to make additional optimizations as in original.</span>
+<span class="comment">// Small size is preferable.</span>
+
+<span class="comment">// (C) 1995-2013 Jean-loup Gailly and Mark Adler</span>
+<span class="comment">// (C) 2014-2017 Vitaly Puzrin and Andrey Tupitsin</span>
+<span class="comment">//</span>
+<span class="comment">// This software is provided 'as-is', without any express or implied</span>
+<span class="comment">// warranty. In no event will the authors be held liable for any damages</span>
+<span class="comment">// arising from the use of this software.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is granted to anyone to use this software for any purpose,</span>
+<span class="comment">// including commercial applications, and to alter it and redistribute it</span>
+<span class="comment">// freely, subject to the following restrictions:</span>
+<span class="comment">//</span>
+<span class="comment">// 1. The origin of this software must not be misrepresented; you must not</span>
+<span class="comment">//   claim that you wrote the original software. If you use this software</span>
+<span class="comment">//   in a product, an acknowledgment in the product documentation would be</span>
+<span class="comment">//   appreciated but is not required.</span>
+<span class="comment">// 2. Altered source versions must be plainly marked as such, and must not be</span>
+<span class="comment">//   misrepresented as being the original software.</span>
+<span class="comment">// 3. This notice may not be removed or altered from any source distribution.</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">adler32</span><span class="params">(adler, buf, len, pos)</span> {</span>
+  <span class="keyword">var</span> s1 = (adler &amp; <span class="number">0xffff</span>) |<span class="number">0</span>,
+      s2 = ((adler >>> <span class="number">16</span>) &amp; <span class="number">0xffff</span>) |<span class="number">0</span>,
+      n = <span class="number">0</span>;
+
+  <span class="keyword">while</span> (len !== <span class="number">0</span>) {
+    <span class="comment">// Set limit ~ twice less than 5552, to keep</span>
+    <span class="comment">// s2 in 31-bits, because we force signed ints.</span>
+    <span class="comment">// in other case %= will fail.</span>
+    n = len > <span class="number">2000</span> ? <span class="number">2000</span> : len;
+    len -= n;
+
+    <span class="keyword">do</span> {
+      s1 = (s1 + buf[pos++]) |<span class="number">0</span>;
+      s2 = (s2 + s1) |<span class="number">0</span>;
+    } <span class="keyword">while</span> (--n);
+
+    s1 %= <span class="number">65521</span>;
+    s2 %= <span class="number">65521</span>;
+  }
+
+  <span class="keyword">return</span> (s1 | (s2 &lt;&lt; <span class="number">16</span>)) |<span class="number">0</span>;
+}
+
+
+module.exports = adler32;
+</code></pre>

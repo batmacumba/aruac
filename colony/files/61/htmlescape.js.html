@@ -1,0 +1,44 @@
+<h1>htmlescape.js</h1>
+<pre><code class="lang-js"><span class="comment">/**
+ * Properly escape JSON for usage as an object literal inside of a `&lt;script>` tag.
+ * JS implementation of http://golang.org/pkg/encoding/json/#HTMLEscape
+ * More info: http://timelessrepo.com/json-isnt-a-javascript-subset
+ */</span>
+
+<span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> ESCAPE_LOOKUP = {
+  <span class="string">'&amp;'</span>: <span class="string">'\\u0026'</span>,
+  <span class="string">'>'</span>: <span class="string">'\\u003e'</span>,
+  <span class="string">'&lt;'</span>: <span class="string">'\\u003c'</span>,
+  <span class="string">'\u2028'</span>: <span class="string">'\\u2028'</span>,
+  <span class="string">'\u2029'</span>: <span class="string">'\\u2029'</span>
+};
+
+<span class="keyword">var</span> ESCAPE_REGEX = <span class="regexp">/[&amp;>&lt;\u2028\u2029]/g</span>;
+
+<span class="function"><span class="keyword">function</span> <span class="title">escaper</span><span class="params">(match)</span> {</span>
+  <span class="keyword">return</span> ESCAPE_LOOKUP[match];
+}
+
+module.exports = <span class="keyword">function</span>(obj) {
+  <span class="keyword">return</span> JSON.stringify(obj).replace(ESCAPE_REGEX, escaper);
+};
+
+<span class="comment">/***/</span>
+
+<span class="keyword">var</span> TERMINATORS_LOOKUP = {
+  <span class="string">'\u2028'</span>: <span class="string">'\\u2028'</span>,
+  <span class="string">'\u2029'</span>: <span class="string">'\\u2029'</span>
+};
+
+<span class="keyword">var</span> TERMINATORS_REGEX = <span class="regexp">/[\u2028\u2029]/g</span>;
+
+<span class="function"><span class="keyword">function</span> <span class="title">sanitizer</span><span class="params">(match)</span> {</span>
+  <span class="keyword">return</span> TERMINATORS_LOOKUP[match];
+}
+
+module.exports.sanitize = <span class="keyword">function</span>(str) {
+  <span class="keyword">return</span> str.replace(TERMINATORS_REGEX, sanitizer);
+};
+</code></pre>

@@ -1,0 +1,109 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> asn1 = require(<span class="string">'./asn1'</span>)
+<span class="keyword">var</span> aesid = require(<span class="string">'./aesid.json'</span>)
+<span class="keyword">var</span> fixProc = require(<span class="string">'./fixProc'</span>)
+<span class="keyword">var</span> ciphers = require(<span class="string">'browserify-aes'</span>)
+<span class="keyword">var</span> compat = require(<span class="string">'pbkdf2'</span>)
+<span class="keyword">var</span> Buffer = require(<span class="string">'safe-buffer'</span>).Buffer
+module.exports = parseKeys
+
+<span class="function"><span class="keyword">function</span> <span class="title">parseKeys</span> <span class="params">(buffer)</span> {</span>
+  <span class="keyword">var</span> password
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> buffer === <span class="string">'object'</span> &amp;&amp; !Buffer.isBuffer(buffer)) {
+    password = buffer.passphrase
+    buffer = buffer.key
+  }
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> buffer === <span class="string">'string'</span>) {
+    buffer = Buffer.from(buffer)
+  }
+
+  <span class="keyword">var</span> stripped = fixProc(buffer, password)
+
+  <span class="keyword">var</span> type = stripped.tag
+  <span class="keyword">var</span> data = stripped.data
+  <span class="keyword">var</span> subtype, ndata
+  <span class="keyword">switch</span> (type) {
+    <span class="keyword">case</span> <span class="string">'CERTIFICATE'</span>:
+      ndata = asn1.certificate.decode(data, <span class="string">'der'</span>).tbsCertificate.subjectPublicKeyInfo
+      <span class="comment">// falls through</span>
+    <span class="keyword">case</span> <span class="string">'PUBLIC KEY'</span>:
+      <span class="keyword">if</span> (!ndata) {
+        ndata = asn1.PublicKey.decode(data, <span class="string">'der'</span>)
+      }
+      subtype = ndata.algorithm.algorithm.join(<span class="string">'.'</span>)
+      <span class="keyword">switch</span> (subtype) {
+        <span class="keyword">case</span> <span class="string">'1.2.840.113549.1.1.1'</span>:
+          <span class="keyword">return</span> asn1.RSAPublicKey.decode(ndata.subjectPublicKey.data, <span class="string">'der'</span>)
+        <span class="keyword">case</span> <span class="string">'1.2.840.10045.2.1'</span>:
+          ndata.subjectPrivateKey = ndata.subjectPublicKey
+          <span class="keyword">return</span> {
+            type: <span class="string">'ec'</span>,
+            data: ndata
+          }
+        <span class="keyword">case</span> <span class="string">'1.2.840.10040.4.1'</span>:
+          ndata.algorithm.params.pub_key = asn1.DSAparam.decode(ndata.subjectPublicKey.data, <span class="string">'der'</span>)
+          <span class="keyword">return</span> {
+            type: <span class="string">'dsa'</span>,
+            data: ndata.algorithm.params
+          }
+        <span class="keyword">default</span>: <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'unknown key id '</span> + subtype)
+      }
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'unknown key type '</span> + type)
+    <span class="keyword">case</span> <span class="string">'ENCRYPTED PRIVATE KEY'</span>:
+      data = asn1.EncryptedPrivateKey.decode(data, <span class="string">'der'</span>)
+      data = decrypt(data, password)
+      <span class="comment">// falls through</span>
+    <span class="keyword">case</span> <span class="string">'PRIVATE KEY'</span>:
+      ndata = asn1.PrivateKey.decode(data, <span class="string">'der'</span>)
+      subtype = ndata.algorithm.algorithm.join(<span class="string">'.'</span>)
+      <span class="keyword">switch</span> (subtype) {
+        <span class="keyword">case</span> <span class="string">'1.2.840.113549.1.1.1'</span>:
+          <span class="keyword">return</span> asn1.RSAPrivateKey.decode(ndata.subjectPrivateKey, <span class="string">'der'</span>)
+        <span class="keyword">case</span> <span class="string">'1.2.840.10045.2.1'</span>:
+          <span class="keyword">return</span> {
+            curve: ndata.algorithm.curve,
+            privateKey: asn1.ECPrivateKey.decode(ndata.subjectPrivateKey, <span class="string">'der'</span>).privateKey
+          }
+        <span class="keyword">case</span> <span class="string">'1.2.840.10040.4.1'</span>:
+          ndata.algorithm.params.priv_key = asn1.DSAparam.decode(ndata.subjectPrivateKey, <span class="string">'der'</span>)
+          <span class="keyword">return</span> {
+            type: <span class="string">'dsa'</span>,
+            params: ndata.algorithm.params
+          }
+        <span class="keyword">default</span>: <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'unknown key id '</span> + subtype)
+      }
+      <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'unknown key type '</span> + type)
+    <span class="keyword">case</span> <span class="string">'RSA PUBLIC KEY'</span>:
+      <span class="keyword">return</span> asn1.RSAPublicKey.decode(data, <span class="string">'der'</span>)
+    <span class="keyword">case</span> <span class="string">'RSA PRIVATE KEY'</span>:
+      <span class="keyword">return</span> asn1.RSAPrivateKey.decode(data, <span class="string">'der'</span>)
+    <span class="keyword">case</span> <span class="string">'DSA PRIVATE KEY'</span>:
+      <span class="keyword">return</span> {
+        type: <span class="string">'dsa'</span>,
+        params: asn1.DSAPrivateKey.decode(data, <span class="string">'der'</span>)
+      }
+    <span class="keyword">case</span> <span class="string">'EC PRIVATE KEY'</span>:
+      data = asn1.ECPrivateKey.decode(data, <span class="string">'der'</span>)
+      <span class="keyword">return</span> {
+        curve: data.parameters.value,
+        privateKey: data.privateKey
+      }
+    <span class="keyword">default</span>: <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'unknown key type '</span> + type)
+  }
+}
+parseKeys.signature = asn1.signature
+<span class="function"><span class="keyword">function</span> <span class="title">decrypt</span> <span class="params">(data, password)</span> {</span>
+  <span class="keyword">var</span> salt = data.algorithm.decrypt.kde.kdeparams.salt
+  <span class="keyword">var</span> iters = parseInt(data.algorithm.decrypt.kde.kdeparams.iters.toString(), <span class="number">10</span>)
+  <span class="keyword">var</span> algo = aesid[data.algorithm.decrypt.cipher.algo.join(<span class="string">'.'</span>)]
+  <span class="keyword">var</span> iv = data.algorithm.decrypt.cipher.iv
+  <span class="keyword">var</span> cipherText = data.subjectPrivateKey
+  <span class="keyword">var</span> keylen = parseInt(algo.split(<span class="string">'-'</span>)[<span class="number">1</span>], <span class="number">10</span>) / <span class="number">8</span>
+  <span class="keyword">var</span> key = compat.pbkdf2Sync(password, salt, iters, keylen, <span class="string">'sha1'</span>)
+  <span class="keyword">var</span> cipher = ciphers.createDecipheriv(algo, key, iv)
+  <span class="keyword">var</span> out = []
+  out.push(cipher.update(cipherText))
+  out.push(cipher.final())
+  <span class="keyword">return</span> Buffer.concat(out)
+}
+</code></pre>

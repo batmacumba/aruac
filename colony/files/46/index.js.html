@@ -1,0 +1,82 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> acorn = require(<span class="string">'acorn-node'</span>);
+<span class="keyword">var</span> walk = require(<span class="string">'acorn-node/walk'</span>);
+<span class="keyword">var</span> defined = require(<span class="string">'defined'</span>);
+
+<span class="keyword">var</span> requireRe = <span class="regexp">/\brequire\b/</span>;
+
+<span class="function"><span class="keyword">function</span> <span class="title">parse</span> <span class="params">(src, opts)</span> {</span>
+    <span class="keyword">if</span> (!opts) opts = {};
+    <span class="keyword">var</span> acornOpts = {
+        ranges: defined(opts.ranges, opts.range),
+        locations: defined(opts.locations, opts.loc),
+        allowReserved: defined(opts.allowReserved, <span class="literal">true</span>),
+        allowImportExportEverywhere: defined(opts.allowImportExportEverywhere, <span class="literal">false</span>)
+    };
+
+    <span class="comment">// Use acorn-node's defaults for the rest.</span>
+    <span class="keyword">if</span> (opts.ecmaVersion != <span class="literal">null</span>) acornOpts.ecmaVersion = opts.ecmaVersion;
+    <span class="keyword">if</span> (opts.sourceType != <span class="literal">null</span>) acornOpts.sourceType = opts.sourceType;
+    <span class="keyword">if</span> (opts.allowHashBang != <span class="literal">null</span>) acornOpts.allowHashBang = opts.allowHashBang;
+    <span class="keyword">if</span> (opts.allowReturnOutsideFunction != <span class="literal">null</span>) acornOpts.allowReturnOutsideFunction = opts.allowReturnOutsideFunction;
+
+    <span class="keyword">return</span> acorn.parse(src, acornOpts);
+}
+
+<span class="keyword">var</span> exports = module.exports = <span class="function"><span class="keyword">function</span> <span class="params">(src, opts)</span> {</span>
+    <span class="keyword">return</span> exports.find(src, opts).strings;
+};
+
+exports.find = <span class="function"><span class="keyword">function</span> <span class="params">(src, opts)</span> {</span>
+    <span class="keyword">if</span> (!opts) opts = {};
+    
+    <span class="keyword">var</span> word = opts.word === <span class="literal">undefined</span> ? <span class="string">'require'</span> : opts.word;
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> src !== <span class="string">'string'</span>) src = String(src);
+    
+    <span class="keyword">var</span> isRequire = opts.isRequire || <span class="function"><span class="keyword">function</span> <span class="params">(node)</span> {</span>
+        <span class="keyword">return</span> node.callee.type === <span class="string">'Identifier'</span>
+            &amp;&amp; node.callee.name === word
+        ;
+    };
+    
+    <span class="keyword">var</span> modules = { strings : [], expressions : [] };
+    <span class="keyword">if</span> (opts.nodes) modules.nodes = [];
+    
+    <span class="keyword">var</span> wordRe = word === <span class="string">'require'</span> ? requireRe : RegExp(<span class="string">'\\b'</span> + word + <span class="string">'\\b'</span>);
+    <span class="keyword">if</span> (!wordRe.test(src)) <span class="keyword">return</span> modules;
+    
+    <span class="keyword">var</span> ast = parse(src, opts.parse);
+    
+    <span class="function"><span class="keyword">function</span> <span class="title">visit</span><span class="params">(node, st, c)</span> {</span>
+        <span class="keyword">var</span> hasRequire = wordRe.test(src.slice(node.start, node.end));
+        <span class="keyword">if</span> (!hasRequire) <span class="keyword">return</span>;
+        walk.base[node.type](node, st, c);
+        <span class="keyword">if</span> (node.type !== <span class="string">'CallExpression'</span>) <span class="keyword">return</span>;
+        <span class="keyword">if</span> (isRequire(node)) {
+            <span class="keyword">if</span> (node.arguments.length) {
+                <span class="keyword">var</span> arg = node.arguments[<span class="number">0</span>];
+                <span class="keyword">if</span> (arg.type === <span class="string">'Literal'</span>) {
+                    modules.strings.push(arg.value);
+                }
+                <span class="keyword">else</span> <span class="keyword">if</span> (arg.type === <span class="string">'TemplateLiteral'</span>
+                        &amp;&amp; arg.quasis.length === <span class="number">1</span>
+                        &amp;&amp; arg.expressions.length === <span class="number">0</span>) {
+
+                    modules.strings.push(arg.quasis[<span class="number">0</span>].value.raw);
+                }
+                <span class="keyword">else</span> {
+                    modules.expressions.push(src.slice(arg.start, arg.end));
+                }
+            }
+            <span class="keyword">if</span> (opts.nodes) modules.nodes.push(node);
+        }
+    }
+    
+    walk.recursive(ast, <span class="literal">null</span>, {
+        Statement: visit,
+        Expression: visit
+    });
+    
+    <span class="keyword">return</span> modules;
+};
+</code></pre>

@@ -1,0 +1,1558 @@
+<h1>pako/lib/zlib/inflate.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="comment">// (C) 1995-2013 Jean-loup Gailly and Mark Adler</span>
+<span class="comment">// (C) 2014-2017 Vitaly Puzrin and Andrey Tupitsin</span>
+<span class="comment">//</span>
+<span class="comment">// This software is provided 'as-is', without any express or implied</span>
+<span class="comment">// warranty. In no event will the authors be held liable for any damages</span>
+<span class="comment">// arising from the use of this software.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is granted to anyone to use this software for any purpose,</span>
+<span class="comment">// including commercial applications, and to alter it and redistribute it</span>
+<span class="comment">// freely, subject to the following restrictions:</span>
+<span class="comment">//</span>
+<span class="comment">// 1. The origin of this software must not be misrepresented; you must not</span>
+<span class="comment">//   claim that you wrote the original software. If you use this software</span>
+<span class="comment">//   in a product, an acknowledgment in the product documentation would be</span>
+<span class="comment">//   appreciated but is not required.</span>
+<span class="comment">// 2. Altered source versions must be plainly marked as such, and must not be</span>
+<span class="comment">//   misrepresented as being the original software.</span>
+<span class="comment">// 3. This notice may not be removed or altered from any source distribution.</span>
+
+<span class="keyword">var</span> utils         = require(<span class="string">'../utils/common'</span>);
+<span class="keyword">var</span> adler32       = require(<span class="string">'./adler32'</span>);
+<span class="keyword">var</span> crc32         = require(<span class="string">'./crc32'</span>);
+<span class="keyword">var</span> inflate_fast  = require(<span class="string">'./inffast'</span>);
+<span class="keyword">var</span> inflate_table = require(<span class="string">'./inftrees'</span>);
+
+<span class="keyword">var</span> CODES = <span class="number">0</span>;
+<span class="keyword">var</span> LENS = <span class="number">1</span>;
+<span class="keyword">var</span> DISTS = <span class="number">2</span>;
+
+<span class="comment">/* Public constants ==========================================================*/</span>
+<span class="comment">/* ===========================================================================*/</span>
+
+
+<span class="comment">/* Allowed flush values; see deflate() and inflate() below for details */</span>
+<span class="comment">//var Z_NO_FLUSH      = 0;</span>
+<span class="comment">//var Z_PARTIAL_FLUSH = 1;</span>
+<span class="comment">//var Z_SYNC_FLUSH    = 2;</span>
+<span class="comment">//var Z_FULL_FLUSH    = 3;</span>
+<span class="keyword">var</span> Z_FINISH        = <span class="number">4</span>;
+<span class="keyword">var</span> Z_BLOCK         = <span class="number">5</span>;
+<span class="keyword">var</span> Z_TREES         = <span class="number">6</span>;
+
+
+<span class="comment">/* Return codes for the compression/decompression functions. Negative values
+ * are errors, positive values are used for special but normal events.
+ */</span>
+<span class="keyword">var</span> Z_OK            = <span class="number">0</span>;
+<span class="keyword">var</span> Z_STREAM_END    = <span class="number">1</span>;
+<span class="keyword">var</span> Z_NEED_DICT     = <span class="number">2</span>;
+<span class="comment">//var Z_ERRNO         = -1;</span>
+<span class="keyword">var</span> Z_STREAM_ERROR  = -<span class="number">2</span>;
+<span class="keyword">var</span> Z_DATA_ERROR    = -<span class="number">3</span>;
+<span class="keyword">var</span> Z_MEM_ERROR     = -<span class="number">4</span>;
+<span class="keyword">var</span> Z_BUF_ERROR     = -<span class="number">5</span>;
+<span class="comment">//var Z_VERSION_ERROR = -6;</span>
+
+<span class="comment">/* The deflate compression method */</span>
+<span class="keyword">var</span> Z_DEFLATED  = <span class="number">8</span>;
+
+
+<span class="comment">/* STATES ====================================================================*/</span>
+<span class="comment">/* ===========================================================================*/</span>
+
+
+<span class="keyword">var</span>    HEAD = <span class="number">1</span>;       <span class="comment">/* i: waiting for magic header */</span>
+<span class="keyword">var</span>    FLAGS = <span class="number">2</span>;      <span class="comment">/* i: waiting for method and flags (gzip) */</span>
+<span class="keyword">var</span>    TIME = <span class="number">3</span>;       <span class="comment">/* i: waiting for modification time (gzip) */</span>
+<span class="keyword">var</span>    OS = <span class="number">4</span>;         <span class="comment">/* i: waiting for extra flags and operating system (gzip) */</span>
+<span class="keyword">var</span>    EXLEN = <span class="number">5</span>;      <span class="comment">/* i: waiting for extra length (gzip) */</span>
+<span class="keyword">var</span>    EXTRA = <span class="number">6</span>;      <span class="comment">/* i: waiting for extra bytes (gzip) */</span>
+<span class="keyword">var</span>    NAME = <span class="number">7</span>;       <span class="comment">/* i: waiting for end of file name (gzip) */</span>
+<span class="keyword">var</span>    COMMENT = <span class="number">8</span>;    <span class="comment">/* i: waiting for end of comment (gzip) */</span>
+<span class="keyword">var</span>    HCRC = <span class="number">9</span>;       <span class="comment">/* i: waiting for header crc (gzip) */</span>
+<span class="keyword">var</span>    DICTID = <span class="number">10</span>;    <span class="comment">/* i: waiting for dictionary check value */</span>
+<span class="keyword">var</span>    DICT = <span class="number">11</span>;      <span class="comment">/* waiting for inflateSetDictionary() call */</span>
+<span class="keyword">var</span>        TYPE = <span class="number">12</span>;      <span class="comment">/* i: waiting for type bits, including last-flag bit */</span>
+<span class="keyword">var</span>        TYPEDO = <span class="number">13</span>;    <span class="comment">/* i: same, but skip check to exit inflate on new block */</span>
+<span class="keyword">var</span>        STORED = <span class="number">14</span>;    <span class="comment">/* i: waiting for stored size (length and complement) */</span>
+<span class="keyword">var</span>        COPY_ = <span class="number">15</span>;     <span class="comment">/* i/o: same as COPY below, but only first time in */</span>
+<span class="keyword">var</span>        COPY = <span class="number">16</span>;      <span class="comment">/* i/o: waiting for input or output to copy stored block */</span>
+<span class="keyword">var</span>        TABLE = <span class="number">17</span>;     <span class="comment">/* i: waiting for dynamic block table lengths */</span>
+<span class="keyword">var</span>        LENLENS = <span class="number">18</span>;   <span class="comment">/* i: waiting for code length code lengths */</span>
+<span class="keyword">var</span>        CODELENS = <span class="number">19</span>;  <span class="comment">/* i: waiting for length/lit and distance code lengths */</span>
+<span class="keyword">var</span>            LEN_ = <span class="number">20</span>;      <span class="comment">/* i: same as LEN below, but only first time in */</span>
+<span class="keyword">var</span>            LEN = <span class="number">21</span>;       <span class="comment">/* i: waiting for length/lit/eob code */</span>
+<span class="keyword">var</span>            LENEXT = <span class="number">22</span>;    <span class="comment">/* i: waiting for length extra bits */</span>
+<span class="keyword">var</span>            DIST = <span class="number">23</span>;      <span class="comment">/* i: waiting for distance code */</span>
+<span class="keyword">var</span>            DISTEXT = <span class="number">24</span>;   <span class="comment">/* i: waiting for distance extra bits */</span>
+<span class="keyword">var</span>            MATCH = <span class="number">25</span>;     <span class="comment">/* o: waiting for output space to copy string */</span>
+<span class="keyword">var</span>            LIT = <span class="number">26</span>;       <span class="comment">/* o: waiting for output space to write literal */</span>
+<span class="keyword">var</span>    CHECK = <span class="number">27</span>;     <span class="comment">/* i: waiting for 32-bit check value */</span>
+<span class="keyword">var</span>    LENGTH = <span class="number">28</span>;    <span class="comment">/* i: waiting for 32-bit length (gzip) */</span>
+<span class="keyword">var</span>    DONE = <span class="number">29</span>;      <span class="comment">/* finished check, done -- remain here until reset */</span>
+<span class="keyword">var</span>    BAD = <span class="number">30</span>;       <span class="comment">/* got a data error -- remain here until reset */</span>
+<span class="keyword">var</span>    MEM = <span class="number">31</span>;       <span class="comment">/* got an inflate() memory error -- remain here until reset */</span>
+<span class="keyword">var</span>    SYNC = <span class="number">32</span>;      <span class="comment">/* looking for synchronization bytes to restart inflate() */</span>
+
+<span class="comment">/* ===========================================================================*/</span>
+
+
+
+<span class="keyword">var</span> ENOUGH_LENS = <span class="number">852</span>;
+<span class="keyword">var</span> ENOUGH_DISTS = <span class="number">592</span>;
+<span class="comment">//var ENOUGH =  (ENOUGH_LENS+ENOUGH_DISTS);</span>
+
+<span class="keyword">var</span> MAX_WBITS = <span class="number">15</span>;
+<span class="comment">/* 32K LZ77 window */</span>
+<span class="keyword">var</span> DEF_WBITS = MAX_WBITS;
+
+
+<span class="function"><span class="keyword">function</span> <span class="title">zswap32</span><span class="params">(q)</span> {</span>
+  <span class="keyword">return</span>  (((q >>> <span class="number">24</span>) &amp; <span class="number">0xff</span>) +
+          ((q >>> <span class="number">8</span>) &amp; <span class="number">0xff00</span>) +
+          ((q &amp; <span class="number">0xff00</span>) &lt;&lt; <span class="number">8</span>) +
+          ((q &amp; <span class="number">0xff</span>) &lt;&lt; <span class="number">24</span>));
+}
+
+
+<span class="function"><span class="keyword">function</span> <span class="title">InflateState</span><span class="params">()</span> {</span>
+  <span class="keyword">this</span>.mode = <span class="number">0</span>;             <span class="comment">/* current inflate mode */</span>
+  <span class="keyword">this</span>.last = <span class="literal">false</span>;          <span class="comment">/* true if processing last block */</span>
+  <span class="keyword">this</span>.wrap = <span class="number">0</span>;              <span class="comment">/* bit 0 true for zlib, bit 1 true for gzip */</span>
+  <span class="keyword">this</span>.havedict = <span class="literal">false</span>;      <span class="comment">/* true if dictionary provided */</span>
+  <span class="keyword">this</span>.flags = <span class="number">0</span>;             <span class="comment">/* gzip header method and flags (0 if zlib) */</span>
+  <span class="keyword">this</span>.dmax = <span class="number">0</span>;              <span class="comment">/* zlib header max distance (INFLATE_STRICT) */</span>
+  <span class="keyword">this</span>.check = <span class="number">0</span>;             <span class="comment">/* protected copy of check value */</span>
+  <span class="keyword">this</span>.total = <span class="number">0</span>;             <span class="comment">/* protected copy of output count */</span>
+  <span class="comment">// TODO: may be {}</span>
+  <span class="keyword">this</span>.head = <span class="literal">null</span>;           <span class="comment">/* where to save gzip header information */</span>
+
+  <span class="comment">/* sliding window */</span>
+  <span class="keyword">this</span>.wbits = <span class="number">0</span>;             <span class="comment">/* log base 2 of requested window size */</span>
+  <span class="keyword">this</span>.wsize = <span class="number">0</span>;             <span class="comment">/* window size or zero if not using window */</span>
+  <span class="keyword">this</span>.whave = <span class="number">0</span>;             <span class="comment">/* valid bytes in the window */</span>
+  <span class="keyword">this</span>.wnext = <span class="number">0</span>;             <span class="comment">/* window write index */</span>
+  <span class="keyword">this</span>.window = <span class="literal">null</span>;         <span class="comment">/* allocated sliding window, if needed */</span>
+
+  <span class="comment">/* bit accumulator */</span>
+  <span class="keyword">this</span>.hold = <span class="number">0</span>;              <span class="comment">/* input bit accumulator */</span>
+  <span class="keyword">this</span>.bits = <span class="number">0</span>;              <span class="comment">/* number of bits in "in" */</span>
+
+  <span class="comment">/* for string and stored block copying */</span>
+  <span class="keyword">this</span>.length = <span class="number">0</span>;            <span class="comment">/* literal or length of data to copy */</span>
+  <span class="keyword">this</span>.offset = <span class="number">0</span>;            <span class="comment">/* distance back to copy string from */</span>
+
+  <span class="comment">/* for table and code decoding */</span>
+  <span class="keyword">this</span>.extra = <span class="number">0</span>;             <span class="comment">/* extra bits needed */</span>
+
+  <span class="comment">/* fixed and dynamic code tables */</span>
+  <span class="keyword">this</span>.lencode = <span class="literal">null</span>;          <span class="comment">/* starting table for length/literal codes */</span>
+  <span class="keyword">this</span>.distcode = <span class="literal">null</span>;         <span class="comment">/* starting table for distance codes */</span>
+  <span class="keyword">this</span>.lenbits = <span class="number">0</span>;           <span class="comment">/* index bits for lencode */</span>
+  <span class="keyword">this</span>.distbits = <span class="number">0</span>;          <span class="comment">/* index bits for distcode */</span>
+
+  <span class="comment">/* dynamic table building */</span>
+  <span class="keyword">this</span>.ncode = <span class="number">0</span>;             <span class="comment">/* number of code length code lengths */</span>
+  <span class="keyword">this</span>.nlen = <span class="number">0</span>;              <span class="comment">/* number of length code lengths */</span>
+  <span class="keyword">this</span>.ndist = <span class="number">0</span>;             <span class="comment">/* number of distance code lengths */</span>
+  <span class="keyword">this</span>.have = <span class="number">0</span>;              <span class="comment">/* number of code lengths in lens[] */</span>
+  <span class="keyword">this</span>.next = <span class="literal">null</span>;              <span class="comment">/* next available space in codes[] */</span>
+
+  <span class="keyword">this</span>.lens = <span class="keyword">new</span> utils.Buf16(<span class="number">320</span>); <span class="comment">/* temporary storage for code lengths */</span>
+  <span class="keyword">this</span>.work = <span class="keyword">new</span> utils.Buf16(<span class="number">288</span>); <span class="comment">/* work area for code table building */</span>
+
+  <span class="comment">/*
+   because we don't have pointers in js, we use lencode and distcode directly
+   as buffers so we don't need codes
+  */</span>
+  <span class="comment">//this.codes = new utils.Buf32(ENOUGH);       /* space for code tables */</span>
+  <span class="keyword">this</span>.lendyn = <span class="literal">null</span>;              <span class="comment">/* dynamic table for length/literal codes (JS specific) */</span>
+  <span class="keyword">this</span>.distdyn = <span class="literal">null</span>;             <span class="comment">/* dynamic table for distance codes (JS specific) */</span>
+  <span class="keyword">this</span>.sane = <span class="number">0</span>;                   <span class="comment">/* if false, allow invalid distance too far */</span>
+  <span class="keyword">this</span>.back = <span class="number">0</span>;                   <span class="comment">/* bits back of last unprocessed length/lit */</span>
+  <span class="keyword">this</span>.was = <span class="number">0</span>;                    <span class="comment">/* initial length of match */</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateResetKeep</span><span class="params">(strm)</span> {</span>
+  <span class="keyword">var</span> state;
+
+  <span class="keyword">if</span> (!strm || !strm.state) { <span class="keyword">return</span> Z_STREAM_ERROR; }
+  state = strm.state;
+  strm.total_in = strm.total_out = state.total = <span class="number">0</span>;
+  strm.msg = <span class="string">''</span>; <span class="comment">/*Z_NULL*/</span>
+  <span class="keyword">if</span> (state.wrap) {       <span class="comment">/* to support ill-conceived Java test suite */</span>
+    strm.adler = state.wrap &amp; <span class="number">1</span>;
+  }
+  state.mode = HEAD;
+  state.last = <span class="number">0</span>;
+  state.havedict = <span class="number">0</span>;
+  state.dmax = <span class="number">32768</span>;
+  state.head = <span class="literal">null</span><span class="comment">/*Z_NULL*/</span>;
+  state.hold = <span class="number">0</span>;
+  state.bits = <span class="number">0</span>;
+  <span class="comment">//state.lencode = state.distcode = state.next = state.codes;</span>
+  state.lencode = state.lendyn = <span class="keyword">new</span> utils.Buf32(ENOUGH_LENS);
+  state.distcode = state.distdyn = <span class="keyword">new</span> utils.Buf32(ENOUGH_DISTS);
+
+  state.sane = <span class="number">1</span>;
+  state.back = -<span class="number">1</span>;
+  <span class="comment">//Tracev((stderr, "inflate: reset\n"));</span>
+  <span class="keyword">return</span> Z_OK;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateReset</span><span class="params">(strm)</span> {</span>
+  <span class="keyword">var</span> state;
+
+  <span class="keyword">if</span> (!strm || !strm.state) { <span class="keyword">return</span> Z_STREAM_ERROR; }
+  state = strm.state;
+  state.wsize = <span class="number">0</span>;
+  state.whave = <span class="number">0</span>;
+  state.wnext = <span class="number">0</span>;
+  <span class="keyword">return</span> inflateResetKeep(strm);
+
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateReset2</span><span class="params">(strm, windowBits)</span> {</span>
+  <span class="keyword">var</span> wrap;
+  <span class="keyword">var</span> state;
+
+  <span class="comment">/* get the state */</span>
+  <span class="keyword">if</span> (!strm || !strm.state) { <span class="keyword">return</span> Z_STREAM_ERROR; }
+  state = strm.state;
+
+  <span class="comment">/* extract wrap request from windowBits parameter */</span>
+  <span class="keyword">if</span> (windowBits &lt; <span class="number">0</span>) {
+    wrap = <span class="number">0</span>;
+    windowBits = -windowBits;
+  }
+  <span class="keyword">else</span> {
+    wrap = (windowBits >> <span class="number">4</span>) + <span class="number">1</span>;
+    <span class="keyword">if</span> (windowBits &lt; <span class="number">48</span>) {
+      windowBits &amp;= <span class="number">15</span>;
+    }
+  }
+
+  <span class="comment">/* set number of window bits, free window if different */</span>
+  <span class="keyword">if</span> (windowBits &amp;&amp; (windowBits &lt; <span class="number">8</span> || windowBits > <span class="number">15</span>)) {
+    <span class="keyword">return</span> Z_STREAM_ERROR;
+  }
+  <span class="keyword">if</span> (state.window !== <span class="literal">null</span> &amp;&amp; state.wbits !== windowBits) {
+    state.window = <span class="literal">null</span>;
+  }
+
+  <span class="comment">/* update state and reset the rest of it */</span>
+  state.wrap = wrap;
+  state.wbits = windowBits;
+  <span class="keyword">return</span> inflateReset(strm);
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateInit2</span><span class="params">(strm, windowBits)</span> {</span>
+  <span class="keyword">var</span> ret;
+  <span class="keyword">var</span> state;
+
+  <span class="keyword">if</span> (!strm) { <span class="keyword">return</span> Z_STREAM_ERROR; }
+  <span class="comment">//strm.msg = Z_NULL;                 /* in case we return an error */</span>
+
+  state = <span class="keyword">new</span> InflateState();
+
+  <span class="comment">//if (state === Z_NULL) return Z_MEM_ERROR;</span>
+  <span class="comment">//Tracev((stderr, "inflate: allocated\n"));</span>
+  strm.state = state;
+  state.window = <span class="literal">null</span><span class="comment">/*Z_NULL*/</span>;
+  ret = inflateReset2(strm, windowBits);
+  <span class="keyword">if</span> (ret !== Z_OK) {
+    strm.state = <span class="literal">null</span><span class="comment">/*Z_NULL*/</span>;
+  }
+  <span class="keyword">return</span> ret;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateInit</span><span class="params">(strm)</span> {</span>
+  <span class="keyword">return</span> inflateInit2(strm, DEF_WBITS);
+}
+
+
+<span class="comment">/*
+ Return state with length and distance decoding tables and index sizes set to
+ fixed code decoding.  Normally this returns fixed tables from inffixed.h.
+ If BUILDFIXED is defined, then instead this routine builds the tables the
+ first time it's called, and returns those tables the first time and
+ thereafter.  This reduces the size of the code by about 2K bytes, in
+ exchange for a little execution time.  However, BUILDFIXED should not be
+ used for threaded applications, since the rewriting of the tables and virgin
+ may not be thread-safe.
+ */</span>
+<span class="keyword">var</span> virgin = <span class="literal">true</span>;
+
+<span class="keyword">var</span> lenfix, distfix; <span class="comment">// We have no pointers in JS, so keep tables separate</span>
+
+<span class="function"><span class="keyword">function</span> <span class="title">fixedtables</span><span class="params">(state)</span> {</span>
+  <span class="comment">/* build fixed huffman tables if first call (may not be thread safe) */</span>
+  <span class="keyword">if</span> (virgin) {
+    <span class="keyword">var</span> sym;
+
+    lenfix = <span class="keyword">new</span> utils.Buf32(<span class="number">512</span>);
+    distfix = <span class="keyword">new</span> utils.Buf32(<span class="number">32</span>);
+
+    <span class="comment">/* literal/length table */</span>
+    sym = <span class="number">0</span>;
+    <span class="keyword">while</span> (sym &lt; <span class="number">144</span>) { state.lens[sym++] = <span class="number">8</span>; }
+    <span class="keyword">while</span> (sym &lt; <span class="number">256</span>) { state.lens[sym++] = <span class="number">9</span>; }
+    <span class="keyword">while</span> (sym &lt; <span class="number">280</span>) { state.lens[sym++] = <span class="number">7</span>; }
+    <span class="keyword">while</span> (sym &lt; <span class="number">288</span>) { state.lens[sym++] = <span class="number">8</span>; }
+
+    inflate_table(LENS,  state.lens, <span class="number">0</span>, <span class="number">288</span>, lenfix,   <span class="number">0</span>, state.work, { bits: <span class="number">9</span> });
+
+    <span class="comment">/* distance table */</span>
+    sym = <span class="number">0</span>;
+    <span class="keyword">while</span> (sym &lt; <span class="number">32</span>) { state.lens[sym++] = <span class="number">5</span>; }
+
+    inflate_table(DISTS, state.lens, <span class="number">0</span>, <span class="number">32</span>,   distfix, <span class="number">0</span>, state.work, { bits: <span class="number">5</span> });
+
+    <span class="comment">/* do this just once */</span>
+    virgin = <span class="literal">false</span>;
+  }
+
+  state.lencode = lenfix;
+  state.lenbits = <span class="number">9</span>;
+  state.distcode = distfix;
+  state.distbits = <span class="number">5</span>;
+}
+
+
+<span class="comment">/*
+ Update the window with the last wsize (normally 32K) bytes written before
+ returning.  If window does not exist yet, create it.  This is only called
+ when a window is already in use, or when output has been written during this
+ inflate call, but the end of the deflate stream has not been reached yet.
+ It is also called to create a window for dictionary data when a dictionary
+ is loaded.
+
+ Providing output buffers larger than 32K to inflate() should provide a speed
+ advantage, since only the last 32K of output is copied to the sliding window
+ upon return from inflate(), and since all distances after the first 32K of
+ output will fall in the output data, making match copies simpler and faster.
+ The advantage may be dependent on the size of the processor's data caches.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">updatewindow</span><span class="params">(strm, src, end, copy)</span> {</span>
+  <span class="keyword">var</span> dist;
+  <span class="keyword">var</span> state = strm.state;
+
+  <span class="comment">/* if it hasn't been done already, allocate space for the window */</span>
+  <span class="keyword">if</span> (state.window === <span class="literal">null</span>) {
+    state.wsize = <span class="number">1</span> &lt;&lt; state.wbits;
+    state.wnext = <span class="number">0</span>;
+    state.whave = <span class="number">0</span>;
+
+    state.window = <span class="keyword">new</span> utils.Buf8(state.wsize);
+  }
+
+  <span class="comment">/* copy state->wsize or less output bytes into the circular window */</span>
+  <span class="keyword">if</span> (copy >= state.wsize) {
+    utils.arraySet(state.window, src, end - state.wsize, state.wsize, <span class="number">0</span>);
+    state.wnext = <span class="number">0</span>;
+    state.whave = state.wsize;
+  }
+  <span class="keyword">else</span> {
+    dist = state.wsize - state.wnext;
+    <span class="keyword">if</span> (dist > copy) {
+      dist = copy;
+    }
+    <span class="comment">//zmemcpy(state->window + state->wnext, end - copy, dist);</span>
+    utils.arraySet(state.window, src, end - copy, dist, state.wnext);
+    copy -= dist;
+    <span class="keyword">if</span> (copy) {
+      <span class="comment">//zmemcpy(state->window, end - copy, copy);</span>
+      utils.arraySet(state.window, src, end - copy, copy, <span class="number">0</span>);
+      state.wnext = copy;
+      state.whave = state.wsize;
+    }
+    <span class="keyword">else</span> {
+      state.wnext += dist;
+      <span class="keyword">if</span> (state.wnext === state.wsize) { state.wnext = <span class="number">0</span>; }
+      <span class="keyword">if</span> (state.whave &lt; state.wsize) { state.whave += dist; }
+    }
+  }
+  <span class="keyword">return</span> <span class="number">0</span>;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflate</span><span class="params">(strm, flush)</span> {</span>
+  <span class="keyword">var</span> state;
+  <span class="keyword">var</span> input, output;          <span class="comment">// input/output buffers</span>
+  <span class="keyword">var</span> next;                   <span class="comment">/* next input INDEX */</span>
+  <span class="keyword">var</span> put;                    <span class="comment">/* next output INDEX */</span>
+  <span class="keyword">var</span> have, left;             <span class="comment">/* available input and output */</span>
+  <span class="keyword">var</span> hold;                   <span class="comment">/* bit buffer */</span>
+  <span class="keyword">var</span> bits;                   <span class="comment">/* bits in bit buffer */</span>
+  <span class="keyword">var</span> _<span class="keyword">in</span>, _out;              <span class="comment">/* save starting available input and output */</span>
+  <span class="keyword">var</span> copy;                   <span class="comment">/* number of stored or match bytes to copy */</span>
+  <span class="keyword">var</span> from;                   <span class="comment">/* where to copy match bytes from */</span>
+  <span class="keyword">var</span> from_source;
+  <span class="keyword">var</span> here = <span class="number">0</span>;               <span class="comment">/* current decoding table entry */</span>
+  <span class="keyword">var</span> here_bits, here_op, here_val; <span class="comment">// paked "here" denormalized (JS specific)</span>
+  <span class="comment">//var last;                   /* parent table entry */</span>
+  <span class="keyword">var</span> last_bits, last_op, last_val; <span class="comment">// paked "last" denormalized (JS specific)</span>
+  <span class="keyword">var</span> len;                    <span class="comment">/* length to copy for repeats, bits to drop */</span>
+  <span class="keyword">var</span> ret;                    <span class="comment">/* return code */</span>
+  <span class="keyword">var</span> hbuf = <span class="keyword">new</span> utils.Buf8(<span class="number">4</span>);    <span class="comment">/* buffer for gzip header crc calculation */</span>
+  <span class="keyword">var</span> opts;
+
+  <span class="keyword">var</span> n; <span class="comment">// temporary var for NEED_BITS</span>
+
+  <span class="keyword">var</span> order = <span class="comment">/* permutation of code lengths */</span>
+    [ <span class="number">16</span>, <span class="number">17</span>, <span class="number">18</span>, <span class="number">0</span>, <span class="number">8</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">6</span>, <span class="number">10</span>, <span class="number">5</span>, <span class="number">11</span>, <span class="number">4</span>, <span class="number">12</span>, <span class="number">3</span>, <span class="number">13</span>, <span class="number">2</span>, <span class="number">14</span>, <span class="number">1</span>, <span class="number">15</span> ];
+
+
+  <span class="keyword">if</span> (!strm || !strm.state || !strm.output ||
+      (!strm.input &amp;&amp; strm.avail_in !== <span class="number">0</span>)) {
+    <span class="keyword">return</span> Z_STREAM_ERROR;
+  }
+
+  state = strm.state;
+  <span class="keyword">if</span> (state.mode === TYPE) { state.mode = TYPEDO; }    <span class="comment">/* skip check */</span>
+
+
+  <span class="comment">//--- LOAD() ---</span>
+  put = strm.next_out;
+  output = strm.output;
+  left = strm.avail_out;
+  next = strm.next_in;
+  input = strm.input;
+  have = strm.avail_in;
+  hold = state.hold;
+  bits = state.bits;
+  <span class="comment">//---</span>
+
+  _<span class="keyword">in</span> = have;
+  _out = left;
+  ret = Z_OK;
+
+  inf_leave: <span class="comment">// goto emulation</span>
+  <span class="keyword">for</span> (;;) {
+    <span class="keyword">switch</span> (state.mode) {
+      <span class="keyword">case</span> HEAD:
+        <span class="keyword">if</span> (state.wrap === <span class="number">0</span>) {
+          state.mode = TYPEDO;
+          <span class="keyword">break</span>;
+        }
+        <span class="comment">//=== NEEDBITS(16);</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">16</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        <span class="keyword">if</span> ((state.wrap &amp; <span class="number">2</span>) &amp;&amp; hold === <span class="number">0x8b1f</span>) {  <span class="comment">/* gzip header */</span>
+          state.check = <span class="number">0</span><span class="comment">/*crc32(0L, Z_NULL, 0)*/</span>;
+          <span class="comment">//=== CRC2(state.check, hold);</span>
+          hbuf[<span class="number">0</span>] = hold &amp; <span class="number">0xff</span>;
+          hbuf[<span class="number">1</span>] = (hold >>> <span class="number">8</span>) &amp; <span class="number">0xff</span>;
+          state.check = crc32(state.check, hbuf, <span class="number">2</span>, <span class="number">0</span>);
+          <span class="comment">//===//</span>
+
+          <span class="comment">//=== INITBITS();</span>
+          hold = <span class="number">0</span>;
+          bits = <span class="number">0</span>;
+          <span class="comment">//===//</span>
+          state.mode = FLAGS;
+          <span class="keyword">break</span>;
+        }
+        state.flags = <span class="number">0</span>;           <span class="comment">/* expect zlib header */</span>
+        <span class="keyword">if</span> (state.head) {
+          state.head.done = <span class="literal">false</span>;
+        }
+        <span class="keyword">if</span> (!(state.wrap &amp; <span class="number">1</span>) ||   <span class="comment">/* check if zlib header allowed */</span>
+          (((hold &amp; <span class="number">0xff</span>)<span class="comment">/*BITS(8)*/</span> &lt;&lt; <span class="number">8</span>) + (hold >> <span class="number">8</span>)) % <span class="number">31</span>) {
+          strm.msg = <span class="string">'incorrect header check'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        <span class="keyword">if</span> ((hold &amp; <span class="number">0x0f</span>)<span class="comment">/*BITS(4)*/</span> !== Z_DEFLATED) {
+          strm.msg = <span class="string">'unknown compression method'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        <span class="comment">//--- DROPBITS(4) ---//</span>
+        hold >>>= <span class="number">4</span>;
+        bits -= <span class="number">4</span>;
+        <span class="comment">//---//</span>
+        len = (hold &amp; <span class="number">0x0f</span>)<span class="comment">/*BITS(4)*/</span> + <span class="number">8</span>;
+        <span class="keyword">if</span> (state.wbits === <span class="number">0</span>) {
+          state.wbits = len;
+        }
+        <span class="keyword">else</span> <span class="keyword">if</span> (len > state.wbits) {
+          strm.msg = <span class="string">'invalid window size'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        state.dmax = <span class="number">1</span> &lt;&lt; len;
+        <span class="comment">//Tracev((stderr, "inflate:   zlib header ok\n"));</span>
+        strm.adler = state.check = <span class="number">1</span><span class="comment">/*adler32(0L, Z_NULL, 0)*/</span>;
+        state.mode = hold &amp; <span class="number">0x200</span> ? DICTID : TYPE;
+        <span class="comment">//=== INITBITS();</span>
+        hold = <span class="number">0</span>;
+        bits = <span class="number">0</span>;
+        <span class="comment">//===//</span>
+        <span class="keyword">break</span>;
+      <span class="keyword">case</span> FLAGS:
+        <span class="comment">//=== NEEDBITS(16); */</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">16</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        state.flags = hold;
+        <span class="keyword">if</span> ((state.flags &amp; <span class="number">0xff</span>) !== Z_DEFLATED) {
+          strm.msg = <span class="string">'unknown compression method'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0xe000</span>) {
+          strm.msg = <span class="string">'unknown header flags set'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        <span class="keyword">if</span> (state.head) {
+          state.head.text = ((hold >> <span class="number">8</span>) &amp; <span class="number">1</span>);
+        }
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+          <span class="comment">//=== CRC2(state.check, hold);</span>
+          hbuf[<span class="number">0</span>] = hold &amp; <span class="number">0xff</span>;
+          hbuf[<span class="number">1</span>] = (hold >>> <span class="number">8</span>) &amp; <span class="number">0xff</span>;
+          state.check = crc32(state.check, hbuf, <span class="number">2</span>, <span class="number">0</span>);
+          <span class="comment">//===//</span>
+        }
+        <span class="comment">//=== INITBITS();</span>
+        hold = <span class="number">0</span>;
+        bits = <span class="number">0</span>;
+        <span class="comment">//===//</span>
+        state.mode = TIME;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> TIME:
+        <span class="comment">//=== NEEDBITS(32); */</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">32</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        <span class="keyword">if</span> (state.head) {
+          state.head.time = hold;
+        }
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+          <span class="comment">//=== CRC4(state.check, hold)</span>
+          hbuf[<span class="number">0</span>] = hold &amp; <span class="number">0xff</span>;
+          hbuf[<span class="number">1</span>] = (hold >>> <span class="number">8</span>) &amp; <span class="number">0xff</span>;
+          hbuf[<span class="number">2</span>] = (hold >>> <span class="number">16</span>) &amp; <span class="number">0xff</span>;
+          hbuf[<span class="number">3</span>] = (hold >>> <span class="number">24</span>) &amp; <span class="number">0xff</span>;
+          state.check = crc32(state.check, hbuf, <span class="number">4</span>, <span class="number">0</span>);
+          <span class="comment">//===</span>
+        }
+        <span class="comment">//=== INITBITS();</span>
+        hold = <span class="number">0</span>;
+        bits = <span class="number">0</span>;
+        <span class="comment">//===//</span>
+        state.mode = OS;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> OS:
+        <span class="comment">//=== NEEDBITS(16); */</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">16</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        <span class="keyword">if</span> (state.head) {
+          state.head.xflags = (hold &amp; <span class="number">0xff</span>);
+          state.head.os = (hold >> <span class="number">8</span>);
+        }
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+          <span class="comment">//=== CRC2(state.check, hold);</span>
+          hbuf[<span class="number">0</span>] = hold &amp; <span class="number">0xff</span>;
+          hbuf[<span class="number">1</span>] = (hold >>> <span class="number">8</span>) &amp; <span class="number">0xff</span>;
+          state.check = crc32(state.check, hbuf, <span class="number">2</span>, <span class="number">0</span>);
+          <span class="comment">//===//</span>
+        }
+        <span class="comment">//=== INITBITS();</span>
+        hold = <span class="number">0</span>;
+        bits = <span class="number">0</span>;
+        <span class="comment">//===//</span>
+        state.mode = EXLEN;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> EXLEN:
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0400</span>) {
+          <span class="comment">//=== NEEDBITS(16); */</span>
+          <span class="keyword">while</span> (bits &lt; <span class="number">16</span>) {
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          <span class="comment">//===//</span>
+          state.length = hold;
+          <span class="keyword">if</span> (state.head) {
+            state.head.extra_len = hold;
+          }
+          <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+            <span class="comment">//=== CRC2(state.check, hold);</span>
+            hbuf[<span class="number">0</span>] = hold &amp; <span class="number">0xff</span>;
+            hbuf[<span class="number">1</span>] = (hold >>> <span class="number">8</span>) &amp; <span class="number">0xff</span>;
+            state.check = crc32(state.check, hbuf, <span class="number">2</span>, <span class="number">0</span>);
+            <span class="comment">//===//</span>
+          }
+          <span class="comment">//=== INITBITS();</span>
+          hold = <span class="number">0</span>;
+          bits = <span class="number">0</span>;
+          <span class="comment">//===//</span>
+        }
+        <span class="keyword">else</span> <span class="keyword">if</span> (state.head) {
+          state.head.extra = <span class="literal">null</span><span class="comment">/*Z_NULL*/</span>;
+        }
+        state.mode = EXTRA;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> EXTRA:
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0400</span>) {
+          copy = state.length;
+          <span class="keyword">if</span> (copy > have) { copy = have; }
+          <span class="keyword">if</span> (copy) {
+            <span class="keyword">if</span> (state.head) {
+              len = state.head.extra_len - state.length;
+              <span class="keyword">if</span> (!state.head.extra) {
+                <span class="comment">// Use untyped array for more convenient processing later</span>
+                state.head.extra = <span class="keyword">new</span> Array(state.head.extra_len);
+              }
+              utils.arraySet(
+                state.head.extra,
+                input,
+                next,
+                <span class="comment">// extra field is limited to 65536 bytes</span>
+                <span class="comment">// - no need for additional size check</span>
+                copy,
+                <span class="comment">/*len + copy > state.head.extra_max - len ? state.head.extra_max : copy,*/</span>
+                len
+              );
+              <span class="comment">//zmemcpy(state.head.extra + len, next,</span>
+              <span class="comment">//        len + copy > state.head.extra_max ?</span>
+              <span class="comment">//        state.head.extra_max - len : copy);</span>
+            }
+            <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+              state.check = crc32(state.check, input, copy, next);
+            }
+            have -= copy;
+            next += copy;
+            state.length -= copy;
+          }
+          <span class="keyword">if</span> (state.length) { <span class="keyword">break</span> inf_leave; }
+        }
+        state.length = <span class="number">0</span>;
+        state.mode = NAME;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> NAME:
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0800</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          copy = <span class="number">0</span>;
+          <span class="keyword">do</span> {
+            <span class="comment">// TODO: 2 or 1 bytes?</span>
+            len = input[next + copy++];
+            <span class="comment">/* use constant limit because in js we should not preallocate memory */</span>
+            <span class="keyword">if</span> (state.head &amp;&amp; len &amp;&amp;
+                (state.length &lt; <span class="number">65536</span> <span class="comment">/*state.head.name_max*/</span>)) {
+              state.head.name += String.fromCharCode(len);
+            }
+          } <span class="keyword">while</span> (len &amp;&amp; copy &lt; have);
+
+          <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+            state.check = crc32(state.check, input, copy, next);
+          }
+          have -= copy;
+          next += copy;
+          <span class="keyword">if</span> (len) { <span class="keyword">break</span> inf_leave; }
+        }
+        <span class="keyword">else</span> <span class="keyword">if</span> (state.head) {
+          state.head.name = <span class="literal">null</span>;
+        }
+        state.length = <span class="number">0</span>;
+        state.mode = COMMENT;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> COMMENT:
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x1000</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          copy = <span class="number">0</span>;
+          <span class="keyword">do</span> {
+            len = input[next + copy++];
+            <span class="comment">/* use constant limit because in js we should not preallocate memory */</span>
+            <span class="keyword">if</span> (state.head &amp;&amp; len &amp;&amp;
+                (state.length &lt; <span class="number">65536</span> <span class="comment">/*state.head.comm_max*/</span>)) {
+              state.head.comment += String.fromCharCode(len);
+            }
+          } <span class="keyword">while</span> (len &amp;&amp; copy &lt; have);
+          <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+            state.check = crc32(state.check, input, copy, next);
+          }
+          have -= copy;
+          next += copy;
+          <span class="keyword">if</span> (len) { <span class="keyword">break</span> inf_leave; }
+        }
+        <span class="keyword">else</span> <span class="keyword">if</span> (state.head) {
+          state.head.comment = <span class="literal">null</span>;
+        }
+        state.mode = HCRC;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> HCRC:
+        <span class="keyword">if</span> (state.flags &amp; <span class="number">0x0200</span>) {
+          <span class="comment">//=== NEEDBITS(16); */</span>
+          <span class="keyword">while</span> (bits &lt; <span class="number">16</span>) {
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          <span class="comment">//===//</span>
+          <span class="keyword">if</span> (hold !== (state.check &amp; <span class="number">0xffff</span>)) {
+            strm.msg = <span class="string">'header crc mismatch'</span>;
+            state.mode = BAD;
+            <span class="keyword">break</span>;
+          }
+          <span class="comment">//=== INITBITS();</span>
+          hold = <span class="number">0</span>;
+          bits = <span class="number">0</span>;
+          <span class="comment">//===//</span>
+        }
+        <span class="keyword">if</span> (state.head) {
+          state.head.hcrc = ((state.flags >> <span class="number">9</span>) &amp; <span class="number">1</span>);
+          state.head.done = <span class="literal">true</span>;
+        }
+        strm.adler = state.check = <span class="number">0</span>;
+        state.mode = TYPE;
+        <span class="keyword">break</span>;
+      <span class="keyword">case</span> DICTID:
+        <span class="comment">//=== NEEDBITS(32); */</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">32</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        strm.adler = state.check = zswap32(hold);
+        <span class="comment">//=== INITBITS();</span>
+        hold = <span class="number">0</span>;
+        bits = <span class="number">0</span>;
+        <span class="comment">//===//</span>
+        state.mode = DICT;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> DICT:
+        <span class="keyword">if</span> (state.havedict === <span class="number">0</span>) {
+          <span class="comment">//--- RESTORE() ---</span>
+          strm.next_out = put;
+          strm.avail_out = left;
+          strm.next_in = next;
+          strm.avail_in = have;
+          state.hold = hold;
+          state.bits = bits;
+          <span class="comment">//---</span>
+          <span class="keyword">return</span> Z_NEED_DICT;
+        }
+        strm.adler = state.check = <span class="number">1</span><span class="comment">/*adler32(0L, Z_NULL, 0)*/</span>;
+        state.mode = TYPE;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> TYPE:
+        <span class="keyword">if</span> (flush === Z_BLOCK || flush === Z_TREES) { <span class="keyword">break</span> inf_leave; }
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> TYPEDO:
+        <span class="keyword">if</span> (state.last) {
+          <span class="comment">//--- BYTEBITS() ---//</span>
+          hold >>>= bits &amp; <span class="number">7</span>;
+          bits -= bits &amp; <span class="number">7</span>;
+          <span class="comment">//---//</span>
+          state.mode = CHECK;
+          <span class="keyword">break</span>;
+        }
+        <span class="comment">//=== NEEDBITS(3); */</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">3</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        state.last = (hold &amp; <span class="number">0x01</span>)<span class="comment">/*BITS(1)*/</span>;
+        <span class="comment">//--- DROPBITS(1) ---//</span>
+        hold >>>= <span class="number">1</span>;
+        bits -= <span class="number">1</span>;
+        <span class="comment">//---//</span>
+
+        <span class="keyword">switch</span> ((hold &amp; <span class="number">0x03</span>)<span class="comment">/*BITS(2)*/</span>) {
+          <span class="keyword">case</span> <span class="number">0</span>:                             <span class="comment">/* stored block */</span>
+            <span class="comment">//Tracev((stderr, "inflate:     stored block%s\n",</span>
+            <span class="comment">//        state.last ? " (last)" : ""));</span>
+            state.mode = STORED;
+            <span class="keyword">break</span>;
+          <span class="keyword">case</span> <span class="number">1</span>:                             <span class="comment">/* fixed block */</span>
+            fixedtables(state);
+            <span class="comment">//Tracev((stderr, "inflate:     fixed codes block%s\n",</span>
+            <span class="comment">//        state.last ? " (last)" : ""));</span>
+            state.mode = LEN_;             <span class="comment">/* decode codes */</span>
+            <span class="keyword">if</span> (flush === Z_TREES) {
+              <span class="comment">//--- DROPBITS(2) ---//</span>
+              hold >>>= <span class="number">2</span>;
+              bits -= <span class="number">2</span>;
+              <span class="comment">//---//</span>
+              <span class="keyword">break</span> inf_leave;
+            }
+            <span class="keyword">break</span>;
+          <span class="keyword">case</span> <span class="number">2</span>:                             <span class="comment">/* dynamic block */</span>
+            <span class="comment">//Tracev((stderr, "inflate:     dynamic codes block%s\n",</span>
+            <span class="comment">//        state.last ? " (last)" : ""));</span>
+            state.mode = TABLE;
+            <span class="keyword">break</span>;
+          <span class="keyword">case</span> <span class="number">3</span>:
+            strm.msg = <span class="string">'invalid block type'</span>;
+            state.mode = BAD;
+        }
+        <span class="comment">//--- DROPBITS(2) ---//</span>
+        hold >>>= <span class="number">2</span>;
+        bits -= <span class="number">2</span>;
+        <span class="comment">//---//</span>
+        <span class="keyword">break</span>;
+      <span class="keyword">case</span> STORED:
+        <span class="comment">//--- BYTEBITS() ---// /* go to byte boundary */</span>
+        hold >>>= bits &amp; <span class="number">7</span>;
+        bits -= bits &amp; <span class="number">7</span>;
+        <span class="comment">//---//</span>
+        <span class="comment">//=== NEEDBITS(32); */</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">32</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        <span class="keyword">if</span> ((hold &amp; <span class="number">0xffff</span>) !== ((hold >>> <span class="number">16</span>) ^ <span class="number">0xffff</span>)) {
+          strm.msg = <span class="string">'invalid stored block lengths'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        state.length = hold &amp; <span class="number">0xffff</span>;
+        <span class="comment">//Tracev((stderr, "inflate:       stored length %u\n",</span>
+        <span class="comment">//        state.length));</span>
+        <span class="comment">//=== INITBITS();</span>
+        hold = <span class="number">0</span>;
+        bits = <span class="number">0</span>;
+        <span class="comment">//===//</span>
+        state.mode = COPY_;
+        <span class="keyword">if</span> (flush === Z_TREES) { <span class="keyword">break</span> inf_leave; }
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> COPY_:
+        state.mode = COPY;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> COPY:
+        copy = state.length;
+        <span class="keyword">if</span> (copy) {
+          <span class="keyword">if</span> (copy > have) { copy = have; }
+          <span class="keyword">if</span> (copy > left) { copy = left; }
+          <span class="keyword">if</span> (copy === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          <span class="comment">//--- zmemcpy(put, next, copy); ---</span>
+          utils.arraySet(output, input, next, copy, put);
+          <span class="comment">//---//</span>
+          have -= copy;
+          next += copy;
+          left -= copy;
+          put += copy;
+          state.length -= copy;
+          <span class="keyword">break</span>;
+        }
+        <span class="comment">//Tracev((stderr, "inflate:       stored end\n"));</span>
+        state.mode = TYPE;
+        <span class="keyword">break</span>;
+      <span class="keyword">case</span> TABLE:
+        <span class="comment">//=== NEEDBITS(14); */</span>
+        <span class="keyword">while</span> (bits &lt; <span class="number">14</span>) {
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        <span class="comment">//===//</span>
+        state.nlen = (hold &amp; <span class="number">0x1f</span>)<span class="comment">/*BITS(5)*/</span> + <span class="number">257</span>;
+        <span class="comment">//--- DROPBITS(5) ---//</span>
+        hold >>>= <span class="number">5</span>;
+        bits -= <span class="number">5</span>;
+        <span class="comment">//---//</span>
+        state.ndist = (hold &amp; <span class="number">0x1f</span>)<span class="comment">/*BITS(5)*/</span> + <span class="number">1</span>;
+        <span class="comment">//--- DROPBITS(5) ---//</span>
+        hold >>>= <span class="number">5</span>;
+        bits -= <span class="number">5</span>;
+        <span class="comment">//---//</span>
+        state.ncode = (hold &amp; <span class="number">0x0f</span>)<span class="comment">/*BITS(4)*/</span> + <span class="number">4</span>;
+        <span class="comment">//--- DROPBITS(4) ---//</span>
+        hold >>>= <span class="number">4</span>;
+        bits -= <span class="number">4</span>;
+        <span class="comment">//---//</span>
+<span class="comment">//#ifndef PKZIP_BUG_WORKAROUND</span>
+        <span class="keyword">if</span> (state.nlen > <span class="number">286</span> || state.ndist > <span class="number">30</span>) {
+          strm.msg = <span class="string">'too many length or distance symbols'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+<span class="comment">//#endif</span>
+        <span class="comment">//Tracev((stderr, "inflate:       table sizes ok\n"));</span>
+        state.have = <span class="number">0</span>;
+        state.mode = LENLENS;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> LENLENS:
+        <span class="keyword">while</span> (state.have &lt; state.ncode) {
+          <span class="comment">//=== NEEDBITS(3);</span>
+          <span class="keyword">while</span> (bits &lt; <span class="number">3</span>) {
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          <span class="comment">//===//</span>
+          state.lens[order[state.have++]] = (hold &amp; <span class="number">0x07</span>);<span class="comment">//BITS(3);</span>
+          <span class="comment">//--- DROPBITS(3) ---//</span>
+          hold >>>= <span class="number">3</span>;
+          bits -= <span class="number">3</span>;
+          <span class="comment">//---//</span>
+        }
+        <span class="keyword">while</span> (state.have &lt; <span class="number">19</span>) {
+          state.lens[order[state.have++]] = <span class="number">0</span>;
+        }
+        <span class="comment">// We have separate tables &amp; no pointers. 2 commented lines below not needed.</span>
+        <span class="comment">//state.next = state.codes;</span>
+        <span class="comment">//state.lencode = state.next;</span>
+        <span class="comment">// Switch to use dynamic table</span>
+        state.lencode = state.lendyn;
+        state.lenbits = <span class="number">7</span>;
+
+        opts = { bits: state.lenbits };
+        ret = inflate_table(CODES, state.lens, <span class="number">0</span>, <span class="number">19</span>, state.lencode, <span class="number">0</span>, state.work, opts);
+        state.lenbits = opts.bits;
+
+        <span class="keyword">if</span> (ret) {
+          strm.msg = <span class="string">'invalid code lengths set'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        <span class="comment">//Tracev((stderr, "inflate:       code lengths ok\n"));</span>
+        state.have = <span class="number">0</span>;
+        state.mode = CODELENS;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> CODELENS:
+        <span class="keyword">while</span> (state.have &lt; state.nlen + state.ndist) {
+          <span class="keyword">for</span> (;;) {
+            here = state.lencode[hold &amp; ((<span class="number">1</span> &lt;&lt; state.lenbits) - <span class="number">1</span>)];<span class="comment">/*BITS(state.lenbits)*/</span>
+            here_bits = here >>> <span class="number">24</span>;
+            here_op = (here >>> <span class="number">16</span>) &amp; <span class="number">0xff</span>;
+            here_val = here &amp; <span class="number">0xffff</span>;
+
+            <span class="keyword">if</span> ((here_bits) &lt;= bits) { <span class="keyword">break</span>; }
+            <span class="comment">//--- PULLBYTE() ---//</span>
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+            <span class="comment">//---//</span>
+          }
+          <span class="keyword">if</span> (here_val &lt; <span class="number">16</span>) {
+            <span class="comment">//--- DROPBITS(here.bits) ---//</span>
+            hold >>>= here_bits;
+            bits -= here_bits;
+            <span class="comment">//---//</span>
+            state.lens[state.have++] = here_val;
+          }
+          <span class="keyword">else</span> {
+            <span class="keyword">if</span> (here_val === <span class="number">16</span>) {
+              <span class="comment">//=== NEEDBITS(here.bits + 2);</span>
+              n = here_bits + <span class="number">2</span>;
+              <span class="keyword">while</span> (bits &lt; n) {
+                <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+                have--;
+                hold += input[next++] &lt;&lt; bits;
+                bits += <span class="number">8</span>;
+              }
+              <span class="comment">//===//</span>
+              <span class="comment">//--- DROPBITS(here.bits) ---//</span>
+              hold >>>= here_bits;
+              bits -= here_bits;
+              <span class="comment">//---//</span>
+              <span class="keyword">if</span> (state.have === <span class="number">0</span>) {
+                strm.msg = <span class="string">'invalid bit length repeat'</span>;
+                state.mode = BAD;
+                <span class="keyword">break</span>;
+              }
+              len = state.lens[state.have - <span class="number">1</span>];
+              copy = <span class="number">3</span> + (hold &amp; <span class="number">0x03</span>);<span class="comment">//BITS(2);</span>
+              <span class="comment">//--- DROPBITS(2) ---//</span>
+              hold >>>= <span class="number">2</span>;
+              bits -= <span class="number">2</span>;
+              <span class="comment">//---//</span>
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (here_val === <span class="number">17</span>) {
+              <span class="comment">//=== NEEDBITS(here.bits + 3);</span>
+              n = here_bits + <span class="number">3</span>;
+              <span class="keyword">while</span> (bits &lt; n) {
+                <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+                have--;
+                hold += input[next++] &lt;&lt; bits;
+                bits += <span class="number">8</span>;
+              }
+              <span class="comment">//===//</span>
+              <span class="comment">//--- DROPBITS(here.bits) ---//</span>
+              hold >>>= here_bits;
+              bits -= here_bits;
+              <span class="comment">//---//</span>
+              len = <span class="number">0</span>;
+              copy = <span class="number">3</span> + (hold &amp; <span class="number">0x07</span>);<span class="comment">//BITS(3);</span>
+              <span class="comment">//--- DROPBITS(3) ---//</span>
+              hold >>>= <span class="number">3</span>;
+              bits -= <span class="number">3</span>;
+              <span class="comment">//---//</span>
+            }
+            <span class="keyword">else</span> {
+              <span class="comment">//=== NEEDBITS(here.bits + 7);</span>
+              n = here_bits + <span class="number">7</span>;
+              <span class="keyword">while</span> (bits &lt; n) {
+                <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+                have--;
+                hold += input[next++] &lt;&lt; bits;
+                bits += <span class="number">8</span>;
+              }
+              <span class="comment">//===//</span>
+              <span class="comment">//--- DROPBITS(here.bits) ---//</span>
+              hold >>>= here_bits;
+              bits -= here_bits;
+              <span class="comment">//---//</span>
+              len = <span class="number">0</span>;
+              copy = <span class="number">11</span> + (hold &amp; <span class="number">0x7f</span>);<span class="comment">//BITS(7);</span>
+              <span class="comment">//--- DROPBITS(7) ---//</span>
+              hold >>>= <span class="number">7</span>;
+              bits -= <span class="number">7</span>;
+              <span class="comment">//---//</span>
+            }
+            <span class="keyword">if</span> (state.have + copy > state.nlen + state.ndist) {
+              strm.msg = <span class="string">'invalid bit length repeat'</span>;
+              state.mode = BAD;
+              <span class="keyword">break</span>;
+            }
+            <span class="keyword">while</span> (copy--) {
+              state.lens[state.have++] = len;
+            }
+          }
+        }
+
+        <span class="comment">/* handle error breaks in while */</span>
+        <span class="keyword">if</span> (state.mode === BAD) { <span class="keyword">break</span>; }
+
+        <span class="comment">/* check for end-of-block code (better have one) */</span>
+        <span class="keyword">if</span> (state.lens[<span class="number">256</span>] === <span class="number">0</span>) {
+          strm.msg = <span class="string">'invalid code -- missing end-of-block'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+
+        <span class="comment">/* build code tables -- note: do not change the lenbits or distbits
+           values here (9 and 6) without reading the comments in inftrees.h
+           concerning the ENOUGH constants, which depend on those values */</span>
+        state.lenbits = <span class="number">9</span>;
+
+        opts = { bits: state.lenbits };
+        ret = inflate_table(LENS, state.lens, <span class="number">0</span>, state.nlen, state.lencode, <span class="number">0</span>, state.work, opts);
+        <span class="comment">// We have separate tables &amp; no pointers. 2 commented lines below not needed.</span>
+        <span class="comment">// state.next_index = opts.table_index;</span>
+        state.lenbits = opts.bits;
+        <span class="comment">// state.lencode = state.next;</span>
+
+        <span class="keyword">if</span> (ret) {
+          strm.msg = <span class="string">'invalid literal/lengths set'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+
+        state.distbits = <span class="number">6</span>;
+        <span class="comment">//state.distcode.copy(state.codes);</span>
+        <span class="comment">// Switch to use dynamic table</span>
+        state.distcode = state.distdyn;
+        opts = { bits: state.distbits };
+        ret = inflate_table(DISTS, state.lens, state.nlen, state.ndist, state.distcode, <span class="number">0</span>, state.work, opts);
+        <span class="comment">// We have separate tables &amp; no pointers. 2 commented lines below not needed.</span>
+        <span class="comment">// state.next_index = opts.table_index;</span>
+        state.distbits = opts.bits;
+        <span class="comment">// state.distcode = state.next;</span>
+
+        <span class="keyword">if</span> (ret) {
+          strm.msg = <span class="string">'invalid distances set'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        <span class="comment">//Tracev((stderr, 'inflate:       codes ok\n'));</span>
+        state.mode = LEN_;
+        <span class="keyword">if</span> (flush === Z_TREES) { <span class="keyword">break</span> inf_leave; }
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> LEN_:
+        state.mode = LEN;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> LEN:
+        <span class="keyword">if</span> (have >= <span class="number">6</span> &amp;&amp; left >= <span class="number">258</span>) {
+          <span class="comment">//--- RESTORE() ---</span>
+          strm.next_out = put;
+          strm.avail_out = left;
+          strm.next_in = next;
+          strm.avail_in = have;
+          state.hold = hold;
+          state.bits = bits;
+          <span class="comment">//---</span>
+          inflate_fast(strm, _out);
+          <span class="comment">//--- LOAD() ---</span>
+          put = strm.next_out;
+          output = strm.output;
+          left = strm.avail_out;
+          next = strm.next_in;
+          input = strm.input;
+          have = strm.avail_in;
+          hold = state.hold;
+          bits = state.bits;
+          <span class="comment">//---</span>
+
+          <span class="keyword">if</span> (state.mode === TYPE) {
+            state.back = -<span class="number">1</span>;
+          }
+          <span class="keyword">break</span>;
+        }
+        state.back = <span class="number">0</span>;
+        <span class="keyword">for</span> (;;) {
+          here = state.lencode[hold &amp; ((<span class="number">1</span> &lt;&lt; state.lenbits) - <span class="number">1</span>)];  <span class="comment">/*BITS(state.lenbits)*/</span>
+          here_bits = here >>> <span class="number">24</span>;
+          here_op = (here >>> <span class="number">16</span>) &amp; <span class="number">0xff</span>;
+          here_val = here &amp; <span class="number">0xffff</span>;
+
+          <span class="keyword">if</span> (here_bits &lt;= bits) { <span class="keyword">break</span>; }
+          <span class="comment">//--- PULLBYTE() ---//</span>
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+          <span class="comment">//---//</span>
+        }
+        <span class="keyword">if</span> (here_op &amp;&amp; (here_op &amp; <span class="number">0xf0</span>) === <span class="number">0</span>) {
+          last_bits = here_bits;
+          last_op = here_op;
+          last_val = here_val;
+          <span class="keyword">for</span> (;;) {
+            here = state.lencode[last_val +
+                    ((hold &amp; ((<span class="number">1</span> &lt;&lt; (last_bits + last_op)) - <span class="number">1</span>))<span class="comment">/*BITS(last.bits + last.op)*/</span> >> last_bits)];
+            here_bits = here >>> <span class="number">24</span>;
+            here_op = (here >>> <span class="number">16</span>) &amp; <span class="number">0xff</span>;
+            here_val = here &amp; <span class="number">0xffff</span>;
+
+            <span class="keyword">if</span> ((last_bits + here_bits) &lt;= bits) { <span class="keyword">break</span>; }
+            <span class="comment">//--- PULLBYTE() ---//</span>
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+            <span class="comment">//---//</span>
+          }
+          <span class="comment">//--- DROPBITS(last.bits) ---//</span>
+          hold >>>= last_bits;
+          bits -= last_bits;
+          <span class="comment">//---//</span>
+          state.back += last_bits;
+        }
+        <span class="comment">//--- DROPBITS(here.bits) ---//</span>
+        hold >>>= here_bits;
+        bits -= here_bits;
+        <span class="comment">//---//</span>
+        state.back += here_bits;
+        state.length = here_val;
+        <span class="keyword">if</span> (here_op === <span class="number">0</span>) {
+          <span class="comment">//Tracevv((stderr, here.val >= 0x20 &amp;&amp; here.val &lt; 0x7f ?</span>
+          <span class="comment">//        "inflate:         literal '%c'\n" :</span>
+          <span class="comment">//        "inflate:         literal 0x%02x\n", here.val));</span>
+          state.mode = LIT;
+          <span class="keyword">break</span>;
+        }
+        <span class="keyword">if</span> (here_op &amp; <span class="number">32</span>) {
+          <span class="comment">//Tracevv((stderr, "inflate:         end of block\n"));</span>
+          state.back = -<span class="number">1</span>;
+          state.mode = TYPE;
+          <span class="keyword">break</span>;
+        }
+        <span class="keyword">if</span> (here_op &amp; <span class="number">64</span>) {
+          strm.msg = <span class="string">'invalid literal/length code'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        state.extra = here_op &amp; <span class="number">15</span>;
+        state.mode = LENEXT;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> LENEXT:
+        <span class="keyword">if</span> (state.extra) {
+          <span class="comment">//=== NEEDBITS(state.extra);</span>
+          n = state.extra;
+          <span class="keyword">while</span> (bits &lt; n) {
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          <span class="comment">//===//</span>
+          state.length += hold &amp; ((<span class="number">1</span> &lt;&lt; state.extra) - <span class="number">1</span>)<span class="comment">/*BITS(state.extra)*/</span>;
+          <span class="comment">//--- DROPBITS(state.extra) ---//</span>
+          hold >>>= state.extra;
+          bits -= state.extra;
+          <span class="comment">//---//</span>
+          state.back += state.extra;
+        }
+        <span class="comment">//Tracevv((stderr, "inflate:         length %u\n", state.length));</span>
+        state.was = state.length;
+        state.mode = DIST;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> DIST:
+        <span class="keyword">for</span> (;;) {
+          here = state.distcode[hold &amp; ((<span class="number">1</span> &lt;&lt; state.distbits) - <span class="number">1</span>)];<span class="comment">/*BITS(state.distbits)*/</span>
+          here_bits = here >>> <span class="number">24</span>;
+          here_op = (here >>> <span class="number">16</span>) &amp; <span class="number">0xff</span>;
+          here_val = here &amp; <span class="number">0xffff</span>;
+
+          <span class="keyword">if</span> ((here_bits) &lt;= bits) { <span class="keyword">break</span>; }
+          <span class="comment">//--- PULLBYTE() ---//</span>
+          <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+          have--;
+          hold += input[next++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+          <span class="comment">//---//</span>
+        }
+        <span class="keyword">if</span> ((here_op &amp; <span class="number">0xf0</span>) === <span class="number">0</span>) {
+          last_bits = here_bits;
+          last_op = here_op;
+          last_val = here_val;
+          <span class="keyword">for</span> (;;) {
+            here = state.distcode[last_val +
+                    ((hold &amp; ((<span class="number">1</span> &lt;&lt; (last_bits + last_op)) - <span class="number">1</span>))<span class="comment">/*BITS(last.bits + last.op)*/</span> >> last_bits)];
+            here_bits = here >>> <span class="number">24</span>;
+            here_op = (here >>> <span class="number">16</span>) &amp; <span class="number">0xff</span>;
+            here_val = here &amp; <span class="number">0xffff</span>;
+
+            <span class="keyword">if</span> ((last_bits + here_bits) &lt;= bits) { <span class="keyword">break</span>; }
+            <span class="comment">//--- PULLBYTE() ---//</span>
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+            <span class="comment">//---//</span>
+          }
+          <span class="comment">//--- DROPBITS(last.bits) ---//</span>
+          hold >>>= last_bits;
+          bits -= last_bits;
+          <span class="comment">//---//</span>
+          state.back += last_bits;
+        }
+        <span class="comment">//--- DROPBITS(here.bits) ---//</span>
+        hold >>>= here_bits;
+        bits -= here_bits;
+        <span class="comment">//---//</span>
+        state.back += here_bits;
+        <span class="keyword">if</span> (here_op &amp; <span class="number">64</span>) {
+          strm.msg = <span class="string">'invalid distance code'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+        state.offset = here_val;
+        state.extra = (here_op) &amp; <span class="number">15</span>;
+        state.mode = DISTEXT;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> DISTEXT:
+        <span class="keyword">if</span> (state.extra) {
+          <span class="comment">//=== NEEDBITS(state.extra);</span>
+          n = state.extra;
+          <span class="keyword">while</span> (bits &lt; n) {
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          <span class="comment">//===//</span>
+          state.offset += hold &amp; ((<span class="number">1</span> &lt;&lt; state.extra) - <span class="number">1</span>)<span class="comment">/*BITS(state.extra)*/</span>;
+          <span class="comment">//--- DROPBITS(state.extra) ---//</span>
+          hold >>>= state.extra;
+          bits -= state.extra;
+          <span class="comment">//---//</span>
+          state.back += state.extra;
+        }
+<span class="comment">//#ifdef INFLATE_STRICT</span>
+        <span class="keyword">if</span> (state.offset > state.dmax) {
+          strm.msg = <span class="string">'invalid distance too far back'</span>;
+          state.mode = BAD;
+          <span class="keyword">break</span>;
+        }
+<span class="comment">//#endif</span>
+        <span class="comment">//Tracevv((stderr, "inflate:         distance %u\n", state.offset));</span>
+        state.mode = MATCH;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> MATCH:
+        <span class="keyword">if</span> (left === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+        copy = _out - left;
+        <span class="keyword">if</span> (state.offset > copy) {         <span class="comment">/* copy from window */</span>
+          copy = state.offset - copy;
+          <span class="keyword">if</span> (copy > state.whave) {
+            <span class="keyword">if</span> (state.sane) {
+              strm.msg = <span class="string">'invalid distance too far back'</span>;
+              state.mode = BAD;
+              <span class="keyword">break</span>;
+            }
+<span class="comment">// (!) This block is disabled in zlib defaults,</span>
+<span class="comment">// don't enable it for binary compatibility</span>
+<span class="comment">//#ifdef INFLATE_ALLOW_INVALID_DISTANCE_TOOFAR_ARRR</span>
+<span class="comment">//          Trace((stderr, "inflate.c too far\n"));</span>
+<span class="comment">//          copy -= state.whave;</span>
+<span class="comment">//          if (copy > state.length) { copy = state.length; }</span>
+<span class="comment">//          if (copy > left) { copy = left; }</span>
+<span class="comment">//          left -= copy;</span>
+<span class="comment">//          state.length -= copy;</span>
+<span class="comment">//          do {</span>
+<span class="comment">//            output[put++] = 0;</span>
+<span class="comment">//          } while (--copy);</span>
+<span class="comment">//          if (state.length === 0) { state.mode = LEN; }</span>
+<span class="comment">//          break;</span>
+<span class="comment">//#endif</span>
+          }
+          <span class="keyword">if</span> (copy > state.wnext) {
+            copy -= state.wnext;
+            from = state.wsize - copy;
+          }
+          <span class="keyword">else</span> {
+            from = state.wnext - copy;
+          }
+          <span class="keyword">if</span> (copy > state.length) { copy = state.length; }
+          from_source = state.window;
+        }
+        <span class="keyword">else</span> {                              <span class="comment">/* copy from output */</span>
+          from_source = output;
+          from = put - state.offset;
+          copy = state.length;
+        }
+        <span class="keyword">if</span> (copy > left) { copy = left; }
+        left -= copy;
+        state.length -= copy;
+        <span class="keyword">do</span> {
+          output[put++] = from_source[from++];
+        } <span class="keyword">while</span> (--copy);
+        <span class="keyword">if</span> (state.length === <span class="number">0</span>) { state.mode = LEN; }
+        <span class="keyword">break</span>;
+      <span class="keyword">case</span> LIT:
+        <span class="keyword">if</span> (left === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+        output[put++] = state.length;
+        left--;
+        state.mode = LEN;
+        <span class="keyword">break</span>;
+      <span class="keyword">case</span> CHECK:
+        <span class="keyword">if</span> (state.wrap) {
+          <span class="comment">//=== NEEDBITS(32);</span>
+          <span class="keyword">while</span> (bits &lt; <span class="number">32</span>) {
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            <span class="comment">// Use '|' instead of '+' to make sure that result is signed</span>
+            hold |= input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          <span class="comment">//===//</span>
+          _out -= left;
+          strm.total_out += _out;
+          state.total += _out;
+          <span class="keyword">if</span> (_out) {
+            strm.adler = state.check =
+                <span class="comment">/*UPDATE(state.check, put - _out, _out);*/</span>
+                (state.flags ? crc32(state.check, output, _out, put - _out) : adler32(state.check, output, _out, put - _out));
+
+          }
+          _out = left;
+          <span class="comment">// NB: crc32 stored as signed 32-bit int, zswap32 returns signed too</span>
+          <span class="keyword">if</span> ((state.flags ? hold : zswap32(hold)) !== state.check) {
+            strm.msg = <span class="string">'incorrect data check'</span>;
+            state.mode = BAD;
+            <span class="keyword">break</span>;
+          }
+          <span class="comment">//=== INITBITS();</span>
+          hold = <span class="number">0</span>;
+          bits = <span class="number">0</span>;
+          <span class="comment">//===//</span>
+          <span class="comment">//Tracev((stderr, "inflate:   check matches trailer\n"));</span>
+        }
+        state.mode = LENGTH;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> LENGTH:
+        <span class="keyword">if</span> (state.wrap &amp;&amp; state.flags) {
+          <span class="comment">//=== NEEDBITS(32);</span>
+          <span class="keyword">while</span> (bits &lt; <span class="number">32</span>) {
+            <span class="keyword">if</span> (have === <span class="number">0</span>) { <span class="keyword">break</span> inf_leave; }
+            have--;
+            hold += input[next++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          <span class="comment">//===//</span>
+          <span class="keyword">if</span> (hold !== (state.total &amp; <span class="number">0xffffffff</span>)) {
+            strm.msg = <span class="string">'incorrect length check'</span>;
+            state.mode = BAD;
+            <span class="keyword">break</span>;
+          }
+          <span class="comment">//=== INITBITS();</span>
+          hold = <span class="number">0</span>;
+          bits = <span class="number">0</span>;
+          <span class="comment">//===//</span>
+          <span class="comment">//Tracev((stderr, "inflate:   length matches trailer\n"));</span>
+        }
+        state.mode = DONE;
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">case</span> DONE:
+        ret = Z_STREAM_END;
+        <span class="keyword">break</span> inf_leave;
+      <span class="keyword">case</span> BAD:
+        ret = Z_DATA_ERROR;
+        <span class="keyword">break</span> inf_leave;
+      <span class="keyword">case</span> MEM:
+        <span class="keyword">return</span> Z_MEM_ERROR;
+      <span class="keyword">case</span> SYNC:
+        <span class="comment">/* falls through */</span>
+      <span class="keyword">default</span>:
+        <span class="keyword">return</span> Z_STREAM_ERROR;
+    }
+  }
+
+  <span class="comment">// inf_leave &lt;- here is real place for "goto inf_leave", emulated via "break inf_leave"</span>
+
+  <span class="comment">/*
+     Return from inflate(), updating the total counts and the check value.
+     If there was no progress during the inflate() call, return a buffer
+     error.  Call updatewindow() to create and/or update the window state.
+     Note: a memory error from inflate() is non-recoverable.
+   */</span>
+
+  <span class="comment">//--- RESTORE() ---</span>
+  strm.next_out = put;
+  strm.avail_out = left;
+  strm.next_in = next;
+  strm.avail_in = have;
+  state.hold = hold;
+  state.bits = bits;
+  <span class="comment">//---</span>
+
+  <span class="keyword">if</span> (state.wsize || (_out !== strm.avail_out &amp;&amp; state.mode &lt; BAD &amp;&amp;
+                      (state.mode &lt; CHECK || flush !== Z_FINISH))) {
+    <span class="keyword">if</span> (updatewindow(strm, strm.output, strm.next_out, _out - strm.avail_out)) {
+      state.mode = MEM;
+      <span class="keyword">return</span> Z_MEM_ERROR;
+    }
+  }
+  _<span class="keyword">in</span> -= strm.avail_in;
+  _out -= strm.avail_out;
+  strm.total_in += _<span class="keyword">in</span>;
+  strm.total_out += _out;
+  state.total += _out;
+  <span class="keyword">if</span> (state.wrap &amp;&amp; _out) {
+    strm.adler = state.check = <span class="comment">/*UPDATE(state.check, strm.next_out - _out, _out);*/</span>
+      (state.flags ? crc32(state.check, output, _out, strm.next_out - _out) : adler32(state.check, output, _out, strm.next_out - _out));
+  }
+  strm.data_type = state.bits + (state.last ? <span class="number">64</span> : <span class="number">0</span>) +
+                    (state.mode === TYPE ? <span class="number">128</span> : <span class="number">0</span>) +
+                    (state.mode === LEN_ || state.mode === COPY_ ? <span class="number">256</span> : <span class="number">0</span>);
+  <span class="keyword">if</span> (((_<span class="keyword">in</span> === <span class="number">0</span> &amp;&amp; _out === <span class="number">0</span>) || flush === Z_FINISH) &amp;&amp; ret === Z_OK) {
+    ret = Z_BUF_ERROR;
+  }
+  <span class="keyword">return</span> ret;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateEnd</span><span class="params">(strm)</span> {</span>
+
+  <span class="keyword">if</span> (!strm || !strm.state <span class="comment">/*|| strm->zfree == (free_func)0*/</span>) {
+    <span class="keyword">return</span> Z_STREAM_ERROR;
+  }
+
+  <span class="keyword">var</span> state = strm.state;
+  <span class="keyword">if</span> (state.window) {
+    state.window = <span class="literal">null</span>;
+  }
+  strm.state = <span class="literal">null</span>;
+  <span class="keyword">return</span> Z_OK;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateGetHeader</span><span class="params">(strm, head)</span> {</span>
+  <span class="keyword">var</span> state;
+
+  <span class="comment">/* check state */</span>
+  <span class="keyword">if</span> (!strm || !strm.state) { <span class="keyword">return</span> Z_STREAM_ERROR; }
+  state = strm.state;
+  <span class="keyword">if</span> ((state.wrap &amp; <span class="number">2</span>) === <span class="number">0</span>) { <span class="keyword">return</span> Z_STREAM_ERROR; }
+
+  <span class="comment">/* save header structure */</span>
+  state.head = head;
+  head.done = <span class="literal">false</span>;
+  <span class="keyword">return</span> Z_OK;
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">inflateSetDictionary</span><span class="params">(strm, dictionary)</span> {</span>
+  <span class="keyword">var</span> dictLength = dictionary.length;
+
+  <span class="keyword">var</span> state;
+  <span class="keyword">var</span> dictid;
+  <span class="keyword">var</span> ret;
+
+  <span class="comment">/* check state */</span>
+  <span class="keyword">if</span> (!strm <span class="comment">/* == Z_NULL */</span> || !strm.state <span class="comment">/* == Z_NULL */</span>) { <span class="keyword">return</span> Z_STREAM_ERROR; }
+  state = strm.state;
+
+  <span class="keyword">if</span> (state.wrap !== <span class="number">0</span> &amp;&amp; state.mode !== DICT) {
+    <span class="keyword">return</span> Z_STREAM_ERROR;
+  }
+
+  <span class="comment">/* check for correct dictionary identifier */</span>
+  <span class="keyword">if</span> (state.mode === DICT) {
+    dictid = <span class="number">1</span>; <span class="comment">/* adler32(0, null, 0)*/</span>
+    <span class="comment">/* dictid = adler32(dictid, dictionary, dictLength); */</span>
+    dictid = adler32(dictid, dictionary, dictLength, <span class="number">0</span>);
+    <span class="keyword">if</span> (dictid !== state.check) {
+      <span class="keyword">return</span> Z_DATA_ERROR;
+    }
+  }
+  <span class="comment">/* copy dictionary to window using updatewindow(), which will amend the
+   existing dictionary if appropriate */</span>
+  ret = updatewindow(strm, dictionary, dictLength, dictLength);
+  <span class="keyword">if</span> (ret) {
+    state.mode = MEM;
+    <span class="keyword">return</span> Z_MEM_ERROR;
+  }
+  state.havedict = <span class="number">1</span>;
+  <span class="comment">// Tracev((stderr, "inflate:   dictionary set\n"));</span>
+  <span class="keyword">return</span> Z_OK;
+}
+
+exports.inflateReset = inflateReset;
+exports.inflateReset2 = inflateReset2;
+exports.inflateResetKeep = inflateResetKeep;
+exports.inflateInit = inflateInit;
+exports.inflateInit2 = inflateInit2;
+exports.inflate = inflate;
+exports.inflateEnd = inflateEnd;
+exports.inflateGetHeader = inflateGetHeader;
+exports.inflateSetDictionary = inflateSetDictionary;
+exports.inflateInfo = <span class="string">'pako inflate (from Nodeca project)'</span>;
+
+<span class="comment">/* Not implemented
+exports.inflateCopy = inflateCopy;
+exports.inflateGetDictionary = inflateGetDictionary;
+exports.inflateMark = inflateMark;
+exports.inflatePrime = inflatePrime;
+exports.inflateSync = inflateSync;
+exports.inflateSyncPoint = inflateSyncPoint;
+exports.inflateUndermine = inflateUndermine;
+*/</span>
+</code></pre>

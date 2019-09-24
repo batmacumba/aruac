@@ -1,0 +1,146 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> Writable = require(<span class="string">'readable-stream'</span>).Writable
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>)
+<span class="keyword">var</span> bufferFrom = require(<span class="string">'buffer-from'</span>)
+
+<span class="keyword">if</span> (<span class="keyword">typeof</span> Uint8Array === <span class="string">'undefined'</span>) {
+  <span class="keyword">var</span> U8 = require(<span class="string">'typedarray'</span>).Uint8Array
+} <span class="keyword">else</span> {
+  <span class="keyword">var</span> U8 = Uint8Array
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">ConcatStream</span><span class="params">(opts, cb)</span> {</span>
+  <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> ConcatStream)) <span class="keyword">return</span> <span class="keyword">new</span> ConcatStream(opts, cb)
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> opts === <span class="string">'function'</span>) {
+    cb = opts
+    opts = {}
+  }
+  <span class="keyword">if</span> (!opts) opts = {}
+
+  <span class="keyword">var</span> encoding = opts.encoding
+  <span class="keyword">var</span> shouldInferEncoding = <span class="literal">false</span>
+
+  <span class="keyword">if</span> (!encoding) {
+    shouldInferEncoding = <span class="literal">true</span>
+  } <span class="keyword">else</span> {
+    encoding =  String(encoding).toLowerCase()
+    <span class="keyword">if</span> (encoding === <span class="string">'u8'</span> || encoding === <span class="string">'uint8'</span>) {
+      encoding = <span class="string">'uint8array'</span>
+    }
+  }
+
+  Writable.call(<span class="keyword">this</span>, { objectMode: <span class="literal">true</span> })
+
+  <span class="keyword">this</span>.encoding = encoding
+  <span class="keyword">this</span>.shouldInferEncoding = shouldInferEncoding
+
+  <span class="keyword">if</span> (cb) <span class="keyword">this</span>.on(<span class="string">'finish'</span>, <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span> cb(<span class="keyword">this</span>.getBody()) })
+  <span class="keyword">this</span>.body = []
+}
+
+module.exports = ConcatStream
+inherits(ConcatStream, Writable)
+
+ConcatStream.prototype._write = <span class="keyword">function</span>(chunk, enc, next) {
+  <span class="keyword">this</span>.body.push(chunk)
+  next()
+}
+
+ConcatStream.prototype.inferEncoding = <span class="function"><span class="keyword">function</span> <span class="params">(buff)</span> {</span>
+  <span class="keyword">var</span> firstBuffer = buff === <span class="literal">undefined</span> ? <span class="keyword">this</span>.body[<span class="number">0</span>] : buff;
+  <span class="keyword">if</span> (Buffer.isBuffer(firstBuffer)) <span class="keyword">return</span> <span class="string">'buffer'</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> Uint8Array !== <span class="string">'undefined'</span> &amp;&amp; firstBuffer <span class="keyword">instanceof</span> Uint8Array) <span class="keyword">return</span> <span class="string">'uint8array'</span>
+  <span class="keyword">if</span> (Array.isArray(firstBuffer)) <span class="keyword">return</span> <span class="string">'array'</span>
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> firstBuffer === <span class="string">'string'</span>) <span class="keyword">return</span> <span class="string">'string'</span>
+  <span class="keyword">if</span> (Object.prototype.toString.call(firstBuffer) === <span class="string">"[object Object]"</span>) <span class="keyword">return</span> <span class="string">'object'</span>
+  <span class="keyword">return</span> <span class="string">'buffer'</span>
+}
+
+ConcatStream.prototype.getBody = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.encoding &amp;&amp; <span class="keyword">this</span>.body.length === <span class="number">0</span>) <span class="keyword">return</span> []
+  <span class="keyword">if</span> (<span class="keyword">this</span>.shouldInferEncoding) <span class="keyword">this</span>.encoding = <span class="keyword">this</span>.inferEncoding()
+  <span class="keyword">if</span> (<span class="keyword">this</span>.encoding === <span class="string">'array'</span>) <span class="keyword">return</span> arrayConcat(<span class="keyword">this</span>.body)
+  <span class="keyword">if</span> (<span class="keyword">this</span>.encoding === <span class="string">'string'</span>) <span class="keyword">return</span> stringConcat(<span class="keyword">this</span>.body)
+  <span class="keyword">if</span> (<span class="keyword">this</span>.encoding === <span class="string">'buffer'</span>) <span class="keyword">return</span> bufferConcat(<span class="keyword">this</span>.body)
+  <span class="keyword">if</span> (<span class="keyword">this</span>.encoding === <span class="string">'uint8array'</span>) <span class="keyword">return</span> u8Concat(<span class="keyword">this</span>.body)
+  <span class="keyword">return</span> <span class="keyword">this</span>.body
+}
+
+<span class="keyword">var</span> isArray = Array.isArray || <span class="function"><span class="keyword">function</span> <span class="params">(arr)</span> {</span>
+  <span class="keyword">return</span> Object.prototype.toString.call(arr) == <span class="string">'[object Array]'</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">isArrayish</span> <span class="params">(arr)</span> {</span>
+  <span class="keyword">return</span> <span class="regexp">/Array\]$/</span>.test(Object.prototype.toString.call(arr))
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">isBufferish</span> <span class="params">(p)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">typeof</span> p === <span class="string">'string'</span> || isArrayish(p) || (p &amp;&amp; <span class="keyword">typeof</span> p.subarray === <span class="string">'function'</span>)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">stringConcat</span> <span class="params">(parts)</span> {</span>
+  <span class="keyword">var</span> strings = []
+  <span class="keyword">var</span> needsToString = <span class="literal">false</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; parts.length; i++) {
+    <span class="keyword">var</span> p = parts[i]
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> p === <span class="string">'string'</span>) {
+      strings.push(p)
+    } <span class="keyword">else</span> <span class="keyword">if</span> (Buffer.isBuffer(p)) {
+      strings.push(p)
+    } <span class="keyword">else</span> <span class="keyword">if</span> (isBufferish(p)) {
+      strings.push(bufferFrom(p))
+    } <span class="keyword">else</span> {
+      strings.push(bufferFrom(String(p)))
+    }
+  }
+  <span class="keyword">if</span> (Buffer.isBuffer(parts[<span class="number">0</span>])) {
+    strings = Buffer.concat(strings)
+    strings = strings.toString(<span class="string">'utf8'</span>)
+  } <span class="keyword">else</span> {
+    strings = strings.join(<span class="string">''</span>)
+  }
+  <span class="keyword">return</span> strings
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">bufferConcat</span> <span class="params">(parts)</span> {</span>
+  <span class="keyword">var</span> bufs = []
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; parts.length; i++) {
+    <span class="keyword">var</span> p = parts[i]
+    <span class="keyword">if</span> (Buffer.isBuffer(p)) {
+      bufs.push(p)
+    } <span class="keyword">else</span> <span class="keyword">if</span> (isBufferish(p)) {
+      bufs.push(bufferFrom(p))
+    } <span class="keyword">else</span> {
+      bufs.push(bufferFrom(String(p)))
+    }
+  }
+  <span class="keyword">return</span> Buffer.concat(bufs)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">arrayConcat</span> <span class="params">(parts)</span> {</span>
+  <span class="keyword">var</span> res = []
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; parts.length; i++) {
+    res.push.apply(res, parts[i])
+  }
+  <span class="keyword">return</span> res
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">u8Concat</span> <span class="params">(parts)</span> {</span>
+  <span class="keyword">var</span> len = <span class="number">0</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; parts.length; i++) {
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> parts[i] === <span class="string">'string'</span>) {
+      parts[i] = bufferFrom(parts[i])
+    }
+    len += parts[i].length
+  }
+  <span class="keyword">var</span> u8 = <span class="keyword">new</span> U8(len)
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, offset = <span class="number">0</span>; i &lt; parts.length; i++) {
+    <span class="keyword">var</span> part = parts[i]
+    <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; part.length; j++) {
+      u8[offset++] = part[j]
+    }
+  }
+  <span class="keyword">return</span> u8
+}
+</code></pre>

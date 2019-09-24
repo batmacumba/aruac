@@ -1,0 +1,117 @@
+<h1>mr.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> bn = require(<span class="string">'bn.js'</span>);
+<span class="keyword">var</span> brorand = require(<span class="string">'brorand'</span>);
+
+<span class="function"><span class="keyword">function</span> <span class="title">MillerRabin</span><span class="params">(rand)</span> {</span>
+  <span class="keyword">this</span>.rand = rand || <span class="keyword">new</span> brorand.Rand();
+}
+module.exports = MillerRabin;
+
+MillerRabin.create = <span class="function"><span class="keyword">function</span> <span class="title">create</span><span class="params">(rand)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">new</span> MillerRabin(rand);
+};
+
+MillerRabin.prototype._randbelow = <span class="function"><span class="keyword">function</span> <span class="title">_randbelow</span><span class="params">(n)</span> {</span>
+  <span class="keyword">var</span> len = n.bitLength();
+  <span class="keyword">var</span> min_bytes = Math.ceil(len / <span class="number">8</span>);
+
+  <span class="comment">// Generage random bytes until a number less than n is found.</span>
+  <span class="comment">// This ensures that 0..n-1 have an equal probability of being selected.</span>
+  <span class="keyword">do</span>
+    <span class="keyword">var</span> a = <span class="keyword">new</span> bn(<span class="keyword">this</span>.rand.generate(min_bytes));
+  <span class="keyword">while</span> (a.cmp(n) >= <span class="number">0</span>);
+
+  <span class="keyword">return</span> a;
+};
+
+MillerRabin.prototype._randrange = <span class="function"><span class="keyword">function</span> <span class="title">_randrange</span><span class="params">(start, stop)</span> {</span>
+  <span class="comment">// Generate a random number greater than or equal to start and less than stop.</span>
+  <span class="keyword">var</span> size = stop.sub(start);
+  <span class="keyword">return</span> start.add(<span class="keyword">this</span>._randbelow(size));
+};
+
+MillerRabin.prototype.test = <span class="function"><span class="keyword">function</span> <span class="title">test</span><span class="params">(n, k, cb)</span> {</span>
+  <span class="keyword">var</span> len = n.bitLength();
+  <span class="keyword">var</span> red = bn.mont(n);
+  <span class="keyword">var</span> rone = <span class="keyword">new</span> bn(<span class="number">1</span>).toRed(red);
+
+  <span class="keyword">if</span> (!k)
+    k = Math.max(<span class="number">1</span>, (len / <span class="number">48</span>) | <span class="number">0</span>);
+
+  <span class="comment">// Find d and s, (n - 1) = (2 ^ s) * d;</span>
+  <span class="keyword">var</span> n1 = n.subn(<span class="number">1</span>);
+  <span class="keyword">for</span> (<span class="keyword">var</span> s = <span class="number">0</span>; !n1.testn(s); s++) {}
+  <span class="keyword">var</span> d = n.shrn(s);
+
+  <span class="keyword">var</span> rn1 = n1.toRed(red);
+
+  <span class="keyword">var</span> prime = <span class="literal">true</span>;
+  <span class="keyword">for</span> (; k > <span class="number">0</span>; k--) {
+    <span class="keyword">var</span> a = <span class="keyword">this</span>._randrange(<span class="keyword">new</span> bn(<span class="number">2</span>), n1);
+    <span class="keyword">if</span> (cb)
+      cb(a);
+
+    <span class="keyword">var</span> x = a.toRed(red).redPow(d);
+    <span class="keyword">if</span> (x.cmp(rone) === <span class="number">0</span> || x.cmp(rn1) === <span class="number">0</span>)
+      <span class="keyword">continue</span>;
+
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">1</span>; i &lt; s; i++) {
+      x = x.redSqr();
+
+      <span class="keyword">if</span> (x.cmp(rone) === <span class="number">0</span>)
+        <span class="keyword">return</span> <span class="literal">false</span>;
+      <span class="keyword">if</span> (x.cmp(rn1) === <span class="number">0</span>)
+        <span class="keyword">break</span>;
+    }
+
+    <span class="keyword">if</span> (i === s)
+      <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  <span class="keyword">return</span> prime;
+};
+
+MillerRabin.prototype.getDivisor = <span class="function"><span class="keyword">function</span> <span class="title">getDivisor</span><span class="params">(n, k)</span> {</span>
+  <span class="keyword">var</span> len = n.bitLength();
+  <span class="keyword">var</span> red = bn.mont(n);
+  <span class="keyword">var</span> rone = <span class="keyword">new</span> bn(<span class="number">1</span>).toRed(red);
+
+  <span class="keyword">if</span> (!k)
+    k = Math.max(<span class="number">1</span>, (len / <span class="number">48</span>) | <span class="number">0</span>);
+
+  <span class="comment">// Find d and s, (n - 1) = (2 ^ s) * d;</span>
+  <span class="keyword">var</span> n1 = n.subn(<span class="number">1</span>);
+  <span class="keyword">for</span> (<span class="keyword">var</span> s = <span class="number">0</span>; !n1.testn(s); s++) {}
+  <span class="keyword">var</span> d = n.shrn(s);
+
+  <span class="keyword">var</span> rn1 = n1.toRed(red);
+
+  <span class="keyword">for</span> (; k > <span class="number">0</span>; k--) {
+    <span class="keyword">var</span> a = <span class="keyword">this</span>._randrange(<span class="keyword">new</span> bn(<span class="number">2</span>), n1);
+
+    <span class="keyword">var</span> g = n.gcd(a);
+    <span class="keyword">if</span> (g.cmpn(<span class="number">1</span>) !== <span class="number">0</span>)
+      <span class="keyword">return</span> g;
+
+    <span class="keyword">var</span> x = a.toRed(red).redPow(d);
+    <span class="keyword">if</span> (x.cmp(rone) === <span class="number">0</span> || x.cmp(rn1) === <span class="number">0</span>)
+      <span class="keyword">continue</span>;
+
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">1</span>; i &lt; s; i++) {
+      x = x.redSqr();
+
+      <span class="keyword">if</span> (x.cmp(rone) === <span class="number">0</span>)
+        <span class="keyword">return</span> x.fromRed().subn(<span class="number">1</span>).gcd(n);
+      <span class="keyword">if</span> (x.cmp(rn1) === <span class="number">0</span>)
+        <span class="keyword">break</span>;
+    }
+
+    <span class="keyword">if</span> (i === s) {
+      x = x.redSqr();
+      <span class="keyword">return</span> x.fromRed().subn(<span class="number">1</span>).gcd(n);
+    }
+  }
+
+  <span class="keyword">return</span> <span class="literal">false</span>;
+};
+</code></pre>

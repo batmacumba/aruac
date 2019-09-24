@@ -1,0 +1,63 @@
+<h1>api.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> asn1 = require(<span class="string">'../asn1'</span>);
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>);
+
+<span class="keyword">var</span> api = exports;
+
+api.define = <span class="function"><span class="keyword">function</span> <span class="title">define</span><span class="params">(name, body)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">new</span> Entity(name, body);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">Entity</span><span class="params">(name, body)</span> {</span>
+  <span class="keyword">this</span>.name = name;
+  <span class="keyword">this</span>.body = body;
+
+  <span class="keyword">this</span>.decoders = {};
+  <span class="keyword">this</span>.encoders = {};
+};
+
+Entity.prototype._createNamed = <span class="function"><span class="keyword">function</span> <span class="title">createNamed</span><span class="params">(base)</span> {</span>
+  <span class="keyword">var</span> named;
+  <span class="keyword">try</span> {
+    named = require(<span class="string">'vm'</span>).runInThisContext(
+      <span class="string">'(function '</span> + <span class="keyword">this</span>.name + <span class="string">'(entity) {\n'</span> +
+      <span class="string">'  this._initNamed(entity);\n'</span> +
+      <span class="string">'})'</span>
+    );
+  } <span class="keyword">catch</span> (e) {
+    named = <span class="function"><span class="keyword">function</span> <span class="params">(entity)</span> {</span>
+      <span class="keyword">this</span>._initNamed(entity);
+    };
+  }
+  inherits(named, base);
+  named.prototype._initNamed = <span class="function"><span class="keyword">function</span> <span class="title">initnamed</span><span class="params">(entity)</span> {</span>
+    base.call(<span class="keyword">this</span>, entity);
+  };
+
+  <span class="keyword">return</span> <span class="keyword">new</span> named(<span class="keyword">this</span>);
+};
+
+Entity.prototype._getDecoder = <span class="function"><span class="keyword">function</span> <span class="title">_getDecoder</span><span class="params">(enc)</span> {</span>
+  enc = enc || <span class="string">'der'</span>;
+  <span class="comment">// Lazily create decoder</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.decoders.hasOwnProperty(enc))
+    <span class="keyword">this</span>.decoders[enc] = <span class="keyword">this</span>._createNamed(asn1.decoders[enc]);
+  <span class="keyword">return</span> <span class="keyword">this</span>.decoders[enc];
+};
+
+Entity.prototype.decode = <span class="function"><span class="keyword">function</span> <span class="title">decode</span><span class="params">(data, enc, options)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._getDecoder(enc).decode(data, options);
+};
+
+Entity.prototype._getEncoder = <span class="function"><span class="keyword">function</span> <span class="title">_getEncoder</span><span class="params">(enc)</span> {</span>
+  enc = enc || <span class="string">'der'</span>;
+  <span class="comment">// Lazily create encoder</span>
+  <span class="keyword">if</span> (!<span class="keyword">this</span>.encoders.hasOwnProperty(enc))
+    <span class="keyword">this</span>.encoders[enc] = <span class="keyword">this</span>._createNamed(asn1.encoders[enc]);
+  <span class="keyword">return</span> <span class="keyword">this</span>.encoders[enc];
+};
+
+Entity.prototype.encode = <span class="function"><span class="keyword">function</span> <span class="title">encode</span><span class="params">(data, enc, <span class="comment">/* internal */</span> reporter)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._getEncoder(enc).encode(data, reporter);
+};
+</code></pre>

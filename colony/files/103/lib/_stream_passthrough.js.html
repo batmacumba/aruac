@@ -1,0 +1,48 @@
+<h1>_stream_passthrough.js</h1>
+<pre><code class="lang-js"><span class="comment">// Copyright Joyent, Inc. and other Node contributors.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is hereby granted, free of charge, to any person obtaining a</span>
+<span class="comment">// copy of this software and associated documentation files (the</span>
+<span class="comment">// "Software"), to deal in the Software without restriction, including</span>
+<span class="comment">// without limitation the rights to use, copy, modify, merge, publish,</span>
+<span class="comment">// distribute, sublicense, and/or sell copies of the Software, and to permit</span>
+<span class="comment">// persons to whom the Software is furnished to do so, subject to the</span>
+<span class="comment">// following conditions:</span>
+<span class="comment">//</span>
+<span class="comment">// The above copyright notice and this permission notice shall be included</span>
+<span class="comment">// in all copies or substantial portions of the Software.</span>
+<span class="comment">//</span>
+<span class="comment">// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS</span>
+<span class="comment">// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF</span>
+<span class="comment">// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN</span>
+<span class="comment">// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,</span>
+<span class="comment">// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR</span>
+<span class="comment">// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE</span>
+<span class="comment">// USE OR OTHER DEALINGS IN THE SOFTWARE.</span>
+
+<span class="comment">// a passthrough stream.</span>
+<span class="comment">// basically just the most minimal sort of Transform stream.</span>
+<span class="comment">// Every written chunk gets output as-is.</span>
+
+<span class="string">'use strict'</span>;
+
+module.exports = PassThrough;
+
+<span class="keyword">var</span> Transform = require(<span class="string">'./_stream_transform'</span>);
+
+<span class="comment">/*&lt;replacement>*/</span>
+<span class="keyword">var</span> util = require(<span class="string">'core-util-is'</span>);
+util.inherits = require(<span class="string">'inherits'</span>);
+<span class="comment">/*&lt;/replacement>*/</span>
+
+util.inherits(PassThrough, Transform);
+
+<span class="function"><span class="keyword">function</span> <span class="title">PassThrough</span><span class="params">(options)</span> {</span>
+  <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> PassThrough)) <span class="keyword">return</span> <span class="keyword">new</span> PassThrough(options);
+
+  Transform.call(<span class="keyword">this</span>, options);
+}
+
+PassThrough.prototype._transform = <span class="function"><span class="keyword">function</span> <span class="params">(chunk, encoding, cb)</span> {</span>
+  cb(<span class="literal">null</span>, chunk);
+};</code></pre>

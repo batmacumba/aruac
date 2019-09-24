@@ -1,0 +1,148 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> xtend = require(<span class="string">'xtend'</span>)
+<span class="keyword">var</span> acorn = require(<span class="string">'acorn-node'</span>)
+<span class="keyword">var</span> dash = require(<span class="string">'dash-ast'</span>)
+<span class="keyword">var</span> getAssignedIdentifiers = require(<span class="string">'get-assigned-identifiers'</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">visitFunction</span> <span class="params">(node, state, ancestors)</span> {</span>
+  <span class="keyword">if</span> (node.params.length > <span class="number">0</span>) {
+    <span class="keyword">var</span> idents = []
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; node.params.length; i++) {
+      <span class="keyword">var</span> sub = getAssignedIdentifiers(node.params[i])
+      <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; sub.length; j++) idents.push(sub[j])
+    }
+    declareNames(node, idents)
+  }
+  <span class="keyword">if</span> (node.type === <span class="string">'FunctionDeclaration'</span>) {
+    <span class="keyword">var</span> parent = getScopeNode(ancestors, <span class="string">'const'</span>)
+    declareNames(parent, [node.id])
+  } <span class="keyword">else</span> <span class="keyword">if</span> (node.type === <span class="string">'FunctionExpression'</span> &amp;&amp; node.id) {
+    declareNames(node, [node.id])
+  }
+}
+
+<span class="keyword">var</span> scopeVisitor = {
+  VariableDeclaration: <span class="function"><span class="keyword">function</span> <span class="params">(node, state, ancestors)</span> {</span>
+    <span class="keyword">var</span> parent = getScopeNode(ancestors, node.kind)
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; node.declarations.length; i++) {
+      declareNames(parent, getAssignedIdentifiers(node.declarations[i].id))
+    }
+  },
+  FunctionExpression: visitFunction,
+  FunctionDeclaration: visitFunction,
+  ArrowFunctionExpression: visitFunction,
+  ClassDeclaration: <span class="function"><span class="keyword">function</span> <span class="params">(node, state, ancestors)</span> {</span>
+    <span class="keyword">var</span> parent = getScopeNode(ancestors, <span class="string">'const'</span>)
+    <span class="keyword">if</span> (node.id) {
+      declareNames(parent, [node.id])
+    }
+  },
+  ImportDeclaration: <span class="function"><span class="keyword">function</span> <span class="params">(node, state, ancestors)</span> {</span>
+    declareNames(ancestors[<span class="number">0</span>] <span class="comment">/* root */</span>, getAssignedIdentifiers(node))
+  },
+  CatchClause: <span class="function"><span class="keyword">function</span> <span class="params">(node)</span> {</span>
+    <span class="keyword">if</span> (node.param) declareNames(node, [node.param])
+  }
+}
+
+<span class="keyword">var</span> bindingVisitor = {
+  Identifier: <span class="function"><span class="keyword">function</span> <span class="params">(node, state, ancestors)</span> {</span>
+    <span class="keyword">if</span> (!state.identifiers) <span class="keyword">return</span>
+    <span class="keyword">var</span> parent = ancestors[ancestors.length - <span class="number">1</span>]
+    <span class="keyword">if</span> (parent.type === <span class="string">'MemberExpression'</span> &amp;&amp; parent.property === node) <span class="keyword">return</span>
+    <span class="keyword">if</span> (parent.type === <span class="string">'Property'</span> &amp;&amp; !parent.computed &amp;&amp; parent.key === node) <span class="keyword">return</span>
+    <span class="keyword">if</span> (parent.type === <span class="string">'MethodDefinition'</span> &amp;&amp; !parent.computed &amp;&amp; parent.key === node) <span class="keyword">return</span>
+    <span class="keyword">if</span> (parent.type === <span class="string">'LabeledStatement'</span> &amp;&amp; parent.label === node) <span class="keyword">return</span>
+    <span class="keyword">if</span> (!has(state.undeclared, node.name)) {
+      <span class="keyword">for</span> (<span class="keyword">var</span> i = ancestors.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+        <span class="keyword">if</span> (ancestors[i]._names !== <span class="literal">undefined</span> &amp;&amp; has(ancestors[i]._names, node.name)) {
+          <span class="keyword">return</span>
+        }
+      }
+
+      state.undeclared[node.name] = <span class="literal">true</span>
+    }
+
+    <span class="keyword">if</span> (state.wildcard &amp;&amp;
+        !(parent.type === <span class="string">'MemberExpression'</span> &amp;&amp; parent.object === node) &amp;&amp;
+        !(parent.type === <span class="string">'VariableDeclarator'</span> &amp;&amp; parent.id === node) &amp;&amp;
+        !(parent.type === <span class="string">'AssignmentExpression'</span> &amp;&amp; parent.left === node)) {
+      state.undeclaredProps[node.name + <span class="string">'.*'</span>] = <span class="literal">true</span>
+    }
+  },
+  MemberExpression: <span class="function"><span class="keyword">function</span> <span class="params">(node, state)</span> {</span>
+    <span class="keyword">if</span> (!state.properties) <span class="keyword">return</span>
+    <span class="keyword">if</span> (node.object.type === <span class="string">'Identifier'</span> &amp;&amp; has(state.undeclared, node.object.name)) {
+      <span class="keyword">var</span> prop = !node.computed &amp;&amp; node.property.type === <span class="string">'Identifier'</span>
+        ? node.property.name
+        : node.computed &amp;&amp; node.property.type === <span class="string">'Literal'</span>
+          ? node.property.value
+          : <span class="literal">null</span>
+      <span class="keyword">if</span> (prop) state.undeclaredProps[node.object.name + <span class="string">'.'</span> + prop] = <span class="literal">true</span>
+    }
+  }
+}
+
+module.exports = <span class="function"><span class="keyword">function</span> <span class="title">findUndeclared</span> <span class="params">(src, opts)</span> {</span>
+  opts = xtend({
+    identifiers: <span class="literal">true</span>,
+    properties: <span class="literal">true</span>,
+    wildcard: <span class="literal">false</span>
+  }, opts)
+
+  <span class="keyword">var</span> state = {
+    undeclared: {},
+    undeclaredProps: {},
+    identifiers: opts.identifiers,
+    properties: opts.properties,
+    wildcard: opts.wildcard
+  }
+
+  <span class="comment">// Parse if `src` is not already an AST.</span>
+  <span class="keyword">var</span> ast = <span class="keyword">typeof</span> src === <span class="string">'object'</span> &amp;&amp; src !== <span class="literal">null</span> &amp;&amp; <span class="keyword">typeof</span> src.type === <span class="string">'string'</span>
+    ? src
+    : acorn.parse(src)
+
+  <span class="keyword">var</span> parents = []
+  dash(ast, {
+    enter: <span class="function"><span class="keyword">function</span> <span class="params">(node, parent)</span> {</span>
+      <span class="keyword">if</span> (parent) parents.push(parent)
+      <span class="keyword">var</span> visit = scopeVisitor[node.type]
+      <span class="keyword">if</span> (visit) visit(node, state, parents)
+    },
+    leave: <span class="function"><span class="keyword">function</span> <span class="params">(node, parent)</span> {</span>
+      <span class="keyword">var</span> visit = bindingVisitor[node.type]
+      <span class="keyword">if</span> (visit) visit(node, state, parents)
+      <span class="keyword">if</span> (parent) parents.pop()
+    }
+  })
+
+  <span class="keyword">return</span> {
+    identifiers: Object.keys(state.undeclared),
+    properties: Object.keys(state.undeclaredProps)
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">getScopeNode</span> <span class="params">(parents, kind)</span> {</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = parents.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+    <span class="keyword">if</span> (parents[i].type === <span class="string">'FunctionDeclaration'</span> || parents[i].type === <span class="string">'FunctionExpression'</span> ||
+        parents[i].type === <span class="string">'ArrowFunctionExpression'</span> || parents[i].type === <span class="string">'Program'</span>) {
+      <span class="keyword">return</span> parents[i]
+    }
+    <span class="keyword">if</span> (kind !== <span class="string">'var'</span> &amp;&amp; parents[i].type === <span class="string">'BlockStatement'</span>) {
+      <span class="keyword">return</span> parents[i]
+    }
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">declareNames</span> <span class="params">(node, names)</span> {</span>
+  <span class="keyword">if</span> (node._names === <span class="literal">undefined</span>) {
+    node._names = Object.create(<span class="literal">null</span>)
+  }
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; names.length; i++) {
+    node._names[names[i].name] = <span class="literal">true</span>
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">has</span> <span class="params">(obj, name)</span> {</span> <span class="keyword">return</span> Object.prototype.hasOwnProperty.call(obj, name) }
+</code></pre>

@@ -1,0 +1,248 @@
+<h1>async.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> core = require(<span class="string">'./core'</span>);
+<span class="keyword">var</span> fs = require(<span class="string">'fs'</span>);
+<span class="keyword">var</span> path = require(<span class="string">'path'</span>);
+<span class="keyword">var</span> caller = require(<span class="string">'./caller.js'</span>);
+<span class="keyword">var</span> nodeModulesPaths = require(<span class="string">'./node-modules-paths.js'</span>);
+<span class="keyword">var</span> normalizeOptions = require(<span class="string">'./normalize-options.js'</span>);
+
+<span class="keyword">var</span> defaultIsFile = <span class="function"><span class="keyword">function</span> <span class="title">isFile</span><span class="params">(file, cb)</span> {</span>
+    fs.stat(file, <span class="function"><span class="keyword">function</span> <span class="params">(err, stat)</span> {</span>
+        <span class="keyword">if</span> (!err) {
+            <span class="keyword">return</span> cb(<span class="literal">null</span>, stat.isFile() || stat.isFIFO());
+        }
+        <span class="keyword">if</span> (err.code === <span class="string">'ENOENT'</span> || err.code === <span class="string">'ENOTDIR'</span>) <span class="keyword">return</span> cb(<span class="literal">null</span>, <span class="literal">false</span>);
+        <span class="keyword">return</span> cb(err);
+    });
+};
+
+<span class="keyword">var</span> defaultIsDir = <span class="function"><span class="keyword">function</span> <span class="title">isDirectory</span><span class="params">(dir, cb)</span> {</span>
+    fs.stat(dir, <span class="function"><span class="keyword">function</span> <span class="params">(err, stat)</span> {</span>
+        <span class="keyword">if</span> (!err) {
+            <span class="keyword">return</span> cb(<span class="literal">null</span>, stat.isDirectory());
+        }
+        <span class="keyword">if</span> (err.code === <span class="string">'ENOENT'</span> || err.code === <span class="string">'ENOTDIR'</span>) <span class="keyword">return</span> cb(<span class="literal">null</span>, <span class="literal">false</span>);
+        <span class="keyword">return</span> cb(err);
+    });
+};
+
+module.exports = <span class="function"><span class="keyword">function</span> <span class="title">resolve</span><span class="params">(x, options, callback)</span> {</span>
+    <span class="keyword">var</span> cb = callback;
+    <span class="keyword">var</span> opts = options;
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> options === <span class="string">'function'</span>) {
+        cb = opts;
+        opts = {};
+    }
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> x !== <span class="string">'string'</span>) {
+        <span class="keyword">var</span> err = <span class="keyword">new</span> TypeError(<span class="string">'Path must be a string.'</span>);
+        <span class="keyword">return</span> process.nextTick(<span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+            cb(err);
+        });
+    }
+
+    opts = normalizeOptions(x, opts);
+
+    <span class="keyword">var</span> isFile = opts.isFile || defaultIsFile;
+    <span class="keyword">var</span> isDirectory = opts.isDirectory || defaultIsDir;
+    <span class="keyword">var</span> readFile = opts.readFile || fs.readFile;
+
+    <span class="keyword">var</span> extensions = opts.extensions || [<span class="string">'.js'</span>];
+    <span class="keyword">var</span> basedir = opts.basedir || path.dirname(caller());
+    <span class="keyword">var</span> parent = opts.filename || basedir;
+
+    opts.paths = opts.paths || [];
+
+    <span class="comment">// ensure that `basedir` is an absolute path at this point, resolving against the process' current working directory</span>
+    <span class="keyword">var</span> absoluteStart = path.resolve(basedir);
+
+    <span class="keyword">if</span> (opts.preserveSymlinks === <span class="literal">false</span>) {
+        fs.realpath(absoluteStart, <span class="function"><span class="keyword">function</span> <span class="params">(realPathErr, realStart)</span> {</span>
+            <span class="keyword">if</span> (realPathErr &amp;&amp; realPathErr.code !== <span class="string">'ENOENT'</span>) cb(err);
+            <span class="keyword">else</span> init(realPathErr ? absoluteStart : realStart);
+        });
+    } <span class="keyword">else</span> {
+        init(absoluteStart);
+    }
+
+    <span class="keyword">var</span> res;
+    <span class="function"><span class="keyword">function</span> <span class="title">init</span><span class="params">(basedir)</span> {</span>
+        <span class="keyword">if</span> ((<span class="regexp">/^(?:\.\.?(?:\/|$)|\/|([A-Za-z]:)?[/</span>\\])/).test(x)) {
+            res = path.resolve(basedir, x);
+            <span class="keyword">if</span> (x === <span class="string">'..'</span> || x.slice(-<span class="number">1</span>) === <span class="string">'/'</span>) res += <span class="string">'/'</span>;
+            <span class="keyword">if</span> ((<span class="regexp">/\/$/</span>).test(x) &amp;&amp; res === basedir) {
+                loadAsDirectory(res, opts.package, onfile);
+            } <span class="keyword">else</span> loadAsFile(res, opts.package, onfile);
+        } <span class="keyword">else</span> loadNodeModules(x, basedir, <span class="function"><span class="keyword">function</span> <span class="params">(err, n, pkg)</span> {</span>
+            <span class="keyword">if</span> (err) cb(err);
+            <span class="keyword">else</span> <span class="keyword">if</span> (core[x]) <span class="keyword">return</span> cb(<span class="literal">null</span>, x);
+            <span class="keyword">else</span> <span class="keyword">if</span> (n) cb(<span class="literal">null</span>, n, pkg);
+            <span class="keyword">else</span> {
+                <span class="keyword">var</span> moduleError = <span class="keyword">new</span> Error(<span class="string">"Cannot find module '"</span> + x + <span class="string">"' from '"</span> + parent + <span class="string">"'"</span>);
+                moduleError.code = <span class="string">'MODULE_NOT_FOUND'</span>;
+                cb(moduleError);
+            }
+        });
+    }
+
+    <span class="function"><span class="keyword">function</span> <span class="title">onfile</span><span class="params">(err, m, pkg)</span> {</span>
+        <span class="keyword">if</span> (err) cb(err);
+        <span class="keyword">else</span> <span class="keyword">if</span> (m) cb(<span class="literal">null</span>, m, pkg);
+        <span class="keyword">else</span> loadAsDirectory(res, <span class="function"><span class="keyword">function</span> <span class="params">(err, d, pkg)</span> {</span>
+            <span class="keyword">if</span> (err) cb(err);
+            <span class="keyword">else</span> <span class="keyword">if</span> (d) cb(<span class="literal">null</span>, d, pkg);
+            <span class="keyword">else</span> {
+                <span class="keyword">var</span> moduleError = <span class="keyword">new</span> Error(<span class="string">"Cannot find module '"</span> + x + <span class="string">"' from '"</span> + parent + <span class="string">"'"</span>);
+                moduleError.code = <span class="string">'MODULE_NOT_FOUND'</span>;
+                cb(moduleError);
+            }
+        });
+    }
+
+    <span class="function"><span class="keyword">function</span> <span class="title">loadAsFile</span><span class="params">(x, thePackage, callback)</span> {</span>
+        <span class="keyword">var</span> loadAsFilePackage = thePackage;
+        <span class="keyword">var</span> cb = callback;
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> loadAsFilePackage === <span class="string">'function'</span>) {
+            cb = loadAsFilePackage;
+            loadAsFilePackage = <span class="literal">undefined</span>;
+        }
+
+        <span class="keyword">var</span> exts = [<span class="string">''</span>].concat(extensions);
+        load(exts, x, loadAsFilePackage);
+
+        <span class="function"><span class="keyword">function</span> <span class="title">load</span><span class="params">(exts, x, loadPackage)</span> {</span>
+            <span class="keyword">if</span> (exts.length === <span class="number">0</span>) <span class="keyword">return</span> cb(<span class="literal">null</span>, <span class="literal">undefined</span>, loadPackage);
+            <span class="keyword">var</span> file = x + exts[<span class="number">0</span>];
+
+            <span class="keyword">var</span> pkg = loadPackage;
+            <span class="keyword">if</span> (pkg) onpkg(<span class="literal">null</span>, pkg);
+            <span class="keyword">else</span> loadpkg(path.dirname(file), onpkg);
+
+            <span class="function"><span class="keyword">function</span> <span class="title">onpkg</span><span class="params">(err, pkg_, dir)</span> {</span>
+                pkg = pkg_;
+                <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+                <span class="keyword">if</span> (dir &amp;&amp; pkg &amp;&amp; opts.pathFilter) {
+                    <span class="keyword">var</span> rfile = path.relative(dir, file);
+                    <span class="keyword">var</span> rel = rfile.slice(<span class="number">0</span>, rfile.length - exts[<span class="number">0</span>].length);
+                    <span class="keyword">var</span> r = opts.pathFilter(pkg, x, rel);
+                    <span class="keyword">if</span> (r) <span class="keyword">return</span> load(
+                        [<span class="string">''</span>].concat(extensions.slice()),
+                        path.resolve(dir, r),
+                        pkg
+                    );
+                }
+                isFile(file, onex);
+            }
+            <span class="function"><span class="keyword">function</span> <span class="title">onex</span><span class="params">(err, ex)</span> {</span>
+                <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+                <span class="keyword">if</span> (ex) <span class="keyword">return</span> cb(<span class="literal">null</span>, file, pkg);
+                load(exts.slice(<span class="number">1</span>), x, pkg);
+            }
+        }
+    }
+
+    <span class="function"><span class="keyword">function</span> <span class="title">loadpkg</span><span class="params">(dir, cb)</span> {</span>
+        <span class="keyword">if</span> (dir === <span class="string">''</span> || dir === <span class="string">'/'</span>) <span class="keyword">return</span> cb(<span class="literal">null</span>);
+        <span class="keyword">if</span> (process.platform === <span class="string">'win32'</span> &amp;&amp; (<span class="regexp">/^\w:[/</span>\\]*$/).test(dir)) {
+            <span class="keyword">return</span> cb(<span class="literal">null</span>);
+        }
+        <span class="keyword">if</span> ((<span class="regexp">/[/</span>\\]node_modules[<span class="regexp">/\\]*$/</span>).test(dir)) <span class="keyword">return</span> cb(<span class="literal">null</span>);
+
+        <span class="keyword">var</span> pkgfile = path.join(dir, <span class="string">'package.json'</span>);
+        isFile(pkgfile, <span class="function"><span class="keyword">function</span> <span class="params">(err, ex)</span> {</span>
+            <span class="comment">// on err, ex is false</span>
+            <span class="keyword">if</span> (!ex) <span class="keyword">return</span> loadpkg(path.dirname(dir), cb);
+
+            readFile(pkgfile, <span class="function"><span class="keyword">function</span> <span class="params">(err, body)</span> {</span>
+                <span class="keyword">if</span> (err) cb(err);
+                <span class="keyword">try</span> { <span class="keyword">var</span> pkg = JSON.parse(body); } <span class="keyword">catch</span> (jsonErr) {}
+
+                <span class="keyword">if</span> (pkg &amp;&amp; opts.packageFilter) {
+                    pkg = opts.packageFilter(pkg, pkgfile);
+                }
+                cb(<span class="literal">null</span>, pkg, dir);
+            });
+        });
+    }
+
+    <span class="function"><span class="keyword">function</span> <span class="title">loadAsDirectory</span><span class="params">(x, loadAsDirectoryPackage, callback)</span> {</span>
+        <span class="keyword">var</span> cb = callback;
+        <span class="keyword">var</span> fpkg = loadAsDirectoryPackage;
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> fpkg === <span class="string">'function'</span>) {
+            cb = fpkg;
+            fpkg = opts.package;
+        }
+
+        <span class="keyword">var</span> pkgfile = path.join(x, <span class="string">'package.json'</span>);
+        isFile(pkgfile, <span class="function"><span class="keyword">function</span> <span class="params">(err, ex)</span> {</span>
+            <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+            <span class="keyword">if</span> (!ex) <span class="keyword">return</span> loadAsFile(path.join(x, <span class="string">'index'</span>), fpkg, cb);
+
+            readFile(pkgfile, <span class="function"><span class="keyword">function</span> <span class="params">(err, body)</span> {</span>
+                <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+                <span class="keyword">try</span> {
+                    <span class="keyword">var</span> pkg = JSON.parse(body);
+                } <span class="keyword">catch</span> (jsonErr) {}
+
+                <span class="keyword">if</span> (opts.packageFilter) {
+                    pkg = opts.packageFilter(pkg, pkgfile);
+                }
+
+                <span class="keyword">if</span> (pkg.main) {
+                    <span class="keyword">if</span> (<span class="keyword">typeof</span> pkg.main !== <span class="string">'string'</span>) {
+                        <span class="keyword">var</span> mainError = <span class="keyword">new</span> TypeError(<span class="string">'package “'</span> + pkg.name + <span class="string">'” `main` must be a string'</span>);
+                        mainError.code = <span class="string">'INVALID_PACKAGE_MAIN'</span>;
+                        <span class="keyword">return</span> cb(mainError);
+                    }
+                    <span class="keyword">if</span> (pkg.main === <span class="string">'.'</span> || pkg.main === <span class="string">'./'</span>) {
+                        pkg.main = <span class="string">'index'</span>;
+                    }
+                    loadAsFile(path.resolve(x, pkg.main), pkg, <span class="function"><span class="keyword">function</span> <span class="params">(err, m, pkg)</span> {</span>
+                        <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+                        <span class="keyword">if</span> (m) <span class="keyword">return</span> cb(<span class="literal">null</span>, m, pkg);
+                        <span class="keyword">if</span> (!pkg) <span class="keyword">return</span> loadAsFile(path.join(x, <span class="string">'index'</span>), pkg, cb);
+
+                        <span class="keyword">var</span> dir = path.resolve(x, pkg.main);
+                        loadAsDirectory(dir, pkg, <span class="function"><span class="keyword">function</span> <span class="params">(err, n, pkg)</span> {</span>
+                            <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+                            <span class="keyword">if</span> (n) <span class="keyword">return</span> cb(<span class="literal">null</span>, n, pkg);
+                            loadAsFile(path.join(x, <span class="string">'index'</span>), pkg, cb);
+                        });
+                    });
+                    <span class="keyword">return</span>;
+                }
+
+                loadAsFile(path.join(x, <span class="string">'/index'</span>), pkg, cb);
+            });
+        });
+    }
+
+    <span class="function"><span class="keyword">function</span> <span class="title">processDirs</span><span class="params">(cb, dirs)</span> {</span>
+        <span class="keyword">if</span> (dirs.length === <span class="number">0</span>) <span class="keyword">return</span> cb(<span class="literal">null</span>, <span class="literal">undefined</span>);
+        <span class="keyword">var</span> dir = dirs[<span class="number">0</span>];
+
+        isDirectory(dir, isdir);
+
+        <span class="function"><span class="keyword">function</span> <span class="title">isdir</span><span class="params">(err, isdir)</span> {</span>
+            <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+            <span class="keyword">if</span> (!isdir) <span class="keyword">return</span> processDirs(cb, dirs.slice(<span class="number">1</span>));
+            <span class="keyword">var</span> file = path.join(dir, x);
+            loadAsFile(file, opts.package, onfile);
+        }
+
+        <span class="function"><span class="keyword">function</span> <span class="title">onfile</span><span class="params">(err, m, pkg)</span> {</span>
+            <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+            <span class="keyword">if</span> (m) <span class="keyword">return</span> cb(<span class="literal">null</span>, m, pkg);
+            loadAsDirectory(path.join(dir, x), opts.package, ondir);
+        }
+
+        <span class="function"><span class="keyword">function</span> <span class="title">ondir</span><span class="params">(err, n, pkg)</span> {</span>
+            <span class="keyword">if</span> (err) <span class="keyword">return</span> cb(err);
+            <span class="keyword">if</span> (n) <span class="keyword">return</span> cb(<span class="literal">null</span>, n, pkg);
+            processDirs(cb, dirs.slice(<span class="number">1</span>));
+        }
+    }
+    <span class="function"><span class="keyword">function</span> <span class="title">loadNodeModules</span><span class="params">(x, start, cb)</span> {</span>
+        processDirs(cb, nodeModulesPaths(start, opts, x));
+    }
+};
+</code></pre>

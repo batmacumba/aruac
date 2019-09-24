@@ -1,0 +1,18 @@
+<h1>util.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+module.exports = {
+  isString: <span class="keyword">function</span>(arg) {
+    <span class="keyword">return</span> <span class="keyword">typeof</span>(arg) === <span class="string">'string'</span>;
+  },
+  isObject: <span class="keyword">function</span>(arg) {
+    <span class="keyword">return</span> <span class="keyword">typeof</span>(arg) === <span class="string">'object'</span> &amp;&amp; arg !== <span class="literal">null</span>;
+  },
+  isNull: <span class="keyword">function</span>(arg) {
+    <span class="keyword">return</span> arg === <span class="literal">null</span>;
+  },
+  isNullOrUndefined: <span class="keyword">function</span>(arg) {
+    <span class="keyword">return</span> arg == <span class="literal">null</span>;
+  }
+};
+</code></pre>

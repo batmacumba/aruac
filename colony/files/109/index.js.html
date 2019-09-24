@@ -1,0 +1,201 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> json = <span class="keyword">typeof</span> JSON !== <span class="literal">undefined</span> ? JSON : require(<span class="string">'jsonify'</span>);
+<span class="keyword">var</span> map = require(<span class="string">'array-map'</span>);
+<span class="keyword">var</span> filter = require(<span class="string">'array-filter'</span>);
+<span class="keyword">var</span> reduce = require(<span class="string">'array-reduce'</span>);
+
+exports.quote = <span class="function"><span class="keyword">function</span> <span class="params">(xs)</span> {</span>
+    <span class="keyword">return</span> map(xs, <span class="function"><span class="keyword">function</span> <span class="params">(s)</span> {</span>
+        <span class="keyword">if</span> (s &amp;&amp; <span class="keyword">typeof</span> s === <span class="string">'object'</span>) {
+            <span class="keyword">return</span> s.op.replace(<span class="regexp">/(.)/g</span>, <span class="string">'\\$1'</span>);
+        }
+        <span class="keyword">else</span> <span class="keyword">if</span> (<span class="regexp">/["\s]/</span>.test(s) &amp;&amp; !<span class="regexp">/'/</span>.test(s)) {
+            <span class="keyword">return</span> <span class="string">"'"</span> + s.replace(<span class="regexp">/(['\\])/g</span>, <span class="string">'\\$1'</span>) + <span class="string">"'"</span>;
+        }
+        <span class="keyword">else</span> <span class="keyword">if</span> (<span class="regexp">/["'\s]/</span>.test(s)) {
+            <span class="keyword">return</span> <span class="string">'"'</span> + s.replace(<span class="regexp">/(["\\$`!])/g</span>, <span class="string">'\\$1'</span>) + <span class="string">'"'</span>;
+        }
+        <span class="keyword">else</span> {
+            <span class="keyword">return</span> String(s).replace(<span class="regexp">/([#!"$&amp;'()*,:;&lt;=>?@\[\\\]^`{|}])/g</span>, <span class="string">'\\$1'</span>); 
+        }
+    }).join(<span class="string">' '</span>);
+};
+
+<span class="keyword">var</span> CONTROL = <span class="string">'(?:'</span> + [
+    <span class="string">'\\|\\|'</span>, <span class="string">'\\&amp;\\&amp;'</span>, <span class="string">';;'</span>, <span class="string">'\\|\\&amp;'</span>, <span class="string">'[&amp;;()|&lt;>]'</span>
+].join(<span class="string">'|'</span>) + <span class="string">')'</span>;
+<span class="keyword">var</span> META = <span class="string">'|&amp;;()&lt;> \\t'</span>;
+<span class="keyword">var</span> BAREWORD = <span class="string">'(\\\\[\'"'</span> + META + <span class="string">']|[^\\s\'"'</span> + META + <span class="string">'])+'</span>;
+<span class="keyword">var</span> SINGLE_QUOTE = <span class="string">'"((\\\\"|[^"])*?)"'</span>;
+<span class="keyword">var</span> DOUBLE_QUOTE = <span class="string">'\'((\\\\\'|[^\'])*?)\''</span>;
+
+<span class="keyword">var</span> TOKEN = <span class="string">''</span>;
+<span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; i++) {
+    TOKEN += (Math.pow(<span class="number">16</span>,<span class="number">8</span>)*Math.random()).toString(<span class="number">16</span>);
+}
+
+exports.parse = <span class="function"><span class="keyword">function</span> <span class="params">(s, env, opts)</span> {</span>
+    <span class="keyword">var</span> mapped = parse(s, env, opts);
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> env !== <span class="string">'function'</span>) <span class="keyword">return</span> mapped;
+    <span class="keyword">return</span> reduce(mapped, <span class="function"><span class="keyword">function</span> <span class="params">(acc, s)</span> {</span>
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> s === <span class="string">'object'</span>) <span class="keyword">return</span> acc.concat(s);
+        <span class="keyword">var</span> xs = s.split(RegExp(<span class="string">'('</span> + TOKEN + <span class="string">'.*?'</span> + TOKEN + <span class="string">')'</span>, <span class="string">'g'</span>));
+        <span class="keyword">if</span> (xs.length === <span class="number">1</span>) <span class="keyword">return</span> acc.concat(xs[<span class="number">0</span>]);
+        <span class="keyword">return</span> acc.concat(map(filter(xs, Boolean), <span class="function"><span class="keyword">function</span> <span class="params">(x)</span> {</span>
+            <span class="keyword">if</span> (RegExp(<span class="string">'^'</span> + TOKEN).test(x)) {
+                <span class="keyword">return</span> json.parse(x.split(TOKEN)[<span class="number">1</span>]);
+            }
+            <span class="keyword">else</span> <span class="keyword">return</span> x;
+        }));
+    }, []);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">parse</span> <span class="params">(s, env, opts)</span> {</span>
+    <span class="keyword">var</span> chunker = <span class="keyword">new</span> RegExp([
+        <span class="string">'('</span> + CONTROL + <span class="string">')'</span>, <span class="comment">// control chars</span>
+        <span class="string">'('</span> + BAREWORD + <span class="string">'|'</span> + SINGLE_QUOTE + <span class="string">'|'</span> + DOUBLE_QUOTE + <span class="string">')*'</span>
+    ].join(<span class="string">'|'</span>), <span class="string">'g'</span>);
+    <span class="keyword">var</span> match = filter(s.match(chunker), Boolean);
+    <span class="keyword">var</span> commented = <span class="literal">false</span>;
+
+    <span class="keyword">if</span> (!match) <span class="keyword">return</span> [];
+    <span class="keyword">if</span> (!env) env = {};
+    <span class="keyword">if</span> (!opts) opts = {};
+    <span class="keyword">return</span> map(match, <span class="function"><span class="keyword">function</span> <span class="params">(s, j)</span> {</span>
+        <span class="keyword">if</span> (commented) {
+            <span class="keyword">return</span>;
+        }
+        <span class="keyword">if</span> (RegExp(<span class="string">'^'</span> + CONTROL + <span class="string">'$'</span>).test(s)) {
+            <span class="keyword">return</span> { op: s };
+        }
+
+        <span class="comment">// Hand-written scanner/parser for Bash quoting rules:</span>
+        <span class="comment">//</span>
+        <span class="comment">//  1. inside single quotes, all characters are printed literally.</span>
+        <span class="comment">//  2. inside double quotes, all characters are printed literally</span>
+        <span class="comment">//     except variables prefixed by '$' and backslashes followed by</span>
+        <span class="comment">//     either a double quote or another backslash.</span>
+        <span class="comment">//  3. outside of any quotes, backslashes are treated as escape</span>
+        <span class="comment">//     characters and not printed (unless they are themselves escaped)</span>
+        <span class="comment">//  4. quote context can switch mid-token if there is no whitespace</span>
+        <span class="comment">//     between the two quote contexts (e.g. all'one'"token" parses as</span>
+        <span class="comment">//     "allonetoken")</span>
+        <span class="keyword">var</span> SQ = <span class="string">"'"</span>;
+        <span class="keyword">var</span> DQ = <span class="string">'"'</span>;
+        <span class="keyword">var</span> DS = <span class="string">'$'</span>;
+        <span class="keyword">var</span> BS = opts.escape || <span class="string">'\\'</span>;
+        <span class="keyword">var</span> quote = <span class="literal">false</span>;
+        <span class="keyword">var</span> esc = <span class="literal">false</span>;
+        <span class="keyword">var</span> out = <span class="string">''</span>;
+        <span class="keyword">var</span> isGlob = <span class="literal">false</span>;
+
+        <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>, len = s.length; i &lt; len; i++) {
+            <span class="keyword">var</span> c = s.charAt(i);
+            isGlob = isGlob || (!quote &amp;&amp; (c === <span class="string">'*'</span> || c === <span class="string">'?'</span>));
+            <span class="keyword">if</span> (esc) {
+                out += c;
+                esc = <span class="literal">false</span>;
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (quote) {
+                <span class="keyword">if</span> (c === quote) {
+                    quote = <span class="literal">false</span>;
+                }
+                <span class="keyword">else</span> <span class="keyword">if</span> (quote == SQ) {
+                    out += c;
+                }
+                <span class="keyword">else</span> { <span class="comment">// Double quote</span>
+                    <span class="keyword">if</span> (c === BS) {
+                        i += <span class="number">1</span>;
+                        c = s.charAt(i);
+                        <span class="keyword">if</span> (c === DQ || c === BS || c === DS) {
+                            out += c;
+                        } <span class="keyword">else</span> {
+                            out += BS + c;
+                        }
+                    }
+                    <span class="keyword">else</span> <span class="keyword">if</span> (c === DS) {
+                        out += parseEnvVar();
+                    }
+                    <span class="keyword">else</span> {
+                        out += c;
+                    }
+                }
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (c === DQ || c === SQ) {
+                quote = c;
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (RegExp(<span class="string">'^'</span> + CONTROL + <span class="string">'$'</span>).test(c)) {
+                <span class="keyword">return</span> { op: s };
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (RegExp(<span class="string">'^#$'</span>).test(c)) {
+                commented = <span class="literal">true</span>;
+                <span class="keyword">if</span> (out.length){
+                    <span class="keyword">return</span> [out, { comment: s.slice(i+<span class="number">1</span>) + match.slice(j+<span class="number">1</span>).join(<span class="string">' '</span>) }];
+                }
+                <span class="keyword">return</span> [{ comment: s.slice(i+<span class="number">1</span>) + match.slice(j+<span class="number">1</span>).join(<span class="string">' '</span>) }];
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (c === BS) {
+                esc = <span class="literal">true</span>;
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (c === DS) {
+                out += parseEnvVar();
+            }
+            <span class="keyword">else</span> out += c;
+        }
+
+        <span class="keyword">if</span> (isGlob) <span class="keyword">return</span> {op: <span class="string">'glob'</span>, pattern: out};
+
+        <span class="keyword">return</span> out;
+
+        <span class="function"><span class="keyword">function</span> <span class="title">parseEnvVar</span><span class="params">()</span> {</span>
+            i += <span class="number">1</span>;
+            <span class="keyword">var</span> varend, varname;
+            <span class="comment">//debugger</span>
+            <span class="keyword">if</span> (s.charAt(i) === <span class="string">'{'</span>) {
+                i += <span class="number">1</span>;
+                <span class="keyword">if</span> (s.charAt(i) === <span class="string">'}'</span>) {
+                    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">"Bad substitution: "</span> + s.substr(i - <span class="number">2</span>, <span class="number">3</span>));
+                }
+                varend = s.indexOf(<span class="string">'}'</span>, i);
+                <span class="keyword">if</span> (varend &lt; <span class="number">0</span>) {
+                    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">"Bad substitution: "</span> + s.substr(i));
+                }
+                varname = s.substr(i, varend - i);
+                i = varend;
+            }
+            <span class="keyword">else</span> <span class="keyword">if</span> (<span class="regexp">/[*@#?$!_\-]/</span>.test(s.charAt(i))) {
+                varname = s.charAt(i);
+                i += <span class="number">1</span>;
+            }
+            <span class="keyword">else</span> {
+                varend = s.substr(i).match(<span class="regexp">/[^\w\d_]/</span>);
+                <span class="keyword">if</span> (!varend) {
+                    varname = s.substr(i);
+                    i = s.length;
+                } <span class="keyword">else</span> {
+                    varname = s.substr(i, varend.index);
+                    i += varend.index - <span class="number">1</span>;
+                }
+            }
+            <span class="keyword">return</span> getVar(<span class="literal">null</span>, <span class="string">''</span>, varname);
+        }
+    })
+    <span class="comment">// finalize parsed aruments</span>
+    .reduce(<span class="keyword">function</span>(prev, arg){
+        <span class="keyword">if</span> (arg === <span class="literal">undefined</span>){
+            <span class="keyword">return</span> prev;
+        }
+        <span class="keyword">return</span> prev.concat(arg);
+    },[]);
+
+    <span class="function"><span class="keyword">function</span> <span class="title">getVar</span> <span class="params">(_, pre, key)</span> {</span>
+        <span class="keyword">var</span> r = <span class="keyword">typeof</span> env === <span class="string">'function'</span> ? env(key) : env[key];
+        <span class="keyword">if</span> (r === <span class="literal">undefined</span>) r = <span class="string">''</span>;
+
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> r === <span class="string">'object'</span>) {
+            <span class="keyword">return</span> pre + TOKEN + json.stringify(r) + TOKEN;
+        }
+        <span class="keyword">else</span> <span class="keyword">return</span> pre + r;
+    }
+}
+</code></pre>

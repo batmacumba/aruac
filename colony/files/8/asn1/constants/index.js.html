@@ -1,0 +1,21 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> constants = exports;
+
+<span class="comment">// Helper</span>
+constants._reverse = <span class="function"><span class="keyword">function</span> <span class="title">reverse</span><span class="params">(map)</span> {</span>
+  <span class="keyword">var</span> res = {};
+
+  Object.keys(map).forEach(<span class="keyword">function</span>(key) {
+    <span class="comment">// Convert key to integer if it is stringified</span>
+    <span class="keyword">if</span> ((key | <span class="number">0</span>) == key)
+      key = key | <span class="number">0</span>;
+
+    <span class="keyword">var</span> value = map[key];
+    res[value] = key;
+  });
+
+  <span class="keyword">return</span> res;
+};
+
+constants.der = require(<span class="string">'./der'</span>);
+</code></pre>

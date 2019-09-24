@@ -83,7 +83,7 @@ class App extends React.Component {
 
                     <a href="#" className="btn-menu collapse"><span/></a>
                 </div>
-                <div className="hidden-nav">
+                <div className="hidden-nav esconde-nav">
                   <nav className="navbar navbar-default">
                     <div className="container-fluid">
                       { this.state.lang == 'pt' &&

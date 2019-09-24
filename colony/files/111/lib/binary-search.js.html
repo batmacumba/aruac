@@ -1,0 +1,113 @@
+<h1>binary-search.js</h1>
+<pre><code class="lang-js"><span class="comment">/* -*- Mode: js; js-indent-level: 2; -*- */</span>
+<span class="comment">/*
+ * Copyright 2011 Mozilla Foundation and contributors
+ * Licensed under the New BSD license. See LICENSE or:
+ * http://opensource.org/licenses/BSD-3-Clause
+ */</span>
+
+exports.GREATEST_LOWER_BOUND = <span class="number">1</span>;
+exports.LEAST_UPPER_BOUND = <span class="number">2</span>;
+
+<span class="comment">/**
+ * Recursive implementation of binary search.
+ *
+ * @param aLow Indices here and lower do not contain the needle.
+ * @param aHigh Indices here and higher do not contain the needle.
+ * @param aNeedle The element being searched for.
+ * @param aHaystack The non-empty array being searched.
+ * @param aCompare Function which takes two elements and returns -1, 0, or 1.
+ * @param aBias Either 'binarySearch.GREATEST_LOWER_BOUND' or
+ *     'binarySearch.LEAST_UPPER_BOUND'. Specifies whether to return the
+ *     closest element that is smaller than or greater than the one we are
+ *     searching for, respectively, if the exact element cannot be found.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">recursiveSearch</span><span class="params">(aLow, aHigh, aNeedle, aHaystack, aCompare, aBias)</span> {</span>
+  <span class="comment">// This function terminates when one of the following is true:</span>
+  <span class="comment">//</span>
+  <span class="comment">//   1. We find the exact element we are looking for.</span>
+  <span class="comment">//</span>
+  <span class="comment">//   2. We did not find the exact element, but we can return the index of</span>
+  <span class="comment">//      the next-closest element.</span>
+  <span class="comment">//</span>
+  <span class="comment">//   3. We did not find the exact element, and there is no next-closest</span>
+  <span class="comment">//      element than the one we are searching for, so we return -1.</span>
+  <span class="keyword">var</span> mid = Math.floor((aHigh - aLow) / <span class="number">2</span>) + aLow;
+  <span class="keyword">var</span> cmp = aCompare(aNeedle, aHaystack[mid], <span class="literal">true</span>);
+  <span class="keyword">if</span> (cmp === <span class="number">0</span>) {
+    <span class="comment">// Found the element we are looking for.</span>
+    <span class="keyword">return</span> mid;
+  }
+  <span class="keyword">else</span> <span class="keyword">if</span> (cmp > <span class="number">0</span>) {
+    <span class="comment">// Our needle is greater than aHaystack[mid].</span>
+    <span class="keyword">if</span> (aHigh - mid > <span class="number">1</span>) {
+      <span class="comment">// The element is in the upper half.</span>
+      <span class="keyword">return</span> recursiveSearch(mid, aHigh, aNeedle, aHaystack, aCompare, aBias);
+    }
+
+    <span class="comment">// The exact needle element was not found in this haystack. Determine if</span>
+    <span class="comment">// we are in termination case (3) or (2) and return the appropriate thing.</span>
+    <span class="keyword">if</span> (aBias == exports.LEAST_UPPER_BOUND) {
+      <span class="keyword">return</span> aHigh &lt; aHaystack.length ? aHigh : -<span class="number">1</span>;
+    } <span class="keyword">else</span> {
+      <span class="keyword">return</span> mid;
+    }
+  }
+  <span class="keyword">else</span> {
+    <span class="comment">// Our needle is less than aHaystack[mid].</span>
+    <span class="keyword">if</span> (mid - aLow > <span class="number">1</span>) {
+      <span class="comment">// The element is in the lower half.</span>
+      <span class="keyword">return</span> recursiveSearch(aLow, mid, aNeedle, aHaystack, aCompare, aBias);
+    }
+
+    <span class="comment">// we are in termination case (3) or (2) and return the appropriate thing.</span>
+    <span class="keyword">if</span> (aBias == exports.LEAST_UPPER_BOUND) {
+      <span class="keyword">return</span> mid;
+    } <span class="keyword">else</span> {
+      <span class="keyword">return</span> aLow &lt; <span class="number">0</span> ? -<span class="number">1</span> : aLow;
+    }
+  }
+}
+
+<span class="comment">/**
+ * This is an implementation of binary search which will always try and return
+ * the index of the closest element if there is no exact hit. This is because
+ * mappings between original and generated line/col pairs are single points,
+ * and there is an implicit region between each of them, so a miss just means
+ * that you aren't on the very start of a region.
+ *
+ * @param aNeedle The element you are looking for.
+ * @param aHaystack The array that is being searched.
+ * @param aCompare A function which takes the needle and an element in the
+ *     array and returns -1, 0, or 1 depending on whether the needle is less
+ *     than, equal to, or greater than the element, respectively.
+ * @param aBias Either 'binarySearch.GREATEST_LOWER_BOUND' or
+ *     'binarySearch.LEAST_UPPER_BOUND'. Specifies whether to return the
+ *     closest element that is smaller than or greater than the one we are
+ *     searching for, respectively, if the exact element cannot be found.
+ *     Defaults to 'binarySearch.GREATEST_LOWER_BOUND'.
+ */</span>
+exports.search = <span class="function"><span class="keyword">function</span> <span class="title">search</span><span class="params">(aNeedle, aHaystack, aCompare, aBias)</span> {</span>
+  <span class="keyword">if</span> (aHaystack.length === <span class="number">0</span>) {
+    <span class="keyword">return</span> -<span class="number">1</span>;
+  }
+
+  <span class="keyword">var</span> index = recursiveSearch(-<span class="number">1</span>, aHaystack.length, aNeedle, aHaystack,
+                              aCompare, aBias || exports.GREATEST_LOWER_BOUND);
+  <span class="keyword">if</span> (index &lt; <span class="number">0</span>) {
+    <span class="keyword">return</span> -<span class="number">1</span>;
+  }
+
+  <span class="comment">// We have found either the exact element, or the next-closest element than</span>
+  <span class="comment">// the one we are searching for. However, there may be more than one such</span>
+  <span class="comment">// element. Make sure we always return the smallest of these.</span>
+  <span class="keyword">while</span> (index - <span class="number">1</span> >= <span class="number">0</span>) {
+    <span class="keyword">if</span> (aCompare(aHaystack[index], aHaystack[index - <span class="number">1</span>], <span class="literal">true</span>) !== <span class="number">0</span>) {
+      <span class="keyword">break</span>;
+    }
+    --index;
+  }
+
+  <span class="keyword">return</span> index;
+};
+</code></pre>

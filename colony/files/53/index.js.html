@@ -1,0 +1,68 @@
+<h1>index.js</h1>
+<pre><code class="lang-js">module.exports = realpath
+realpath.realpath = realpath
+realpath.sync = realpathSync
+realpath.realpathSync = realpathSync
+realpath.monkeypatch = monkeypatch
+realpath.unmonkeypatch = unmonkeypatch
+
+<span class="keyword">var</span> fs = require(<span class="string">'fs'</span>)
+<span class="keyword">var</span> origRealpath = fs.realpath
+<span class="keyword">var</span> origRealpathSync = fs.realpathSync
+
+<span class="keyword">var</span> version = process.version
+<span class="keyword">var</span> ok = <span class="regexp">/^v[0-5]\./</span>.test(version)
+<span class="keyword">var</span> old = require(<span class="string">'./old.js'</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">newError</span> <span class="params">(er)</span> {</span>
+  <span class="keyword">return</span> er &amp;&amp; er.syscall === <span class="string">'realpath'</span> &amp;&amp; (
+    er.code === <span class="string">'ELOOP'</span> ||
+    er.code === <span class="string">'ENOMEM'</span> ||
+    er.code === <span class="string">'ENAMETOOLONG'</span>
+  )
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">realpath</span> <span class="params">(p, cache, cb)</span> {</span>
+  <span class="keyword">if</span> (ok) {
+    <span class="keyword">return</span> origRealpath(p, cache, cb)
+  }
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> cache === <span class="string">'function'</span>) {
+    cb = cache
+    cache = <span class="literal">null</span>
+  }
+  origRealpath(p, cache, <span class="function"><span class="keyword">function</span> <span class="params">(er, result)</span> {</span>
+    <span class="keyword">if</span> (newError(er)) {
+      old.realpath(p, cache, cb)
+    } <span class="keyword">else</span> {
+      cb(er, result)
+    }
+  })
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">realpathSync</span> <span class="params">(p, cache)</span> {</span>
+  <span class="keyword">if</span> (ok) {
+    <span class="keyword">return</span> origRealpathSync(p, cache)
+  }
+
+  <span class="keyword">try</span> {
+    <span class="keyword">return</span> origRealpathSync(p, cache)
+  } <span class="keyword">catch</span> (er) {
+    <span class="keyword">if</span> (newError(er)) {
+      <span class="keyword">return</span> old.realpathSync(p, cache)
+    } <span class="keyword">else</span> {
+      <span class="keyword">throw</span> er
+    }
+  }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">monkeypatch</span> <span class="params">()</span> {</span>
+  fs.realpath = realpath
+  fs.realpathSync = realpathSync
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">unmonkeypatch</span> <span class="params">()</span> {</span>
+  fs.realpath = origRealpath
+  fs.realpathSync = origRealpathSync
+}
+</code></pre>

@@ -1,0 +1,347 @@
+<h1>inffast.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="comment">// (C) 1995-2013 Jean-loup Gailly and Mark Adler</span>
+<span class="comment">// (C) 2014-2017 Vitaly Puzrin and Andrey Tupitsin</span>
+<span class="comment">//</span>
+<span class="comment">// This software is provided 'as-is', without any express or implied</span>
+<span class="comment">// warranty. In no event will the authors be held liable for any damages</span>
+<span class="comment">// arising from the use of this software.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is granted to anyone to use this software for any purpose,</span>
+<span class="comment">// including commercial applications, and to alter it and redistribute it</span>
+<span class="comment">// freely, subject to the following restrictions:</span>
+<span class="comment">//</span>
+<span class="comment">// 1. The origin of this software must not be misrepresented; you must not</span>
+<span class="comment">//   claim that you wrote the original software. If you use this software</span>
+<span class="comment">//   in a product, an acknowledgment in the product documentation would be</span>
+<span class="comment">//   appreciated but is not required.</span>
+<span class="comment">// 2. Altered source versions must be plainly marked as such, and must not be</span>
+<span class="comment">//   misrepresented as being the original software.</span>
+<span class="comment">// 3. This notice may not be removed or altered from any source distribution.</span>
+
+<span class="comment">// See state defs from inflate.js</span>
+<span class="keyword">var</span> BAD = <span class="number">30</span>;       <span class="comment">/* got a data error -- remain here until reset */</span>
+<span class="keyword">var</span> TYPE = <span class="number">12</span>;      <span class="comment">/* i: waiting for type bits, including last-flag bit */</span>
+
+<span class="comment">/*
+   Decode literal, length, and distance codes and write out the resulting
+   literal and match bytes until either not enough input or output is
+   available, an end-of-block is encountered, or a data error is encountered.
+   When large enough input and output buffers are supplied to inflate(), for
+   example, a 16K input buffer and a 64K output buffer, more than 95% of the
+   inflate execution time is spent in this routine.
+
+   Entry assumptions:
+
+        state.mode === LEN
+        strm.avail_in >= 6
+        strm.avail_out >= 258
+        start >= strm.avail_out
+        state.bits &lt; 8
+
+   On return, state.mode is one of:
+
+        LEN -- ran out of enough output space or enough available input
+        TYPE -- reached end of block code, inflate() to interpret next block
+        BAD -- error in block data
+
+   Notes:
+
+    - The maximum input bits used by a length/distance pair is 15 bits for the
+      length code, 5 bits for the length extra, 15 bits for the distance code,
+      and 13 bits for the distance extra.  This totals 48 bits, or six bytes.
+      Therefore if strm.avail_in >= 6, then there is enough input to avoid
+      checking for available input while decoding.
+
+    - The maximum bytes that a single length/distance pair can output is 258
+      bytes, which is the maximum length that can be coded.  inflate_fast()
+      requires strm.avail_out >= 258 for each loop to avoid checking for
+      output space.
+ */</span>
+module.exports = <span class="function"><span class="keyword">function</span> <span class="title">inflate_fast</span><span class="params">(strm, start)</span> {</span>
+  <span class="keyword">var</span> state;
+  <span class="keyword">var</span> _<span class="keyword">in</span>;                    <span class="comment">/* local strm.input */</span>
+  <span class="keyword">var</span> last;                   <span class="comment">/* have enough input while in &lt; last */</span>
+  <span class="keyword">var</span> _out;                   <span class="comment">/* local strm.output */</span>
+  <span class="keyword">var</span> beg;                    <span class="comment">/* inflate()'s initial strm.output */</span>
+  <span class="keyword">var</span> end;                    <span class="comment">/* while out &lt; end, enough space available */</span>
+<span class="comment">//#ifdef INFLATE_STRICT</span>
+  <span class="keyword">var</span> dmax;                   <span class="comment">/* maximum distance from zlib header */</span>
+<span class="comment">//#endif</span>
+  <span class="keyword">var</span> wsize;                  <span class="comment">/* window size or zero if not using window */</span>
+  <span class="keyword">var</span> whave;                  <span class="comment">/* valid bytes in the window */</span>
+  <span class="keyword">var</span> wnext;                  <span class="comment">/* window write index */</span>
+  <span class="comment">// Use `s_window` instead `window`, avoid conflict with instrumentation tools</span>
+  <span class="keyword">var</span> s_window;               <span class="comment">/* allocated sliding window, if wsize != 0 */</span>
+  <span class="keyword">var</span> hold;                   <span class="comment">/* local strm.hold */</span>
+  <span class="keyword">var</span> bits;                   <span class="comment">/* local strm.bits */</span>
+  <span class="keyword">var</span> lcode;                  <span class="comment">/* local strm.lencode */</span>
+  <span class="keyword">var</span> dcode;                  <span class="comment">/* local strm.distcode */</span>
+  <span class="keyword">var</span> lmask;                  <span class="comment">/* mask for first level of length codes */</span>
+  <span class="keyword">var</span> dmask;                  <span class="comment">/* mask for first level of distance codes */</span>
+  <span class="keyword">var</span> here;                   <span class="comment">/* retrieved table entry */</span>
+  <span class="keyword">var</span> op;                     <span class="comment">/* code bits, operation, extra bits, or */</span>
+                              <span class="comment">/*  window position, window bytes to copy */</span>
+  <span class="keyword">var</span> len;                    <span class="comment">/* match length, unused bytes */</span>
+  <span class="keyword">var</span> dist;                   <span class="comment">/* match distance */</span>
+  <span class="keyword">var</span> from;                   <span class="comment">/* where to copy match from */</span>
+  <span class="keyword">var</span> from_source;
+
+
+  <span class="keyword">var</span> input, output; <span class="comment">// JS specific, because we have no pointers</span>
+
+  <span class="comment">/* copy state to local variables */</span>
+  state = strm.state;
+  <span class="comment">//here = state.here;</span>
+  _<span class="keyword">in</span> = strm.next_in;
+  input = strm.input;
+  last = _<span class="keyword">in</span> + (strm.avail_in - <span class="number">5</span>);
+  _out = strm.next_out;
+  output = strm.output;
+  beg = _out - (start - strm.avail_out);
+  end = _out + (strm.avail_out - <span class="number">257</span>);
+<span class="comment">//#ifdef INFLATE_STRICT</span>
+  dmax = state.dmax;
+<span class="comment">//#endif</span>
+  wsize = state.wsize;
+  whave = state.whave;
+  wnext = state.wnext;
+  s_window = state.window;
+  hold = state.hold;
+  bits = state.bits;
+  lcode = state.lencode;
+  dcode = state.distcode;
+  lmask = (<span class="number">1</span> &lt;&lt; state.lenbits) - <span class="number">1</span>;
+  dmask = (<span class="number">1</span> &lt;&lt; state.distbits) - <span class="number">1</span>;
+
+
+  <span class="comment">/* decode literals and length/distances until end-of-block or not enough
+     input data or output space */</span>
+
+  top:
+  <span class="keyword">do</span> {
+    <span class="keyword">if</span> (bits &lt; <span class="number">15</span>) {
+      hold += input[_<span class="keyword">in</span>++] &lt;&lt; bits;
+      bits += <span class="number">8</span>;
+      hold += input[_<span class="keyword">in</span>++] &lt;&lt; bits;
+      bits += <span class="number">8</span>;
+    }
+
+    here = lcode[hold &amp; lmask];
+
+    dolen:
+    <span class="keyword">for</span> (;;) { <span class="comment">// Goto emulation</span>
+      op = here >>> <span class="number">24</span><span class="comment">/*here.bits*/</span>;
+      hold >>>= op;
+      bits -= op;
+      op = (here >>> <span class="number">16</span>) &amp; <span class="number">0xff</span><span class="comment">/*here.op*/</span>;
+      <span class="keyword">if</span> (op === <span class="number">0</span>) {                          <span class="comment">/* literal */</span>
+        <span class="comment">//Tracevv((stderr, here.val >= 0x20 &amp;&amp; here.val &lt; 0x7f ?</span>
+        <span class="comment">//        "inflate:         literal '%c'\n" :</span>
+        <span class="comment">//        "inflate:         literal 0x%02x\n", here.val));</span>
+        output[_out++] = here &amp; <span class="number">0xffff</span><span class="comment">/*here.val*/</span>;
+      }
+      <span class="keyword">else</span> <span class="keyword">if</span> (op &amp; <span class="number">16</span>) {                     <span class="comment">/* length base */</span>
+        len = here &amp; <span class="number">0xffff</span><span class="comment">/*here.val*/</span>;
+        op &amp;= <span class="number">15</span>;                           <span class="comment">/* number of extra bits */</span>
+        <span class="keyword">if</span> (op) {
+          <span class="keyword">if</span> (bits &lt; op) {
+            hold += input[_<span class="keyword">in</span>++] &lt;&lt; bits;
+            bits += <span class="number">8</span>;
+          }
+          len += hold &amp; ((<span class="number">1</span> &lt;&lt; op) - <span class="number">1</span>);
+          hold >>>= op;
+          bits -= op;
+        }
+        <span class="comment">//Tracevv((stderr, "inflate:         length %u\n", len));</span>
+        <span class="keyword">if</span> (bits &lt; <span class="number">15</span>) {
+          hold += input[_<span class="keyword">in</span>++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+          hold += input[_<span class="keyword">in</span>++] &lt;&lt; bits;
+          bits += <span class="number">8</span>;
+        }
+        here = dcode[hold &amp; dmask];
+
+        dodist:
+        <span class="keyword">for</span> (;;) { <span class="comment">// goto emulation</span>
+          op = here >>> <span class="number">24</span><span class="comment">/*here.bits*/</span>;
+          hold >>>= op;
+          bits -= op;
+          op = (here >>> <span class="number">16</span>) &amp; <span class="number">0xff</span><span class="comment">/*here.op*/</span>;
+
+          <span class="keyword">if</span> (op &amp; <span class="number">16</span>) {                      <span class="comment">/* distance base */</span>
+            dist = here &amp; <span class="number">0xffff</span><span class="comment">/*here.val*/</span>;
+            op &amp;= <span class="number">15</span>;                       <span class="comment">/* number of extra bits */</span>
+            <span class="keyword">if</span> (bits &lt; op) {
+              hold += input[_<span class="keyword">in</span>++] &lt;&lt; bits;
+              bits += <span class="number">8</span>;
+              <span class="keyword">if</span> (bits &lt; op) {
+                hold += input[_<span class="keyword">in</span>++] &lt;&lt; bits;
+                bits += <span class="number">8</span>;
+              }
+            }
+            dist += hold &amp; ((<span class="number">1</span> &lt;&lt; op) - <span class="number">1</span>);
+<span class="comment">//#ifdef INFLATE_STRICT</span>
+            <span class="keyword">if</span> (dist > dmax) {
+              strm.msg = <span class="string">'invalid distance too far back'</span>;
+              state.mode = BAD;
+              <span class="keyword">break</span> top;
+            }
+<span class="comment">//#endif</span>
+            hold >>>= op;
+            bits -= op;
+            <span class="comment">//Tracevv((stderr, "inflate:         distance %u\n", dist));</span>
+            op = _out - beg;                <span class="comment">/* max distance in output */</span>
+            <span class="keyword">if</span> (dist > op) {                <span class="comment">/* see if copy from window */</span>
+              op = dist - op;               <span class="comment">/* distance back in window */</span>
+              <span class="keyword">if</span> (op > whave) {
+                <span class="keyword">if</span> (state.sane) {
+                  strm.msg = <span class="string">'invalid distance too far back'</span>;
+                  state.mode = BAD;
+                  <span class="keyword">break</span> top;
+                }
+
+<span class="comment">// (!) This block is disabled in zlib defaults,</span>
+<span class="comment">// don't enable it for binary compatibility</span>
+<span class="comment">//#ifdef INFLATE_ALLOW_INVALID_DISTANCE_TOOFAR_ARRR</span>
+<span class="comment">//                if (len &lt;= op - whave) {</span>
+<span class="comment">//                  do {</span>
+<span class="comment">//                    output[_out++] = 0;</span>
+<span class="comment">//                  } while (--len);</span>
+<span class="comment">//                  continue top;</span>
+<span class="comment">//                }</span>
+<span class="comment">//                len -= op - whave;</span>
+<span class="comment">//                do {</span>
+<span class="comment">//                  output[_out++] = 0;</span>
+<span class="comment">//                } while (--op > whave);</span>
+<span class="comment">//                if (op === 0) {</span>
+<span class="comment">//                  from = _out - dist;</span>
+<span class="comment">//                  do {</span>
+<span class="comment">//                    output[_out++] = output[from++];</span>
+<span class="comment">//                  } while (--len);</span>
+<span class="comment">//                  continue top;</span>
+<span class="comment">//                }</span>
+<span class="comment">//#endif</span>
+              }
+              from = <span class="number">0</span>; <span class="comment">// window index</span>
+              from_source = s_window;
+              <span class="keyword">if</span> (wnext === <span class="number">0</span>) {           <span class="comment">/* very common case */</span>
+                from += wsize - op;
+                <span class="keyword">if</span> (op &lt; len) {         <span class="comment">/* some from window */</span>
+                  len -= op;
+                  <span class="keyword">do</span> {
+                    output[_out++] = s_window[from++];
+                  } <span class="keyword">while</span> (--op);
+                  from = _out - dist;  <span class="comment">/* rest from output */</span>
+                  from_source = output;
+                }
+              }
+              <span class="keyword">else</span> <span class="keyword">if</span> (wnext &lt; op) {      <span class="comment">/* wrap around window */</span>
+                from += wsize + wnext - op;
+                op -= wnext;
+                <span class="keyword">if</span> (op &lt; len) {         <span class="comment">/* some from end of window */</span>
+                  len -= op;
+                  <span class="keyword">do</span> {
+                    output[_out++] = s_window[from++];
+                  } <span class="keyword">while</span> (--op);
+                  from = <span class="number">0</span>;
+                  <span class="keyword">if</span> (wnext &lt; len) {  <span class="comment">/* some from start of window */</span>
+                    op = wnext;
+                    len -= op;
+                    <span class="keyword">do</span> {
+                      output[_out++] = s_window[from++];
+                    } <span class="keyword">while</span> (--op);
+                    from = _out - dist;      <span class="comment">/* rest from output */</span>
+                    from_source = output;
+                  }
+                }
+              }
+              <span class="keyword">else</span> {                      <span class="comment">/* contiguous in window */</span>
+                from += wnext - op;
+                <span class="keyword">if</span> (op &lt; len) {         <span class="comment">/* some from window */</span>
+                  len -= op;
+                  <span class="keyword">do</span> {
+                    output[_out++] = s_window[from++];
+                  } <span class="keyword">while</span> (--op);
+                  from = _out - dist;  <span class="comment">/* rest from output */</span>
+                  from_source = output;
+                }
+              }
+              <span class="keyword">while</span> (len > <span class="number">2</span>) {
+                output[_out++] = from_source[from++];
+                output[_out++] = from_source[from++];
+                output[_out++] = from_source[from++];
+                len -= <span class="number">3</span>;
+              }
+              <span class="keyword">if</span> (len) {
+                output[_out++] = from_source[from++];
+                <span class="keyword">if</span> (len > <span class="number">1</span>) {
+                  output[_out++] = from_source[from++];
+                }
+              }
+            }
+            <span class="keyword">else</span> {
+              from = _out - dist;          <span class="comment">/* copy direct from output */</span>
+              <span class="keyword">do</span> {                        <span class="comment">/* minimum length is three */</span>
+                output[_out++] = output[from++];
+                output[_out++] = output[from++];
+                output[_out++] = output[from++];
+                len -= <span class="number">3</span>;
+              } <span class="keyword">while</span> (len > <span class="number">2</span>);
+              <span class="keyword">if</span> (len) {
+                output[_out++] = output[from++];
+                <span class="keyword">if</span> (len > <span class="number">1</span>) {
+                  output[_out++] = output[from++];
+                }
+              }
+            }
+          }
+          <span class="keyword">else</span> <span class="keyword">if</span> ((op &amp; <span class="number">64</span>) === <span class="number">0</span>) {          <span class="comment">/* 2nd level distance code */</span>
+            here = dcode[(here &amp; <span class="number">0xffff</span>)<span class="comment">/*here.val*/</span> + (hold &amp; ((<span class="number">1</span> &lt;&lt; op) - <span class="number">1</span>))];
+            <span class="keyword">continue</span> dodist;
+          }
+          <span class="keyword">else</span> {
+            strm.msg = <span class="string">'invalid distance code'</span>;
+            state.mode = BAD;
+            <span class="keyword">break</span> top;
+          }
+
+          <span class="keyword">break</span>; <span class="comment">// need to emulate goto via "continue"</span>
+        }
+      }
+      <span class="keyword">else</span> <span class="keyword">if</span> ((op &amp; <span class="number">64</span>) === <span class="number">0</span>) {              <span class="comment">/* 2nd level length code */</span>
+        here = lcode[(here &amp; <span class="number">0xffff</span>)<span class="comment">/*here.val*/</span> + (hold &amp; ((<span class="number">1</span> &lt;&lt; op) - <span class="number">1</span>))];
+        <span class="keyword">continue</span> dolen;
+      }
+      <span class="keyword">else</span> <span class="keyword">if</span> (op &amp; <span class="number">32</span>) {                     <span class="comment">/* end-of-block */</span>
+        <span class="comment">//Tracevv((stderr, "inflate:         end of block\n"));</span>
+        state.mode = TYPE;
+        <span class="keyword">break</span> top;
+      }
+      <span class="keyword">else</span> {
+        strm.msg = <span class="string">'invalid literal/length code'</span>;
+        state.mode = BAD;
+        <span class="keyword">break</span> top;
+      }
+
+      <span class="keyword">break</span>; <span class="comment">// need to emulate goto via "continue"</span>
+    }
+  } <span class="keyword">while</span> (_<span class="keyword">in</span> &lt; last &amp;&amp; _out &lt; end);
+
+  <span class="comment">/* return unused bytes (on entry, bits &lt; 8, so in won't go too far back) */</span>
+  len = bits >> <span class="number">3</span>;
+  _<span class="keyword">in</span> -= len;
+  bits -= len &lt;&lt; <span class="number">3</span>;
+  hold &amp;= (<span class="number">1</span> &lt;&lt; bits) - <span class="number">1</span>;
+
+  <span class="comment">/* update state and return */</span>
+  strm.next_in = _<span class="keyword">in</span>;
+  strm.next_out = _out;
+  strm.avail_in = (_<span class="keyword">in</span> &lt; last ? <span class="number">5</span> + (last - _<span class="keyword">in</span>) : <span class="number">5</span> - (_<span class="keyword">in</span> - last));
+  strm.avail_out = (_out &lt; end ? <span class="number">257</span> + (end - _out) : <span class="number">257</span> - (_out - end));
+  state.hold = hold;
+  state.bits = bits;
+  <span class="keyword">return</span>;
+};
+</code></pre>

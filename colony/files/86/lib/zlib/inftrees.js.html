@@ -1,0 +1,345 @@
+<h1>inftrees.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="comment">// (C) 1995-2013 Jean-loup Gailly and Mark Adler</span>
+<span class="comment">// (C) 2014-2017 Vitaly Puzrin and Andrey Tupitsin</span>
+<span class="comment">//</span>
+<span class="comment">// This software is provided 'as-is', without any express or implied</span>
+<span class="comment">// warranty. In no event will the authors be held liable for any damages</span>
+<span class="comment">// arising from the use of this software.</span>
+<span class="comment">//</span>
+<span class="comment">// Permission is granted to anyone to use this software for any purpose,</span>
+<span class="comment">// including commercial applications, and to alter it and redistribute it</span>
+<span class="comment">// freely, subject to the following restrictions:</span>
+<span class="comment">//</span>
+<span class="comment">// 1. The origin of this software must not be misrepresented; you must not</span>
+<span class="comment">//   claim that you wrote the original software. If you use this software</span>
+<span class="comment">//   in a product, an acknowledgment in the product documentation would be</span>
+<span class="comment">//   appreciated but is not required.</span>
+<span class="comment">// 2. Altered source versions must be plainly marked as such, and must not be</span>
+<span class="comment">//   misrepresented as being the original software.</span>
+<span class="comment">// 3. This notice may not be removed or altered from any source distribution.</span>
+
+<span class="keyword">var</span> utils = require(<span class="string">'../utils/common'</span>);
+
+<span class="keyword">var</span> MAXBITS = <span class="number">15</span>;
+<span class="keyword">var</span> ENOUGH_LENS = <span class="number">852</span>;
+<span class="keyword">var</span> ENOUGH_DISTS = <span class="number">592</span>;
+<span class="comment">//var ENOUGH = (ENOUGH_LENS+ENOUGH_DISTS);</span>
+
+<span class="keyword">var</span> CODES = <span class="number">0</span>;
+<span class="keyword">var</span> LENS = <span class="number">1</span>;
+<span class="keyword">var</span> DISTS = <span class="number">2</span>;
+
+<span class="keyword">var</span> lbase = [ <span class="comment">/* Length codes 257..285 base */</span>
+  <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">15</span>, <span class="number">17</span>, <span class="number">19</span>, <span class="number">23</span>, <span class="number">27</span>, <span class="number">31</span>,
+  <span class="number">35</span>, <span class="number">43</span>, <span class="number">51</span>, <span class="number">59</span>, <span class="number">67</span>, <span class="number">83</span>, <span class="number">99</span>, <span class="number">115</span>, <span class="number">131</span>, <span class="number">163</span>, <span class="number">195</span>, <span class="number">227</span>, <span class="number">258</span>, <span class="number">0</span>, <span class="number">0</span>
+];
+
+<span class="keyword">var</span> lext = [ <span class="comment">/* Length codes 257..285 extra */</span>
+  <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">17</span>, <span class="number">17</span>, <span class="number">17</span>, <span class="number">17</span>, <span class="number">18</span>, <span class="number">18</span>, <span class="number">18</span>, <span class="number">18</span>,
+  <span class="number">19</span>, <span class="number">19</span>, <span class="number">19</span>, <span class="number">19</span>, <span class="number">20</span>, <span class="number">20</span>, <span class="number">20</span>, <span class="number">20</span>, <span class="number">21</span>, <span class="number">21</span>, <span class="number">21</span>, <span class="number">21</span>, <span class="number">16</span>, <span class="number">72</span>, <span class="number">78</span>
+];
+
+<span class="keyword">var</span> dbase = [ <span class="comment">/* Distance codes 0..29 base */</span>
+  <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">13</span>, <span class="number">17</span>, <span class="number">25</span>, <span class="number">33</span>, <span class="number">49</span>, <span class="number">65</span>, <span class="number">97</span>, <span class="number">129</span>, <span class="number">193</span>,
+  <span class="number">257</span>, <span class="number">385</span>, <span class="number">513</span>, <span class="number">769</span>, <span class="number">1025</span>, <span class="number">1537</span>, <span class="number">2049</span>, <span class="number">3073</span>, <span class="number">4097</span>, <span class="number">6145</span>,
+  <span class="number">8193</span>, <span class="number">12289</span>, <span class="number">16385</span>, <span class="number">24577</span>, <span class="number">0</span>, <span class="number">0</span>
+];
+
+<span class="keyword">var</span> dext = [ <span class="comment">/* Distance codes 0..29 extra */</span>
+  <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">16</span>, <span class="number">17</span>, <span class="number">17</span>, <span class="number">18</span>, <span class="number">18</span>, <span class="number">19</span>, <span class="number">19</span>, <span class="number">20</span>, <span class="number">20</span>, <span class="number">21</span>, <span class="number">21</span>, <span class="number">22</span>, <span class="number">22</span>,
+  <span class="number">23</span>, <span class="number">23</span>, <span class="number">24</span>, <span class="number">24</span>, <span class="number">25</span>, <span class="number">25</span>, <span class="number">26</span>, <span class="number">26</span>, <span class="number">27</span>, <span class="number">27</span>,
+  <span class="number">28</span>, <span class="number">28</span>, <span class="number">29</span>, <span class="number">29</span>, <span class="number">64</span>, <span class="number">64</span>
+];
+
+module.exports = <span class="function"><span class="keyword">function</span> <span class="title">inflate_table</span><span class="params">(type, lens, lens_index, codes, table, table_index, work, opts)</span>
+{</span>
+  <span class="keyword">var</span> bits = opts.bits;
+      <span class="comment">//here = opts.here; /* table entry for duplication */</span>
+
+  <span class="keyword">var</span> len = <span class="number">0</span>;               <span class="comment">/* a code's length in bits */</span>
+  <span class="keyword">var</span> sym = <span class="number">0</span>;               <span class="comment">/* index of code symbols */</span>
+  <span class="keyword">var</span> min = <span class="number">0</span>, max = <span class="number">0</span>;          <span class="comment">/* minimum and maximum code lengths */</span>
+  <span class="keyword">var</span> root = <span class="number">0</span>;              <span class="comment">/* number of index bits for root table */</span>
+  <span class="keyword">var</span> curr = <span class="number">0</span>;              <span class="comment">/* number of index bits for current table */</span>
+  <span class="keyword">var</span> drop = <span class="number">0</span>;              <span class="comment">/* code bits to drop for sub-table */</span>
+  <span class="keyword">var</span> left = <span class="number">0</span>;                   <span class="comment">/* number of prefix codes available */</span>
+  <span class="keyword">var</span> used = <span class="number">0</span>;              <span class="comment">/* code entries in table used */</span>
+  <span class="keyword">var</span> huff = <span class="number">0</span>;              <span class="comment">/* Huffman code */</span>
+  <span class="keyword">var</span> incr;              <span class="comment">/* for incrementing code, index */</span>
+  <span class="keyword">var</span> fill;              <span class="comment">/* index for replicating entries */</span>
+  <span class="keyword">var</span> low;               <span class="comment">/* low bits for current root entry */</span>
+  <span class="keyword">var</span> mask;              <span class="comment">/* mask for low root bits */</span>
+  <span class="keyword">var</span> next;             <span class="comment">/* next available space in table */</span>
+  <span class="keyword">var</span> base = <span class="literal">null</span>;     <span class="comment">/* base value table to use */</span>
+  <span class="keyword">var</span> base_index = <span class="number">0</span>;
+<span class="comment">//  var shoextra;    /* extra bits table to use */</span>
+  <span class="keyword">var</span> end;                    <span class="comment">/* use base and extra for symbol > end */</span>
+  <span class="keyword">var</span> count = <span class="keyword">new</span> utils.Buf16(MAXBITS + <span class="number">1</span>); <span class="comment">//[MAXBITS+1];    /* number of codes of each length */</span>
+  <span class="keyword">var</span> offs = <span class="keyword">new</span> utils.Buf16(MAXBITS + <span class="number">1</span>); <span class="comment">//[MAXBITS+1];     /* offsets in table for each length */</span>
+  <span class="keyword">var</span> extra = <span class="literal">null</span>;
+  <span class="keyword">var</span> extra_index = <span class="number">0</span>;
+
+  <span class="keyword">var</span> here_bits, here_op, here_val;
+
+  <span class="comment">/*
+   Process a set of code lengths to create a canonical Huffman code.  The
+   code lengths are lens[0..codes-1].  Each length corresponds to the
+   symbols 0..codes-1.  The Huffman code is generated by first sorting the
+   symbols by length from short to long, and retaining the symbol order
+   for codes with equal lengths.  Then the code starts with all zero bits
+   for the first code of the shortest length, and the codes are integer
+   increments for the same length, and zeros are appended as the length
+   increases.  For the deflate format, these bits are stored backwards
+   from their more natural integer increment ordering, and so when the
+   decoding tables are built in the large loop below, the integer codes
+   are incremented backwards.
+
+   This routine assumes, but does not check, that all of the entries in
+   lens[] are in the range 0..MAXBITS.  The caller must assure this.
+   1..MAXBITS is interpreted as that code length.  zero means that that
+   symbol does not occur in this code.
+
+   The codes are sorted by computing a count of codes for each length,
+   creating from that a table of starting indices for each length in the
+   sorted table, and then entering the symbols in order in the sorted
+   table.  The sorted table is work[], with that space being provided by
+   the caller.
+
+   The length counts are used for other purposes as well, i.e. finding
+   the minimum and maximum length codes, determining if there are any
+   codes at all, checking for a valid set of lengths, and looking ahead
+   at length counts to determine sub-table sizes when building the
+   decoding tables.
+   */</span>
+
+  <span class="comment">/* accumulate lengths for codes (assumes lens[] all in 0..MAXBITS) */</span>
+  <span class="keyword">for</span> (len = <span class="number">0</span>; len &lt;= MAXBITS; len++) {
+    count[len] = <span class="number">0</span>;
+  }
+  <span class="keyword">for</span> (sym = <span class="number">0</span>; sym &lt; codes; sym++) {
+    count[lens[lens_index + sym]]++;
+  }
+
+  <span class="comment">/* bound code lengths, force root to be within code lengths */</span>
+  root = bits;
+  <span class="keyword">for</span> (max = MAXBITS; max >= <span class="number">1</span>; max--) {
+    <span class="keyword">if</span> (count[max] !== <span class="number">0</span>) { <span class="keyword">break</span>; }
+  }
+  <span class="keyword">if</span> (root > max) {
+    root = max;
+  }
+  <span class="keyword">if</span> (max === <span class="number">0</span>) {                     <span class="comment">/* no symbols to code at all */</span>
+    <span class="comment">//table.op[opts.table_index] = 64;  //here.op = (var char)64;    /* invalid code marker */</span>
+    <span class="comment">//table.bits[opts.table_index] = 1;   //here.bits = (var char)1;</span>
+    <span class="comment">//table.val[opts.table_index++] = 0;   //here.val = (var short)0;</span>
+    table[table_index++] = (<span class="number">1</span> &lt;&lt; <span class="number">24</span>) | (<span class="number">64</span> &lt;&lt; <span class="number">16</span>) | <span class="number">0</span>;
+
+
+    <span class="comment">//table.op[opts.table_index] = 64;</span>
+    <span class="comment">//table.bits[opts.table_index] = 1;</span>
+    <span class="comment">//table.val[opts.table_index++] = 0;</span>
+    table[table_index++] = (<span class="number">1</span> &lt;&lt; <span class="number">24</span>) | (<span class="number">64</span> &lt;&lt; <span class="number">16</span>) | <span class="number">0</span>;
+
+    opts.bits = <span class="number">1</span>;
+    <span class="keyword">return</span> <span class="number">0</span>;     <span class="comment">/* no symbols, but wait for decoding to report error */</span>
+  }
+  <span class="keyword">for</span> (min = <span class="number">1</span>; min &lt; max; min++) {
+    <span class="keyword">if</span> (count[min] !== <span class="number">0</span>) { <span class="keyword">break</span>; }
+  }
+  <span class="keyword">if</span> (root &lt; min) {
+    root = min;
+  }
+
+  <span class="comment">/* check for an over-subscribed or incomplete set of lengths */</span>
+  left = <span class="number">1</span>;
+  <span class="keyword">for</span> (len = <span class="number">1</span>; len &lt;= MAXBITS; len++) {
+    left &lt;&lt;= <span class="number">1</span>;
+    left -= count[len];
+    <span class="keyword">if</span> (left &lt; <span class="number">0</span>) {
+      <span class="keyword">return</span> -<span class="number">1</span>;
+    }        <span class="comment">/* over-subscribed */</span>
+  }
+  <span class="keyword">if</span> (left > <span class="number">0</span> &amp;&amp; (type === CODES || max !== <span class="number">1</span>)) {
+    <span class="keyword">return</span> -<span class="number">1</span>;                      <span class="comment">/* incomplete set */</span>
+  }
+
+  <span class="comment">/* generate offsets into symbol table for each length for sorting */</span>
+  offs[<span class="number">1</span>] = <span class="number">0</span>;
+  <span class="keyword">for</span> (len = <span class="number">1</span>; len &lt; MAXBITS; len++) {
+    offs[len + <span class="number">1</span>] = offs[len] + count[len];
+  }
+
+  <span class="comment">/* sort symbols by length, by symbol order within each length */</span>
+  <span class="keyword">for</span> (sym = <span class="number">0</span>; sym &lt; codes; sym++) {
+    <span class="keyword">if</span> (lens[lens_index + sym] !== <span class="number">0</span>) {
+      work[offs[lens[lens_index + sym]]++] = sym;
+    }
+  }
+
+  <span class="comment">/*
+   Create and fill in decoding tables.  In this loop, the table being
+   filled is at next and has curr index bits.  The code being used is huff
+   with length len.  That code is converted to an index by dropping drop
+   bits off of the bottom.  For codes where len is less than drop + curr,
+   those top drop + curr - len bits are incremented through all values to
+   fill the table with replicated entries.
+
+   root is the number of index bits for the root table.  When len exceeds
+   root, sub-tables are created pointed to by the root entry with an index
+   of the low root bits of huff.  This is saved in low to check for when a
+   new sub-table should be started.  drop is zero when the root table is
+   being filled, and drop is root when sub-tables are being filled.
+
+   When a new sub-table is needed, it is necessary to look ahead in the
+   code lengths to determine what size sub-table is needed.  The length
+   counts are used for this, and so count[] is decremented as codes are
+   entered in the tables.
+
+   used keeps track of how many table entries have been allocated from the
+   provided *table space.  It is checked for LENS and DIST tables against
+   the constants ENOUGH_LENS and ENOUGH_DISTS to guard against changes in
+   the initial root table size constants.  See the comments in inftrees.h
+   for more information.
+
+   sym increments through all symbols, and the loop terminates when
+   all codes of length max, i.e. all codes, have been processed.  This
+   routine permits incomplete codes, so another loop after this one fills
+   in the rest of the decoding tables with invalid code markers.
+   */</span>
+
+  <span class="comment">/* set up for code type */</span>
+  <span class="comment">// poor man optimization - use if-else instead of switch,</span>
+  <span class="comment">// to avoid deopts in old v8</span>
+  <span class="keyword">if</span> (type === CODES) {
+    base = extra = work;    <span class="comment">/* dummy value--not used */</span>
+    end = <span class="number">19</span>;
+
+  } <span class="keyword">else</span> <span class="keyword">if</span> (type === LENS) {
+    base = lbase;
+    base_index -= <span class="number">257</span>;
+    extra = lext;
+    extra_index -= <span class="number">257</span>;
+    end = <span class="number">256</span>;
+
+  } <span class="keyword">else</span> {                    <span class="comment">/* DISTS */</span>
+    base = dbase;
+    extra = dext;
+    end = -<span class="number">1</span>;
+  }
+
+  <span class="comment">/* initialize opts for loop */</span>
+  huff = <span class="number">0</span>;                   <span class="comment">/* starting code */</span>
+  sym = <span class="number">0</span>;                    <span class="comment">/* starting code symbol */</span>
+  len = min;                  <span class="comment">/* starting code length */</span>
+  next = table_index;              <span class="comment">/* current table to fill in */</span>
+  curr = root;                <span class="comment">/* current table index bits */</span>
+  drop = <span class="number">0</span>;                   <span class="comment">/* current bits to drop from code for index */</span>
+  low = -<span class="number">1</span>;                   <span class="comment">/* trigger new sub-table when len > root */</span>
+  used = <span class="number">1</span> &lt;&lt; root;          <span class="comment">/* use root table entries */</span>
+  mask = used - <span class="number">1</span>;            <span class="comment">/* mask for comparing low */</span>
+
+  <span class="comment">/* check available table space */</span>
+  <span class="keyword">if</span> ((type === LENS &amp;&amp; used > ENOUGH_LENS) ||
+    (type === DISTS &amp;&amp; used > ENOUGH_DISTS)) {
+    <span class="keyword">return</span> <span class="number">1</span>;
+  }
+
+  <span class="comment">/* process all codes and make table entries */</span>
+  <span class="keyword">for</span> (;;) {
+    <span class="comment">/* create table entry */</span>
+    here_bits = len - drop;
+    <span class="keyword">if</span> (work[sym] &lt; end) {
+      here_op = <span class="number">0</span>;
+      here_val = work[sym];
+    }
+    <span class="keyword">else</span> <span class="keyword">if</span> (work[sym] > end) {
+      here_op = extra[extra_index + work[sym]];
+      here_val = base[base_index + work[sym]];
+    }
+    <span class="keyword">else</span> {
+      here_op = <span class="number">32</span> + <span class="number">64</span>;         <span class="comment">/* end of block */</span>
+      here_val = <span class="number">0</span>;
+    }
+
+    <span class="comment">/* replicate for those indices with low len bits equal to huff */</span>
+    incr = <span class="number">1</span> &lt;&lt; (len - drop);
+    fill = <span class="number">1</span> &lt;&lt; curr;
+    min = fill;                 <span class="comment">/* save offset to next table */</span>
+    <span class="keyword">do</span> {
+      fill -= incr;
+      table[next + (huff >> drop) + fill] = (here_bits &lt;&lt; <span class="number">24</span>) | (here_op &lt;&lt; <span class="number">16</span>) | here_val |<span class="number">0</span>;
+    } <span class="keyword">while</span> (fill !== <span class="number">0</span>);
+
+    <span class="comment">/* backwards increment the len-bit code huff */</span>
+    incr = <span class="number">1</span> &lt;&lt; (len - <span class="number">1</span>);
+    <span class="keyword">while</span> (huff &amp; incr) {
+      incr >>= <span class="number">1</span>;
+    }
+    <span class="keyword">if</span> (incr !== <span class="number">0</span>) {
+      huff &amp;= incr - <span class="number">1</span>;
+      huff += incr;
+    } <span class="keyword">else</span> {
+      huff = <span class="number">0</span>;
+    }
+
+    <span class="comment">/* go to next symbol, update count, len */</span>
+    sym++;
+    <span class="keyword">if</span> (--count[len] === <span class="number">0</span>) {
+      <span class="keyword">if</span> (len === max) { <span class="keyword">break</span>; }
+      len = lens[lens_index + work[sym]];
+    }
+
+    <span class="comment">/* create new sub-table if needed */</span>
+    <span class="keyword">if</span> (len > root &amp;&amp; (huff &amp; mask) !== low) {
+      <span class="comment">/* if first time, transition to sub-tables */</span>
+      <span class="keyword">if</span> (drop === <span class="number">0</span>) {
+        drop = root;
+      }
+
+      <span class="comment">/* increment past last table */</span>
+      next += min;            <span class="comment">/* here min is 1 &lt;&lt; curr */</span>
+
+      <span class="comment">/* determine length of next table */</span>
+      curr = len - drop;
+      left = <span class="number">1</span> &lt;&lt; curr;
+      <span class="keyword">while</span> (curr + drop &lt; max) {
+        left -= count[curr + drop];
+        <span class="keyword">if</span> (left &lt;= <span class="number">0</span>) { <span class="keyword">break</span>; }
+        curr++;
+        left &lt;&lt;= <span class="number">1</span>;
+      }
+
+      <span class="comment">/* check for enough space */</span>
+      used += <span class="number">1</span> &lt;&lt; curr;
+      <span class="keyword">if</span> ((type === LENS &amp;&amp; used > ENOUGH_LENS) ||
+        (type === DISTS &amp;&amp; used > ENOUGH_DISTS)) {
+        <span class="keyword">return</span> <span class="number">1</span>;
+      }
+
+      <span class="comment">/* point entry in root table to sub-table */</span>
+      low = huff &amp; mask;
+      <span class="comment">/*table.op[low] = curr;
+      table.bits[low] = root;
+      table.val[low] = next - opts.table_index;*/</span>
+      table[low] = (root &lt;&lt; <span class="number">24</span>) | (curr &lt;&lt; <span class="number">16</span>) | (next - table_index) |<span class="number">0</span>;
+    }
+  }
+
+  <span class="comment">/* fill in remaining table entry if code is incomplete (guaranteed to have
+   at most one remaining entry, since if the code is incomplete, the
+   maximum code length that was allowed to get this far is one bit) */</span>
+  <span class="keyword">if</span> (huff !== <span class="number">0</span>) {
+    <span class="comment">//table.op[next + huff] = 64;            /* invalid code marker */</span>
+    <span class="comment">//table.bits[next + huff] = len - drop;</span>
+    <span class="comment">//table.val[next + huff] = 0;</span>
+    table[next + huff] = ((len - drop) &lt;&lt; <span class="number">24</span>) | (<span class="number">64</span> &lt;&lt; <span class="number">16</span>) |<span class="number">0</span>;
+  }
+
+  <span class="comment">/* set return parameters */</span>
+  <span class="comment">//opts.table_index += used;</span>
+  opts.bits = root;
+  <span class="keyword">return</span> <span class="number">0</span>;
+};
+</code></pre>

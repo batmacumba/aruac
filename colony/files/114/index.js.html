@@ -1,0 +1,86 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> ClientRequest = require(<span class="string">'./lib/request'</span>)
+<span class="keyword">var</span> response = require(<span class="string">'./lib/response'</span>)
+<span class="keyword">var</span> extend = require(<span class="string">'xtend'</span>)
+<span class="keyword">var</span> statusCodes = require(<span class="string">'builtin-status-codes'</span>)
+<span class="keyword">var</span> url = require(<span class="string">'url'</span>)
+
+<span class="keyword">var</span> http = exports
+
+http.request = <span class="function"><span class="keyword">function</span> <span class="params">(opts, cb)</span> {</span>
+	<span class="keyword">if</span> (<span class="keyword">typeof</span> opts === <span class="string">'string'</span>)
+		opts = url.parse(opts)
+	<span class="keyword">else</span>
+		opts = extend(opts)
+
+	<span class="comment">// Normally, the page is loaded from http or https, so not specifying a protocol</span>
+	<span class="comment">// will result in a (valid) protocol-relative url. However, this won't work if</span>
+	<span class="comment">// the protocol is something else, like 'file:'</span>
+	<span class="keyword">var</span> defaultProtocol = global.location.protocol.search(<span class="regexp">/^https?:$/</span>) === -<span class="number">1</span> ? <span class="string">'http:'</span> : <span class="string">''</span>
+
+	<span class="keyword">var</span> protocol = opts.protocol || defaultProtocol
+	<span class="keyword">var</span> host = opts.hostname || opts.host
+	<span class="keyword">var</span> port = opts.port
+	<span class="keyword">var</span> path = opts.path || <span class="string">'/'</span>
+
+	<span class="comment">// Necessary for IPv6 addresses</span>
+	<span class="keyword">if</span> (host &amp;&amp; host.indexOf(<span class="string">':'</span>) !== -<span class="number">1</span>)
+		host = <span class="string">'['</span> + host + <span class="string">']'</span>
+
+	<span class="comment">// This may be a relative url. The browser should always be able to interpret it correctly.</span>
+	opts.url = (host ? (protocol + <span class="string">'//'</span> + host) : <span class="string">''</span>) + (port ? <span class="string">':'</span> + port : <span class="string">''</span>) + path
+	opts.method = (opts.method || <span class="string">'GET'</span>).toUpperCase()
+	opts.headers = opts.headers || {}
+
+	<span class="comment">// Also valid opts.auth, opts.mode</span>
+
+	<span class="keyword">var</span> req = <span class="keyword">new</span> ClientRequest(opts)
+	<span class="keyword">if</span> (cb)
+		req.on(<span class="string">'response'</span>, cb)
+	<span class="keyword">return</span> req
+}
+
+http.get = <span class="function"><span class="keyword">function</span> <span class="title">get</span> <span class="params">(opts, cb)</span> {</span>
+	<span class="keyword">var</span> req = http.request(opts, cb)
+	req.end()
+	<span class="keyword">return</span> req
+}
+
+http.ClientRequest = ClientRequest
+http.IncomingMessage = response.IncomingMessage
+
+http.Agent = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>}
+http.Agent.defaultMaxSockets = <span class="number">4</span>
+
+http.globalAgent = <span class="keyword">new</span> http.Agent()
+
+http.STATUS_CODES = statusCodes
+
+http.METHODS = [
+	<span class="string">'CHECKOUT'</span>,
+	<span class="string">'CONNECT'</span>,
+	<span class="string">'COPY'</span>,
+	<span class="string">'DELETE'</span>,
+	<span class="string">'GET'</span>,
+	<span class="string">'HEAD'</span>,
+	<span class="string">'LOCK'</span>,
+	<span class="string">'M-SEARCH'</span>,
+	<span class="string">'MERGE'</span>,
+	<span class="string">'MKACTIVITY'</span>,
+	<span class="string">'MKCOL'</span>,
+	<span class="string">'MOVE'</span>,
+	<span class="string">'NOTIFY'</span>,
+	<span class="string">'OPTIONS'</span>,
+	<span class="string">'PATCH'</span>,
+	<span class="string">'POST'</span>,
+	<span class="string">'PROPFIND'</span>,
+	<span class="string">'PROPPATCH'</span>,
+	<span class="string">'PURGE'</span>,
+	<span class="string">'PUT'</span>,
+	<span class="string">'REPORT'</span>,
+	<span class="string">'SEARCH'</span>,
+	<span class="string">'SUBSCRIBE'</span>,
+	<span class="string">'TRACE'</span>,
+	<span class="string">'UNLOCK'</span>,
+	<span class="string">'UNSUBSCRIBE'</span>
+]</code></pre>

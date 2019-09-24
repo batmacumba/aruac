@@ -1,0 +1,32 @@
+<h1>224.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> utils = require(<span class="string">'../utils'</span>);
+<span class="keyword">var</span> SHA256 = require(<span class="string">'./256'</span>);
+
+<span class="function"><span class="keyword">function</span> <span class="title">SHA224</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> SHA224))
+    <span class="keyword">return</span> <span class="keyword">new</span> SHA224();
+
+  SHA256.call(<span class="keyword">this</span>);
+  <span class="keyword">this</span>.h = [
+    <span class="number">0xc1059ed8</span>, <span class="number">0x367cd507</span>, <span class="number">0x3070dd17</span>, <span class="number">0xf70e5939</span>,
+    <span class="number">0xffc00b31</span>, <span class="number">0x68581511</span>, <span class="number">0x64f98fa7</span>, <span class="number">0xbefa4fa4</span> ];
+}
+utils.inherits(SHA224, SHA256);
+module.exports = SHA224;
+
+SHA224.blockSize = <span class="number">512</span>;
+SHA224.outSize = <span class="number">224</span>;
+SHA224.hmacStrength = <span class="number">192</span>;
+SHA224.padLength = <span class="number">64</span>;
+
+SHA224.prototype._digest = <span class="function"><span class="keyword">function</span> <span class="title">digest</span><span class="params">(enc)</span> {</span>
+  <span class="comment">// Just truncate output</span>
+  <span class="keyword">if</span> (enc === <span class="string">'hex'</span>)
+    <span class="keyword">return</span> utils.toHex32(<span class="keyword">this</span>.h.slice(<span class="number">0</span>, <span class="number">7</span>), <span class="string">'big'</span>);
+  <span class="keyword">else</span>
+    <span class="keyword">return</span> utils.split32(<span class="keyword">this</span>.h.slice(<span class="number">0</span>, <span class="number">7</span>), <span class="string">'big'</span>);
+};
+
+</code></pre>

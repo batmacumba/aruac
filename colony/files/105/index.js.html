@@ -1,0 +1,165 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>
+<span class="keyword">var</span> Buffer = require(<span class="string">'buffer'</span>).Buffer
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>)
+<span class="keyword">var</span> HashBase = require(<span class="string">'hash-base'</span>)
+
+<span class="keyword">var</span> ARRAY16 = <span class="keyword">new</span> Array(<span class="number">16</span>)
+
+<span class="keyword">var</span> zl = [
+  <span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>, <span class="number">11</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">15</span>,
+  <span class="number">7</span>, <span class="number">4</span>, <span class="number">13</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">3</span>, <span class="number">12</span>, <span class="number">0</span>, <span class="number">9</span>, <span class="number">5</span>, <span class="number">2</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">8</span>,
+  <span class="number">3</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">4</span>, <span class="number">9</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">7</span>, <span class="number">0</span>, <span class="number">6</span>, <span class="number">13</span>, <span class="number">11</span>, <span class="number">5</span>, <span class="number">12</span>,
+  <span class="number">1</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">4</span>, <span class="number">13</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">15</span>, <span class="number">14</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">2</span>,
+  <span class="number">4</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">8</span>, <span class="number">11</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">13</span>
+]
+
+<span class="keyword">var</span> zr = [
+  <span class="number">5</span>, <span class="number">14</span>, <span class="number">7</span>, <span class="number">0</span>, <span class="number">9</span>, <span class="number">2</span>, <span class="number">11</span>, <span class="number">4</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">3</span>, <span class="number">12</span>,
+  <span class="number">6</span>, <span class="number">11</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">0</span>, <span class="number">13</span>, <span class="number">5</span>, <span class="number">10</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">4</span>, <span class="number">9</span>, <span class="number">1</span>, <span class="number">2</span>,
+  <span class="number">15</span>, <span class="number">5</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">7</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">4</span>, <span class="number">13</span>,
+  <span class="number">8</span>, <span class="number">6</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">3</span>, <span class="number">11</span>, <span class="number">15</span>, <span class="number">0</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">2</span>, <span class="number">13</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">10</span>, <span class="number">14</span>,
+  <span class="number">12</span>, <span class="number">15</span>, <span class="number">10</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">5</span>, <span class="number">8</span>, <span class="number">7</span>, <span class="number">6</span>, <span class="number">2</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">0</span>, <span class="number">3</span>, <span class="number">9</span>, <span class="number">11</span>
+]
+
+<span class="keyword">var</span> sl = [
+  <span class="number">11</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">8</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">9</span>, <span class="number">8</span>,
+  <span class="number">7</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">11</span>, <span class="number">9</span>, <span class="number">7</span>, <span class="number">15</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">15</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">7</span>, <span class="number">13</span>, <span class="number">12</span>,
+  <span class="number">11</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">14</span>, <span class="number">9</span>, <span class="number">13</span>, <span class="number">15</span>, <span class="number">14</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">5</span>,
+  <span class="number">11</span>, <span class="number">12</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">9</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">14</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">5</span>, <span class="number">12</span>,
+  <span class="number">9</span>, <span class="number">15</span>, <span class="number">5</span>, <span class="number">11</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">5</span>, <span class="number">6</span>
+]
+
+<span class="keyword">var</span> sr = [
+  <span class="number">8</span>, <span class="number">9</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">13</span>, <span class="number">15</span>, <span class="number">15</span>, <span class="number">5</span>, <span class="number">7</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">11</span>, <span class="number">14</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">6</span>,
+  <span class="number">9</span>, <span class="number">13</span>, <span class="number">15</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">11</span>, <span class="number">7</span>, <span class="number">7</span>, <span class="number">12</span>, <span class="number">7</span>, <span class="number">6</span>, <span class="number">15</span>, <span class="number">13</span>, <span class="number">11</span>,
+  <span class="number">9</span>, <span class="number">7</span>, <span class="number">15</span>, <span class="number">11</span>, <span class="number">8</span>, <span class="number">6</span>, <span class="number">6</span>, <span class="number">14</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">5</span>, <span class="number">14</span>, <span class="number">13</span>, <span class="number">13</span>, <span class="number">7</span>, <span class="number">5</span>,
+  <span class="number">15</span>, <span class="number">5</span>, <span class="number">8</span>, <span class="number">11</span>, <span class="number">14</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">12</span>, <span class="number">9</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">15</span>, <span class="number">8</span>,
+  <span class="number">8</span>, <span class="number">5</span>, <span class="number">12</span>, <span class="number">9</span>, <span class="number">12</span>, <span class="number">5</span>, <span class="number">14</span>, <span class="number">6</span>, <span class="number">8</span>, <span class="number">13</span>, <span class="number">6</span>, <span class="number">5</span>, <span class="number">15</span>, <span class="number">13</span>, <span class="number">11</span>, <span class="number">11</span>
+]
+
+<span class="keyword">var</span> hl = [<span class="number">0x00000000</span>, <span class="number">0x5a827999</span>, <span class="number">0x6ed9eba1</span>, <span class="number">0x8f1bbcdc</span>, <span class="number">0xa953fd4e</span>]
+<span class="keyword">var</span> hr = [<span class="number">0x50a28be6</span>, <span class="number">0x5c4dd124</span>, <span class="number">0x6d703ef3</span>, <span class="number">0x7a6d76e9</span>, <span class="number">0x00000000</span>]
+
+<span class="function"><span class="keyword">function</span> <span class="title">RIPEMD160</span> <span class="params">()</span> {</span>
+  HashBase.call(<span class="keyword">this</span>, <span class="number">64</span>)
+
+  <span class="comment">// state</span>
+  <span class="keyword">this</span>._a = <span class="number">0x67452301</span>
+  <span class="keyword">this</span>._b = <span class="number">0xefcdab89</span>
+  <span class="keyword">this</span>._c = <span class="number">0x98badcfe</span>
+  <span class="keyword">this</span>._d = <span class="number">0x10325476</span>
+  <span class="keyword">this</span>._e = <span class="number">0xc3d2e1f0</span>
+}
+
+inherits(RIPEMD160, HashBase)
+
+RIPEMD160.prototype._update = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> words = ARRAY16
+  <span class="keyword">for</span> (<span class="keyword">var</span> j = <span class="number">0</span>; j &lt; <span class="number">16</span>; ++j) words[j] = <span class="keyword">this</span>._block.readInt32LE(j * <span class="number">4</span>)
+
+  <span class="keyword">var</span> al = <span class="keyword">this</span>._a | <span class="number">0</span>
+  <span class="keyword">var</span> bl = <span class="keyword">this</span>._b | <span class="number">0</span>
+  <span class="keyword">var</span> cl = <span class="keyword">this</span>._c | <span class="number">0</span>
+  <span class="keyword">var</span> dl = <span class="keyword">this</span>._d | <span class="number">0</span>
+  <span class="keyword">var</span> el = <span class="keyword">this</span>._e | <span class="number">0</span>
+
+  <span class="keyword">var</span> ar = <span class="keyword">this</span>._a | <span class="number">0</span>
+  <span class="keyword">var</span> br = <span class="keyword">this</span>._b | <span class="number">0</span>
+  <span class="keyword">var</span> cr = <span class="keyword">this</span>._c | <span class="number">0</span>
+  <span class="keyword">var</span> dr = <span class="keyword">this</span>._d | <span class="number">0</span>
+  <span class="keyword">var</span> er = <span class="keyword">this</span>._e | <span class="number">0</span>
+
+  <span class="comment">// computation</span>
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="number">80</span>; i += <span class="number">1</span>) {
+    <span class="keyword">var</span> tl
+    <span class="keyword">var</span> tr
+    <span class="keyword">if</span> (i &lt; <span class="number">16</span>) {
+      tl = fn1(al, bl, cl, dl, el, words[zl[i]], hl[<span class="number">0</span>], sl[i])
+      tr = fn5(ar, br, cr, dr, er, words[zr[i]], hr[<span class="number">0</span>], sr[i])
+    } <span class="keyword">else</span> <span class="keyword">if</span> (i &lt; <span class="number">32</span>) {
+      tl = fn2(al, bl, cl, dl, el, words[zl[i]], hl[<span class="number">1</span>], sl[i])
+      tr = fn4(ar, br, cr, dr, er, words[zr[i]], hr[<span class="number">1</span>], sr[i])
+    } <span class="keyword">else</span> <span class="keyword">if</span> (i &lt; <span class="number">48</span>) {
+      tl = fn3(al, bl, cl, dl, el, words[zl[i]], hl[<span class="number">2</span>], sl[i])
+      tr = fn3(ar, br, cr, dr, er, words[zr[i]], hr[<span class="number">2</span>], sr[i])
+    } <span class="keyword">else</span> <span class="keyword">if</span> (i &lt; <span class="number">64</span>) {
+      tl = fn4(al, bl, cl, dl, el, words[zl[i]], hl[<span class="number">3</span>], sl[i])
+      tr = fn2(ar, br, cr, dr, er, words[zr[i]], hr[<span class="number">3</span>], sr[i])
+    } <span class="keyword">else</span> { <span class="comment">// if (i&lt;80) {</span>
+      tl = fn5(al, bl, cl, dl, el, words[zl[i]], hl[<span class="number">4</span>], sl[i])
+      tr = fn1(ar, br, cr, dr, er, words[zr[i]], hr[<span class="number">4</span>], sr[i])
+    }
+
+    al = el
+    el = dl
+    dl = rotl(cl, <span class="number">10</span>)
+    cl = bl
+    bl = tl
+
+    ar = er
+    er = dr
+    dr = rotl(cr, <span class="number">10</span>)
+    cr = br
+    br = tr
+  }
+
+  <span class="comment">// update state</span>
+  <span class="keyword">var</span> t = (<span class="keyword">this</span>._b + cl + dr) | <span class="number">0</span>
+  <span class="keyword">this</span>._b = (<span class="keyword">this</span>._c + dl + er) | <span class="number">0</span>
+  <span class="keyword">this</span>._c = (<span class="keyword">this</span>._d + el + ar) | <span class="number">0</span>
+  <span class="keyword">this</span>._d = (<span class="keyword">this</span>._e + al + br) | <span class="number">0</span>
+  <span class="keyword">this</span>._e = (<span class="keyword">this</span>._a + bl + cr) | <span class="number">0</span>
+  <span class="keyword">this</span>._a = t
+}
+
+RIPEMD160.prototype._digest = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="comment">// create padding and handle blocks</span>
+  <span class="keyword">this</span>._block[<span class="keyword">this</span>._blockOffset++] = <span class="number">0x80</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>._blockOffset > <span class="number">56</span>) {
+    <span class="keyword">this</span>._block.fill(<span class="number">0</span>, <span class="keyword">this</span>._blockOffset, <span class="number">64</span>)
+    <span class="keyword">this</span>._update()
+    <span class="keyword">this</span>._blockOffset = <span class="number">0</span>
+  }
+
+  <span class="keyword">this</span>._block.fill(<span class="number">0</span>, <span class="keyword">this</span>._blockOffset, <span class="number">56</span>)
+  <span class="keyword">this</span>._block.writeUInt32LE(<span class="keyword">this</span>._length[<span class="number">0</span>], <span class="number">56</span>)
+  <span class="keyword">this</span>._block.writeUInt32LE(<span class="keyword">this</span>._length[<span class="number">1</span>], <span class="number">60</span>)
+  <span class="keyword">this</span>._update()
+
+  <span class="comment">// produce result</span>
+  <span class="keyword">var</span> buffer = Buffer.alloc ? Buffer.alloc(<span class="number">20</span>) : <span class="keyword">new</span> Buffer(<span class="number">20</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._a, <span class="number">0</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._b, <span class="number">4</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._c, <span class="number">8</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._d, <span class="number">12</span>)
+  buffer.writeInt32LE(<span class="keyword">this</span>._e, <span class="number">16</span>)
+  <span class="keyword">return</span> buffer
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">rotl</span> <span class="params">(x, n)</span> {</span>
+  <span class="keyword">return</span> (x &lt;&lt; n) | (x >>> (<span class="number">32</span> - n))
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fn1</span> <span class="params">(a, b, c, d, e, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + (b ^ c ^ d) + m + k) | <span class="number">0</span>, s) + e) | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fn2</span> <span class="params">(a, b, c, d, e, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + ((b &amp; c) | ((~b) &amp; d)) + m + k) | <span class="number">0</span>, s) + e) | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fn3</span> <span class="params">(a, b, c, d, e, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + ((b | (~c)) ^ d) + m + k) | <span class="number">0</span>, s) + e) | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fn4</span> <span class="params">(a, b, c, d, e, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + ((b &amp; d) | (c &amp; (~d))) + m + k) | <span class="number">0</span>, s) + e) | <span class="number">0</span>
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">fn5</span> <span class="params">(a, b, c, d, e, m, k, s)</span> {</span>
+  <span class="keyword">return</span> (rotl((a + (b ^ (c | (~d))) + m + k) | <span class="number">0</span>, s) + e) | <span class="number">0</span>
+}
+
+module.exports = RIPEMD160
+</code></pre>

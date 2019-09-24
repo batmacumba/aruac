@@ -1,0 +1,535 @@
+<h1>punycode.js</h1>
+<pre><code class="lang-js"><span class="comment">/*! https://mths.be/punycode v1.4.1 by @mathias */</span>
+;(<span class="keyword">function</span>(root) {
+
+	<span class="comment">/** Detect free variables */</span>
+	<span class="keyword">var</span> freeExports = <span class="keyword">typeof</span> exports == <span class="string">'object'</span> &amp;&amp; exports &amp;&amp;
+		!exports.nodeType &amp;&amp; exports;
+	<span class="keyword">var</span> freeModule = <span class="keyword">typeof</span> module == <span class="string">'object'</span> &amp;&amp; module &amp;&amp;
+		!module.nodeType &amp;&amp; module;
+	<span class="keyword">var</span> freeGlobal = <span class="keyword">typeof</span> global == <span class="string">'object'</span> &amp;&amp; global;
+	<span class="keyword">if</span> (
+		freeGlobal.global === freeGlobal ||
+		freeGlobal.window === freeGlobal ||
+		freeGlobal.self === freeGlobal
+	) {
+		root = freeGlobal;
+	}
+
+	<span class="comment">/**
+	 * The `punycode` object.
+	 * @name punycode
+	 * @type Object
+	 */</span>
+	<span class="keyword">var</span> punycode,
+
+	<span class="comment">/** Highest positive signed 32-bit float value */</span>
+	maxInt = <span class="number">2147483647</span>, <span class="comment">// aka. 0x7FFFFFFF or 2^31-1</span>
+
+	<span class="comment">/** Bootstring parameters */</span>
+	base = <span class="number">36</span>,
+	tMin = <span class="number">1</span>,
+	tMax = <span class="number">26</span>,
+	skew = <span class="number">38</span>,
+	damp = <span class="number">700</span>,
+	initialBias = <span class="number">72</span>,
+	initialN = <span class="number">128</span>, <span class="comment">// 0x80</span>
+	delimiter = <span class="string">'-'</span>, <span class="comment">// '\x2D'</span>
+
+	<span class="comment">/** Regular expressions */</span>
+	regexPunycode = <span class="regexp">/^xn--/</span>,
+	regexNonASCII = <span class="regexp">/[^\x20-\x7E]/</span>, <span class="comment">// unprintable ASCII chars + non-ASCII chars</span>
+	regexSeparators = <span class="regexp">/[\x2E\u3002\uFF0E\uFF61]/g</span>, <span class="comment">// RFC 3490 separators</span>
+
+	<span class="comment">/** Error messages */</span>
+	errors = {
+		<span class="string">'overflow'</span>: <span class="string">'Overflow: input needs wider integers to process'</span>,
+		<span class="string">'not-basic'</span>: <span class="string">'Illegal input >= 0x80 (not a basic code point)'</span>,
+		<span class="string">'invalid-input'</span>: <span class="string">'Invalid input'</span>
+	},
+
+	<span class="comment">/** Convenience shortcuts */</span>
+	baseMinusTMin = base - tMin,
+	floor = Math.floor,
+	stringFromCharCode = String.fromCharCode,
+
+	<span class="comment">/** Temporary variable */</span>
+	key;
+
+	<span class="comment">/*--------------------------------------------------------------------------*/</span>
+
+	<span class="comment">/**
+	 * A generic error utility function.
+	 * @private
+	 * @param {String} type The error type.
+	 * @returns {Error} Throws a `RangeError` with the applicable error message.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">error</span><span class="params">(type)</span> {</span>
+		<span class="keyword">throw</span> <span class="keyword">new</span> RangeError(errors[type]);
+	}
+
+	<span class="comment">/**
+	 * A generic `Array#map` utility function.
+	 * @private
+	 * @param {Array} array The array to iterate over.
+	 * @param {Function} callback The function that gets called for every array
+	 * item.
+	 * @returns {Array} A new array of values returned by the callback function.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">map</span><span class="params">(array, fn)</span> {</span>
+		<span class="keyword">var</span> length = array.length;
+		<span class="keyword">var</span> result = [];
+		<span class="keyword">while</span> (length--) {
+			result[length] = fn(array[length]);
+		}
+		<span class="keyword">return</span> result;
+	}
+
+	<span class="comment">/**
+	 * A simple `Array#map`-like wrapper to work with domain name strings or email
+	 * addresses.
+	 * @private
+	 * @param {String} domain The domain name or email address.
+	 * @param {Function} callback The function that gets called for every
+	 * character.
+	 * @returns {Array} A new string of characters returned by the callback
+	 * function.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">mapDomain</span><span class="params">(string, fn)</span> {</span>
+		<span class="keyword">var</span> parts = string.split(<span class="string">'@'</span>);
+		<span class="keyword">var</span> result = <span class="string">''</span>;
+		<span class="keyword">if</span> (parts.length > <span class="number">1</span>) {
+			<span class="comment">// In email addresses, only the domain name should be punycoded. Leave</span>
+			<span class="comment">// the local part (i.e. everything up to `@`) intact.</span>
+			result = parts[<span class="number">0</span>] + <span class="string">'@'</span>;
+			string = parts[<span class="number">1</span>];
+		}
+		<span class="comment">// Avoid `split(regex)` for IE8 compatibility. See #17.</span>
+		string = string.replace(regexSeparators, <span class="string">'\x2E'</span>);
+		<span class="keyword">var</span> labels = string.split(<span class="string">'.'</span>);
+		<span class="keyword">var</span> encoded = map(labels, fn).join(<span class="string">'.'</span>);
+		<span class="keyword">return</span> result + encoded;
+	}
+
+	<span class="comment">/**
+	 * Creates an array containing the numeric code points of each Unicode
+	 * character in the string. While JavaScript uses UCS-2 internally,
+	 * this function will convert a pair of surrogate halves (each of which
+	 * UCS-2 exposes as separate characters) into a single code point,
+	 * matching UTF-16.
+	 * @see `punycode.ucs2.encode`
+	 * @see &lt;https://mathiasbynens.be/notes/javascript-encoding>
+	 * @memberOf punycode.ucs2
+	 * @name decode
+	 * @param {String} string The Unicode input string (UCS-2).
+	 * @returns {Array} The new array of code points.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">ucs2decode</span><span class="params">(string)</span> {</span>
+		<span class="keyword">var</span> output = [],
+		    counter = <span class="number">0</span>,
+		    length = string.length,
+		    value,
+		    extra;
+		<span class="keyword">while</span> (counter &lt; length) {
+			value = string.charCodeAt(counter++);
+			<span class="keyword">if</span> (value >= <span class="number">0xD800</span> &amp;&amp; value &lt;= <span class="number">0xDBFF</span> &amp;&amp; counter &lt; length) {
+				<span class="comment">// high surrogate, and there is a next character</span>
+				extra = string.charCodeAt(counter++);
+				<span class="keyword">if</span> ((extra &amp; <span class="number">0xFC00</span>) == <span class="number">0xDC00</span>) { <span class="comment">// low surrogate</span>
+					output.push(((value &amp; <span class="number">0x3FF</span>) &lt;&lt; <span class="number">10</span>) + (extra &amp; <span class="number">0x3FF</span>) + <span class="number">0x10000</span>);
+				} <span class="keyword">else</span> {
+					<span class="comment">// unmatched surrogate; only append this code unit, in case the next</span>
+					<span class="comment">// code unit is the high surrogate of a surrogate pair</span>
+					output.push(value);
+					counter--;
+				}
+			} <span class="keyword">else</span> {
+				output.push(value);
+			}
+		}
+		<span class="keyword">return</span> output;
+	}
+
+	<span class="comment">/**
+	 * Creates a string based on an array of numeric code points.
+	 * @see `punycode.ucs2.decode`
+	 * @memberOf punycode.ucs2
+	 * @name encode
+	 * @param {Array} codePoints The array of numeric code points.
+	 * @returns {String} The new Unicode string (UCS-2).
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">ucs2encode</span><span class="params">(array)</span> {</span>
+		<span class="keyword">return</span> map(array, <span class="keyword">function</span>(value) {
+			<span class="keyword">var</span> output = <span class="string">''</span>;
+			<span class="keyword">if</span> (value > <span class="number">0xFFFF</span>) {
+				value -= <span class="number">0x10000</span>;
+				output += stringFromCharCode(value >>> <span class="number">10</span> &amp; <span class="number">0x3FF</span> | <span class="number">0xD800</span>);
+				value = <span class="number">0xDC00</span> | value &amp; <span class="number">0x3FF</span>;
+			}
+			output += stringFromCharCode(value);
+			<span class="keyword">return</span> output;
+		}).join(<span class="string">''</span>);
+	}
+
+	<span class="comment">/**
+	 * Converts a basic code point into a digit/integer.
+	 * @see `digitToBasic()`
+	 * @private
+	 * @param {Number} codePoint The basic numeric code point value.
+	 * @returns {Number} The numeric value of a basic code point (for use in
+	 * representing integers) in the range `0` to `base - 1`, or `base` if
+	 * the code point does not represent a value.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">basicToDigit</span><span class="params">(codePoint)</span> {</span>
+		<span class="keyword">if</span> (codePoint - <span class="number">48</span> &lt; <span class="number">10</span>) {
+			<span class="keyword">return</span> codePoint - <span class="number">22</span>;
+		}
+		<span class="keyword">if</span> (codePoint - <span class="number">65</span> &lt; <span class="number">26</span>) {
+			<span class="keyword">return</span> codePoint - <span class="number">65</span>;
+		}
+		<span class="keyword">if</span> (codePoint - <span class="number">97</span> &lt; <span class="number">26</span>) {
+			<span class="keyword">return</span> codePoint - <span class="number">97</span>;
+		}
+		<span class="keyword">return</span> base;
+	}
+
+	<span class="comment">/**
+	 * Converts a digit/integer into a basic code point.
+	 * @see `basicToDigit()`
+	 * @private
+	 * @param {Number} digit The numeric value of a basic code point.
+	 * @returns {Number} The basic code point whose value (when used for
+	 * representing integers) is `digit`, which needs to be in the range
+	 * `0` to `base - 1`. If `flag` is non-zero, the uppercase form is
+	 * used; else, the lowercase form is used. The behavior is undefined
+	 * if `flag` is non-zero and `digit` has no uppercase form.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">digitToBasic</span><span class="params">(digit, flag)</span> {</span>
+		<span class="comment">//  0..25 map to ASCII a..z or A..Z</span>
+		<span class="comment">// 26..35 map to ASCII 0..9</span>
+		<span class="keyword">return</span> digit + <span class="number">22</span> + <span class="number">75</span> * (digit &lt; <span class="number">26</span>) - ((flag != <span class="number">0</span>) &lt;&lt; <span class="number">5</span>);
+	}
+
+	<span class="comment">/**
+	 * Bias adaptation function as per section 3.4 of RFC 3492.
+	 * https://tools.ietf.org/html/rfc3492#section-3.4
+	 * @private
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">adapt</span><span class="params">(delta, numPoints, firstTime)</span> {</span>
+		<span class="keyword">var</span> k = <span class="number">0</span>;
+		delta = firstTime ? floor(delta / damp) : delta >> <span class="number">1</span>;
+		delta += floor(delta / numPoints);
+		<span class="keyword">for</span> (<span class="comment">/* no initialization */</span>; delta > baseMinusTMin * tMax >> <span class="number">1</span>; k += base) {
+			delta = floor(delta / baseMinusTMin);
+		}
+		<span class="keyword">return</span> floor(k + (baseMinusTMin + <span class="number">1</span>) * delta / (delta + skew));
+	}
+
+	<span class="comment">/**
+	 * Converts a Punycode string of ASCII-only symbols to a string of Unicode
+	 * symbols.
+	 * @memberOf punycode
+	 * @param {String} input The Punycode string of ASCII-only symbols.
+	 * @returns {String} The resulting string of Unicode symbols.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">decode</span><span class="params">(input)</span> {</span>
+		<span class="comment">// Don't use UCS-2</span>
+		<span class="keyword">var</span> output = [],
+		    inputLength = input.length,
+		    out,
+		    i = <span class="number">0</span>,
+		    n = initialN,
+		    bias = initialBias,
+		    basic,
+		    j,
+		    index,
+		    oldi,
+		    w,
+		    k,
+		    digit,
+		    t,
+		    <span class="comment">/** Cached calculation results */</span>
+		    baseMinusT;
+
+		<span class="comment">// Handle the basic code points: let `basic` be the number of input code</span>
+		<span class="comment">// points before the last delimiter, or `0` if there is none, then copy</span>
+		<span class="comment">// the first basic code points to the output.</span>
+
+		basic = input.lastIndexOf(delimiter);
+		<span class="keyword">if</span> (basic &lt; <span class="number">0</span>) {
+			basic = <span class="number">0</span>;
+		}
+
+		<span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; basic; ++j) {
+			<span class="comment">// if it's not a basic code point</span>
+			<span class="keyword">if</span> (input.charCodeAt(j) >= <span class="number">0x80</span>) {
+				error(<span class="string">'not-basic'</span>);
+			}
+			output.push(input.charCodeAt(j));
+		}
+
+		<span class="comment">// Main decoding loop: start just after the last delimiter if any basic code</span>
+		<span class="comment">// points were copied; start at the beginning otherwise.</span>
+
+		<span class="keyword">for</span> (index = basic > <span class="number">0</span> ? basic + <span class="number">1</span> : <span class="number">0</span>; index &lt; inputLength; <span class="comment">/* no final expression */</span>) {
+
+			<span class="comment">// `index` is the index of the next character to be consumed.</span>
+			<span class="comment">// Decode a generalized variable-length integer into `delta`,</span>
+			<span class="comment">// which gets added to `i`. The overflow checking is easier</span>
+			<span class="comment">// if we increase `i` as we go, then subtract off its starting</span>
+			<span class="comment">// value at the end to obtain `delta`.</span>
+			<span class="keyword">for</span> (oldi = i, w = <span class="number">1</span>, k = base; <span class="comment">/* no condition */</span>; k += base) {
+
+				<span class="keyword">if</span> (index >= inputLength) {
+					error(<span class="string">'invalid-input'</span>);
+				}
+
+				digit = basicToDigit(input.charCodeAt(index++));
+
+				<span class="keyword">if</span> (digit >= base || digit > floor((maxInt - i) / w)) {
+					error(<span class="string">'overflow'</span>);
+				}
+
+				i += digit * w;
+				t = k &lt;= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
+
+				<span class="keyword">if</span> (digit &lt; t) {
+					<span class="keyword">break</span>;
+				}
+
+				baseMinusT = base - t;
+				<span class="keyword">if</span> (w > floor(maxInt / baseMinusT)) {
+					error(<span class="string">'overflow'</span>);
+				}
+
+				w *= baseMinusT;
+
+			}
+
+			out = output.length + <span class="number">1</span>;
+			bias = adapt(i - oldi, out, oldi == <span class="number">0</span>);
+
+			<span class="comment">// `i` was supposed to wrap around from `out` to `0`,</span>
+			<span class="comment">// incrementing `n` each time, so we'll fix that now:</span>
+			<span class="keyword">if</span> (floor(i / out) > maxInt - n) {
+				error(<span class="string">'overflow'</span>);
+			}
+
+			n += floor(i / out);
+			i %= out;
+
+			<span class="comment">// Insert `n` at position `i` of the output</span>
+			output.splice(i++, <span class="number">0</span>, n);
+
+		}
+
+		<span class="keyword">return</span> ucs2encode(output);
+	}
+
+	<span class="comment">/**
+	 * Converts a string of Unicode symbols (e.g. a domain name label) to a
+	 * Punycode string of ASCII-only symbols.
+	 * @memberOf punycode
+	 * @param {String} input The string of Unicode symbols.
+	 * @returns {String} The resulting Punycode string of ASCII-only symbols.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">encode</span><span class="params">(input)</span> {</span>
+		<span class="keyword">var</span> n,
+		    delta,
+		    handledCPCount,
+		    basicLength,
+		    bias,
+		    j,
+		    m,
+		    q,
+		    k,
+		    t,
+		    currentValue,
+		    output = [],
+		    <span class="comment">/** `inputLength` will hold the number of code points in `input`. */</span>
+		    inputLength,
+		    <span class="comment">/** Cached calculation results */</span>
+		    handledCPCountPlusOne,
+		    baseMinusT,
+		    qMinusT;
+
+		<span class="comment">// Convert the input in UCS-2 to Unicode</span>
+		input = ucs2decode(input);
+
+		<span class="comment">// Cache the length</span>
+		inputLength = input.length;
+
+		<span class="comment">// Initialize the state</span>
+		n = initialN;
+		delta = <span class="number">0</span>;
+		bias = initialBias;
+
+		<span class="comment">// Handle the basic code points</span>
+		<span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; inputLength; ++j) {
+			currentValue = input[j];
+			<span class="keyword">if</span> (currentValue &lt; <span class="number">0x80</span>) {
+				output.push(stringFromCharCode(currentValue));
+			}
+		}
+
+		handledCPCount = basicLength = output.length;
+
+		<span class="comment">// `handledCPCount` is the number of code points that have been handled;</span>
+		<span class="comment">// `basicLength` is the number of basic code points.</span>
+
+		<span class="comment">// Finish the basic string - if it is not empty - with a delimiter</span>
+		<span class="keyword">if</span> (basicLength) {
+			output.push(delimiter);
+		}
+
+		<span class="comment">// Main encoding loop:</span>
+		<span class="keyword">while</span> (handledCPCount &lt; inputLength) {
+
+			<span class="comment">// All non-basic code points &lt; n have been handled already. Find the next</span>
+			<span class="comment">// larger one:</span>
+			<span class="keyword">for</span> (m = maxInt, j = <span class="number">0</span>; j &lt; inputLength; ++j) {
+				currentValue = input[j];
+				<span class="keyword">if</span> (currentValue >= n &amp;&amp; currentValue &lt; m) {
+					m = currentValue;
+				}
+			}
+
+			<span class="comment">// Increase `delta` enough to advance the decoder's &lt;n,i> state to &lt;m,0>,</span>
+			<span class="comment">// but guard against overflow</span>
+			handledCPCountPlusOne = handledCPCount + <span class="number">1</span>;
+			<span class="keyword">if</span> (m - n > floor((maxInt - delta) / handledCPCountPlusOne)) {
+				error(<span class="string">'overflow'</span>);
+			}
+
+			delta += (m - n) * handledCPCountPlusOne;
+			n = m;
+
+			<span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; inputLength; ++j) {
+				currentValue = input[j];
+
+				<span class="keyword">if</span> (currentValue &lt; n &amp;&amp; ++delta > maxInt) {
+					error(<span class="string">'overflow'</span>);
+				}
+
+				<span class="keyword">if</span> (currentValue == n) {
+					<span class="comment">// Represent delta as a generalized variable-length integer</span>
+					<span class="keyword">for</span> (q = delta, k = base; <span class="comment">/* no condition */</span>; k += base) {
+						t = k &lt;= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
+						<span class="keyword">if</span> (q &lt; t) {
+							<span class="keyword">break</span>;
+						}
+						qMinusT = q - t;
+						baseMinusT = base - t;
+						output.push(
+							stringFromCharCode(digitToBasic(t + qMinusT % baseMinusT, <span class="number">0</span>))
+						);
+						q = floor(qMinusT / baseMinusT);
+					}
+
+					output.push(stringFromCharCode(digitToBasic(q, <span class="number">0</span>)));
+					bias = adapt(delta, handledCPCountPlusOne, handledCPCount == basicLength);
+					delta = <span class="number">0</span>;
+					++handledCPCount;
+				}
+			}
+
+			++delta;
+			++n;
+
+		}
+		<span class="keyword">return</span> output.join(<span class="string">''</span>);
+	}
+
+	<span class="comment">/**
+	 * Converts a Punycode string representing a domain name or an email address
+	 * to Unicode. Only the Punycoded parts of the input will be converted, i.e.
+	 * it doesn't matter if you call it on a string that has already been
+	 * converted to Unicode.
+	 * @memberOf punycode
+	 * @param {String} input The Punycoded domain name or email address to
+	 * convert to Unicode.
+	 * @returns {String} The Unicode representation of the given Punycode
+	 * string.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">toUnicode</span><span class="params">(input)</span> {</span>
+		<span class="keyword">return</span> mapDomain(input, <span class="keyword">function</span>(string) {
+			<span class="keyword">return</span> regexPunycode.test(string)
+				? decode(string.slice(<span class="number">4</span>).toLowerCase())
+				: string;
+		});
+	}
+
+	<span class="comment">/**
+	 * Converts a Unicode string representing a domain name or an email address to
+	 * Punycode. Only the non-ASCII parts of the domain name will be converted,
+	 * i.e. it doesn't matter if you call it with a domain that's already in
+	 * ASCII.
+	 * @memberOf punycode
+	 * @param {String} input The domain name or email address to convert, as a
+	 * Unicode string.
+	 * @returns {String} The Punycode representation of the given domain name or
+	 * email address.
+	 */</span>
+	<span class="function"><span class="keyword">function</span> <span class="title">toASCII</span><span class="params">(input)</span> {</span>
+		<span class="keyword">return</span> mapDomain(input, <span class="keyword">function</span>(string) {
+			<span class="keyword">return</span> regexNonASCII.test(string)
+				? <span class="string">'xn--'</span> + encode(string)
+				: string;
+		});
+	}
+
+	<span class="comment">/*--------------------------------------------------------------------------*/</span>
+
+	<span class="comment">/** Define the public API */</span>
+	punycode = {
+		<span class="comment">/**
+		 * A string representing the current Punycode.js version number.
+		 * @memberOf punycode
+		 * @type String
+		 */</span>
+		<span class="string">'version'</span>: <span class="string">'1.4.1'</span>,
+		<span class="comment">/**
+		 * An object of methods to convert from JavaScript's internal character
+		 * representation (UCS-2) to Unicode code points, and back.
+		 * @see &lt;https://mathiasbynens.be/notes/javascript-encoding>
+		 * @memberOf punycode
+		 * @type Object
+		 */</span>
+		<span class="string">'ucs2'</span>: {
+			<span class="string">'decode'</span>: ucs2decode,
+			<span class="string">'encode'</span>: ucs2encode
+		},
+		<span class="string">'decode'</span>: decode,
+		<span class="string">'encode'</span>: encode,
+		<span class="string">'toASCII'</span>: toASCII,
+		<span class="string">'toUnicode'</span>: toUnicode
+	};
+
+	<span class="comment">/** Expose `punycode` */</span>
+	<span class="comment">// Some AMD build optimizers, like r.js, check for specific condition patterns</span>
+	<span class="comment">// like the following:</span>
+	<span class="keyword">if</span> (
+		<span class="keyword">typeof</span> define == <span class="string">'function'</span> &amp;&amp;
+		<span class="keyword">typeof</span> define.amd == <span class="string">'object'</span> &amp;&amp;
+		define.amd
+	) {
+		define(<span class="string">'punycode'</span>, <span class="keyword">function</span>() {
+			<span class="keyword">return</span> punycode;
+		});
+	} <span class="keyword">else</span> <span class="keyword">if</span> (freeExports &amp;&amp; freeModule) {
+		<span class="keyword">if</span> (module.exports == freeExports) {
+			<span class="comment">// in Node.js, io.js, or RingoJS v0.8.0+</span>
+			freeModule.exports = punycode;
+		} <span class="keyword">else</span> {
+			<span class="comment">// in Narwhal or RingoJS v0.7.0-</span>
+			<span class="keyword">for</span> (key <span class="keyword">in</span> punycode) {
+				punycode.hasOwnProperty(key) &amp;&amp; (freeExports[key] = punycode[key]);
+			}
+		}
+	} <span class="keyword">else</span> {
+		<span class="comment">// in Rhino or a web browser</span>
+		root.punycode = punycode;
+	}
+
+}(<span class="keyword">this</span>));
+</code></pre>

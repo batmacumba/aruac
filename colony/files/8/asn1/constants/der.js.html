@@ -1,0 +1,44 @@
+<h1>der.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> constants = require(<span class="string">'../constants'</span>);
+
+exports.tagClass = {
+  <span class="number">0</span>: <span class="string">'universal'</span>,
+  <span class="number">1</span>: <span class="string">'application'</span>,
+  <span class="number">2</span>: <span class="string">'context'</span>,
+  <span class="number">3</span>: <span class="string">'private'</span>
+};
+exports.tagClassByName = constants._reverse(exports.tagClass);
+
+exports.tag = {
+  <span class="number">0x00</span>: <span class="string">'end'</span>,
+  <span class="number">0x01</span>: <span class="string">'bool'</span>,
+  <span class="number">0x02</span>: <span class="string">'int'</span>,
+  <span class="number">0x03</span>: <span class="string">'bitstr'</span>,
+  <span class="number">0x04</span>: <span class="string">'octstr'</span>,
+  <span class="number">0x05</span>: <span class="string">'null_'</span>,
+  <span class="number">0x06</span>: <span class="string">'objid'</span>,
+  <span class="number">0x07</span>: <span class="string">'objDesc'</span>,
+  <span class="number">0x08</span>: <span class="string">'external'</span>,
+  <span class="number">0x09</span>: <span class="string">'real'</span>,
+  <span class="number">0x0a</span>: <span class="string">'enum'</span>,
+  <span class="number">0x0b</span>: <span class="string">'embed'</span>,
+  <span class="number">0x0c</span>: <span class="string">'utf8str'</span>,
+  <span class="number">0x0d</span>: <span class="string">'relativeOid'</span>,
+  <span class="number">0x10</span>: <span class="string">'seq'</span>,
+  <span class="number">0x11</span>: <span class="string">'set'</span>,
+  <span class="number">0x12</span>: <span class="string">'numstr'</span>,
+  <span class="number">0x13</span>: <span class="string">'printstr'</span>,
+  <span class="number">0x14</span>: <span class="string">'t61str'</span>,
+  <span class="number">0x15</span>: <span class="string">'videostr'</span>,
+  <span class="number">0x16</span>: <span class="string">'ia5str'</span>,
+  <span class="number">0x17</span>: <span class="string">'utctime'</span>,
+  <span class="number">0x18</span>: <span class="string">'gentime'</span>,
+  <span class="number">0x19</span>: <span class="string">'graphstr'</span>,
+  <span class="number">0x1a</span>: <span class="string">'iso646str'</span>,
+  <span class="number">0x1b</span>: <span class="string">'genstr'</span>,
+  <span class="number">0x1c</span>: <span class="string">'unistr'</span>,
+  <span class="number">0x1d</span>: <span class="string">'charstr'</span>,
+  <span class="number">0x1e</span>: <span class="string">'bmpstr'</span>
+};
+exports.tagByName = constants._reverse(exports.tag);
+</code></pre>

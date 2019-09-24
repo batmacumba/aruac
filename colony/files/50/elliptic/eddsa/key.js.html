@@ -1,0 +1,98 @@
+<h1>key.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> elliptic = require(<span class="string">'../../elliptic'</span>);
+<span class="keyword">var</span> utils = elliptic.utils;
+<span class="keyword">var</span> assert = utils.assert;
+<span class="keyword">var</span> parseBytes = utils.parseBytes;
+<span class="keyword">var</span> cachedProperty = utils.cachedProperty;
+
+<span class="comment">/**
+* @param {EDDSA} eddsa - instance
+* @param {Object} params - public/private key parameters
+*
+* @param {Array&lt;Byte>} [params.secret] - secret seed bytes
+* @param {Point} [params.pub] - public key point (aka `A` in eddsa terms)
+* @param {Array&lt;Byte>} [params.pub] - public key point encoded as bytes
+*
+*/</span>
+<span class="function"><span class="keyword">function</span> <span class="title">KeyPair</span><span class="params">(eddsa, params)</span> {</span>
+  <span class="keyword">this</span>.eddsa = eddsa;
+  <span class="keyword">this</span>._secret = parseBytes(params.secret);
+  <span class="keyword">if</span> (eddsa.isPoint(params.pub))
+    <span class="keyword">this</span>._pub = params.pub;
+  <span class="keyword">else</span>
+    <span class="keyword">this</span>._pubBytes = parseBytes(params.pub);
+}
+
+KeyPair.fromPublic = <span class="function"><span class="keyword">function</span> <span class="title">fromPublic</span><span class="params">(eddsa, pub)</span> {</span>
+  <span class="keyword">if</span> (pub <span class="keyword">instanceof</span> KeyPair)
+    <span class="keyword">return</span> pub;
+  <span class="keyword">return</span> <span class="keyword">new</span> KeyPair(eddsa, { pub: pub });
+};
+
+KeyPair.fromSecret = <span class="function"><span class="keyword">function</span> <span class="title">fromSecret</span><span class="params">(eddsa, secret)</span> {</span>
+  <span class="keyword">if</span> (secret <span class="keyword">instanceof</span> KeyPair)
+    <span class="keyword">return</span> secret;
+  <span class="keyword">return</span> <span class="keyword">new</span> KeyPair(eddsa, { secret: secret });
+};
+
+KeyPair.prototype.secret = <span class="function"><span class="keyword">function</span> <span class="title">secret</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>._secret;
+};
+
+cachedProperty(KeyPair, <span class="string">'pubBytes'</span>, <span class="function"><span class="keyword">function</span> <span class="title">pubBytes</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.encodePoint(<span class="keyword">this</span>.pub());
+});
+
+cachedProperty(KeyPair, <span class="string">'pub'</span>, <span class="function"><span class="keyword">function</span> <span class="title">pub</span><span class="params">()</span> {</span>
+  <span class="keyword">if</span> (<span class="keyword">this</span>._pubBytes)
+    <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.decodePoint(<span class="keyword">this</span>._pubBytes);
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.g.mul(<span class="keyword">this</span>.priv());
+});
+
+cachedProperty(KeyPair, <span class="string">'privBytes'</span>, <span class="function"><span class="keyword">function</span> <span class="title">privBytes</span><span class="params">()</span> {</span>
+  <span class="keyword">var</span> eddsa = <span class="keyword">this</span>.eddsa;
+  <span class="keyword">var</span> hash = <span class="keyword">this</span>.hash();
+  <span class="keyword">var</span> lastIx = eddsa.encodingLength - <span class="number">1</span>;
+
+  <span class="keyword">var</span> a = hash.slice(<span class="number">0</span>, eddsa.encodingLength);
+  a[<span class="number">0</span>] &amp;= <span class="number">248</span>;
+  a[lastIx] &amp;= <span class="number">127</span>;
+  a[lastIx] |= <span class="number">64</span>;
+
+  <span class="keyword">return</span> a;
+});
+
+cachedProperty(KeyPair, <span class="string">'priv'</span>, <span class="function"><span class="keyword">function</span> <span class="title">priv</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.decodeInt(<span class="keyword">this</span>.privBytes());
+});
+
+cachedProperty(KeyPair, <span class="string">'hash'</span>, <span class="function"><span class="keyword">function</span> <span class="title">hash</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.hash().update(<span class="keyword">this</span>.secret()).digest();
+});
+
+cachedProperty(KeyPair, <span class="string">'messagePrefix'</span>, <span class="function"><span class="keyword">function</span> <span class="title">messagePrefix</span><span class="params">()</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.hash().slice(<span class="keyword">this</span>.eddsa.encodingLength);
+});
+
+KeyPair.prototype.sign = <span class="function"><span class="keyword">function</span> <span class="title">sign</span><span class="params">(message)</span> {</span>
+  assert(<span class="keyword">this</span>._secret, <span class="string">'KeyPair can only verify'</span>);
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.sign(message, <span class="keyword">this</span>);
+};
+
+KeyPair.prototype.verify = <span class="function"><span class="keyword">function</span> <span class="title">verify</span><span class="params">(message, sig)</span> {</span>
+  <span class="keyword">return</span> <span class="keyword">this</span>.eddsa.verify(message, sig, <span class="keyword">this</span>);
+};
+
+KeyPair.prototype.getSecret = <span class="function"><span class="keyword">function</span> <span class="title">getSecret</span><span class="params">(enc)</span> {</span>
+  assert(<span class="keyword">this</span>._secret, <span class="string">'KeyPair is public only'</span>);
+  <span class="keyword">return</span> utils.encode(<span class="keyword">this</span>.secret(), enc);
+};
+
+KeyPair.prototype.getPublic = <span class="function"><span class="keyword">function</span> <span class="title">getPublic</span><span class="params">(enc)</span> {</span>
+  <span class="keyword">return</span> utils.encode(<span class="keyword">this</span>.pubBytes(), enc);
+};
+
+module.exports = KeyPair;
+</code></pre>

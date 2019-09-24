@@ -1,0 +1,66 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> Splicer = require(<span class="string">'stream-splicer'</span>);
+<span class="keyword">var</span> inherits = require(<span class="string">'inherits'</span>);
+
+module.exports = Labeled;
+inherits(Labeled, Splicer);
+
+module.exports.obj = <span class="function"><span class="keyword">function</span> <span class="params">(streams, opts)</span> {</span>
+    <span class="keyword">if</span> (!opts) opts = {};
+    opts.objectMode = <span class="literal">true</span>;
+    <span class="keyword">return</span> <span class="keyword">new</span> Labeled(streams, opts);
+};
+
+<span class="function"><span class="keyword">function</span> <span class="title">Labeled</span> <span class="params">(streams, opts)</span> {</span>
+    <span class="keyword">if</span> (!(<span class="keyword">this</span> <span class="keyword">instanceof</span> Labeled)) <span class="keyword">return</span> <span class="keyword">new</span> Labeled(streams, opts);
+    Splicer.call(<span class="keyword">this</span>, [], opts);
+    
+    <span class="keyword">var</span> reps = [];
+    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; streams.length; i++) {
+        <span class="keyword">var</span> s = streams[i];
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> s === <span class="string">'string'</span>) <span class="keyword">continue</span>;
+        <span class="keyword">if</span> (Array.isArray(s)) {
+            s = <span class="keyword">new</span> Labeled(s, opts);
+        }
+        <span class="keyword">if</span> (i >= <span class="number">0</span> &amp;&amp; <span class="keyword">typeof</span> streams[i-<span class="number">1</span>] === <span class="string">'string'</span>) {
+            s.label = streams[i-<span class="number">1</span>];
+        }
+        reps.push(s);
+    }
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> streams[i-<span class="number">1</span>] === <span class="string">'string'</span>) {
+        reps.push(<span class="keyword">new</span> Labeled([], opts));
+    }
+    <span class="keyword">this</span>.splice.apply(<span class="keyword">this</span>, [<span class="number">0</span>,<span class="number">0</span>].concat(reps));
+}
+
+Labeled.prototype.indexOf = <span class="function"><span class="keyword">function</span> <span class="params">(stream)</span> {</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> stream === <span class="string">'string'</span>) {
+        <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; <span class="keyword">this</span>._streams.length; i++) {
+            <span class="keyword">if</span> (<span class="keyword">this</span>._streams[i].label === stream) <span class="keyword">return</span> i;
+        }
+        <span class="keyword">return</span> -<span class="number">1</span>;
+    }
+    <span class="keyword">else</span> {
+        <span class="keyword">return</span> Splicer.prototype.indexOf.call(<span class="keyword">this</span>, stream);
+    }
+};
+
+Labeled.prototype.get = <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> key === <span class="string">'string'</span>) {
+        <span class="keyword">var</span> ix = <span class="keyword">this</span>.indexOf(key);
+        <span class="keyword">if</span> (ix &lt; <span class="number">0</span>) <span class="keyword">return</span> <span class="literal">undefined</span>;
+        <span class="keyword">return</span> <span class="keyword">this</span>._streams[ix];
+    }
+    <span class="keyword">else</span> <span class="keyword">return</span> Splicer.prototype.get.call(<span class="keyword">this</span>, key);
+};
+
+Labeled.prototype.splice = <span class="function"><span class="keyword">function</span> <span class="params">(key)</span> {</span>
+    <span class="keyword">var</span> ix;
+    <span class="keyword">if</span> (<span class="keyword">typeof</span> key === <span class="string">'string'</span>) {
+        ix = <span class="keyword">this</span>.indexOf(key);
+    }
+    <span class="keyword">else</span> ix = key;
+    <span class="keyword">var</span> args = [ ix ].concat([].slice.call(arguments, <span class="number">1</span>));
+    <span class="keyword">return</span> Splicer.prototype.splice.apply(<span class="keyword">this</span>, args);
+};
+</code></pre>

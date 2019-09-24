@@ -1,0 +1,61 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="string">'use strict'</span>;
+module.exports = balanced;
+<span class="function"><span class="keyword">function</span> <span class="title">balanced</span><span class="params">(a, b, str)</span> {</span>
+  <span class="keyword">if</span> (a <span class="keyword">instanceof</span> RegExp) a = maybeMatch(a, str);
+  <span class="keyword">if</span> (b <span class="keyword">instanceof</span> RegExp) b = maybeMatch(b, str);
+
+  <span class="keyword">var</span> r = range(a, b, str);
+
+  <span class="keyword">return</span> r &amp;&amp; {
+    start: r[<span class="number">0</span>],
+    end: r[<span class="number">1</span>],
+    pre: str.slice(<span class="number">0</span>, r[<span class="number">0</span>]),
+    body: str.slice(r[<span class="number">0</span>] + a.length, r[<span class="number">1</span>]),
+    post: str.slice(r[<span class="number">1</span>] + b.length)
+  };
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">maybeMatch</span><span class="params">(reg, str)</span> {</span>
+  <span class="keyword">var</span> m = str.match(reg);
+  <span class="keyword">return</span> m ? m[<span class="number">0</span>] : <span class="literal">null</span>;
+}
+
+balanced.range = range;
+<span class="function"><span class="keyword">function</span> <span class="title">range</span><span class="params">(a, b, str)</span> {</span>
+  <span class="keyword">var</span> begs, beg, left, right, result;
+  <span class="keyword">var</span> ai = str.indexOf(a);
+  <span class="keyword">var</span> bi = str.indexOf(b, ai + <span class="number">1</span>);
+  <span class="keyword">var</span> i = ai;
+
+  <span class="keyword">if</span> (ai >= <span class="number">0</span> &amp;&amp; bi > <span class="number">0</span>) {
+    begs = [];
+    left = str.length;
+
+    <span class="keyword">while</span> (i >= <span class="number">0</span> &amp;&amp; !result) {
+      <span class="keyword">if</span> (i == ai) {
+        begs.push(i);
+        ai = str.indexOf(a, i + <span class="number">1</span>);
+      } <span class="keyword">else</span> <span class="keyword">if</span> (begs.length == <span class="number">1</span>) {
+        result = [ begs.pop(), bi ];
+      } <span class="keyword">else</span> {
+        beg = begs.pop();
+        <span class="keyword">if</span> (beg &lt; left) {
+          left = beg;
+          right = bi;
+        }
+
+        bi = str.indexOf(b, i + <span class="number">1</span>);
+      }
+
+      i = ai &lt; bi &amp;&amp; ai >= <span class="number">0</span> ? ai : bi;
+    }
+
+    <span class="keyword">if</span> (begs.length) {
+      result = [ left, right ];
+    }
+  }
+
+  <span class="keyword">return</span> result;
+}
+</code></pre>

@@ -1,0 +1,33 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> checkParameters = require(<span class="string">'./lib/precondition'</span>)
+<span class="keyword">var</span> native = require(<span class="string">'crypto'</span>)
+
+<span class="function"><span class="keyword">function</span> <span class="title">nativePBKDF2</span> <span class="params">(password, salt, iterations, keylen, digest, callback)</span> {</span>
+  checkParameters(password, salt, iterations, keylen)
+
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> digest === <span class="string">'function'</span>) {
+    callback = digest
+    digest = <span class="string">'sha1'</span>
+  }
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> callback !== <span class="string">'function'</span>) <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'No callback provided to pbkdf2'</span>)
+
+  <span class="keyword">return</span> native.pbkdf2(password, salt, iterations, keylen, digest, callback)
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">nativePBKDF2Sync</span> <span class="params">(password, salt, iterations, keylen, digest)</span> {</span>
+  checkParameters(password, salt, iterations, keylen)
+  digest = digest || <span class="string">'sha1'</span>
+  <span class="keyword">return</span> native.pbkdf2Sync(password, salt, iterations, keylen, digest)
+}
+
+<span class="comment">/* istanbul ignore next */</span>
+<span class="keyword">if</span> (!native.pbkdf2Sync || native.pbkdf2Sync.toString().indexOf(<span class="string">'keylen, digest'</span>) === -<span class="number">1</span>) {
+  exports.pbkdf2Sync = require(<span class="string">'./lib/sync'</span>)
+  exports.pbkdf2 = require(<span class="string">'./lib/async'</span>)
+
+<span class="comment">// native</span>
+} <span class="keyword">else</span> {
+  exports.pbkdf2Sync = nativePBKDF2Sync
+  exports.pbkdf2 = nativePBKDF2
+}
+</code></pre>

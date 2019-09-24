@@ -1,0 +1,7 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> toString = {}.toString;
+
+module.exports = Array.isArray || <span class="function"><span class="keyword">function</span> <span class="params">(arr)</span> {</span>
+  <span class="keyword">return</span> toString.call(arr) == <span class="string">'[object Array]'</span>;
+};
+</code></pre>

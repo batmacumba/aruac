@@ -1,0 +1,32 @@
+<h1>mappings-from-map.js</h1>
+<pre><code class="lang-js"><span class="keyword">var</span> SMConsumer  =  require(<span class="string">'source-map'</span>).SourceMapConsumer;
+
+<span class="comment">/**
+ * @name mappingsFromMap
+ * @function
+ * @param map {Object} the JSON.parse()'ed map
+ * @return {Array} array of mappings
+ */</span>
+module.exports = <span class="function"><span class="keyword">function</span> <span class="params">(map)</span> {</span>
+  <span class="keyword">var</span> consumer = <span class="keyword">new</span> SMConsumer(map);
+  <span class="keyword">var</span> mappings = [];
+
+  consumer.eachMapping(<span class="function"><span class="keyword">function</span> <span class="params">(mapping)</span> {</span>
+    <span class="comment">// only set source if we have original position to handle edgecase (see inline-source-map tests)</span>
+    mappings.push({
+      original: mapping.originalColumn != <span class="literal">null</span> ? {
+        column: mapping.originalColumn
+      , line: mapping.originalLine
+      } : <span class="literal">undefined</span>
+    , generated: {
+        column: mapping.generatedColumn
+      , line: mapping.generatedLine
+      }
+    , source: mapping.originalColumn != <span class="literal">null</span> ? mapping.source : <span class="literal">undefined</span>
+    , name: mapping.name
+    });
+  });
+
+  <span class="keyword">return</span> mappings;
+}
+</code></pre>

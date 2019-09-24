@@ -12,6 +12,7 @@ var cors = require('cors');
 app.get('/js/bundle.js', function (req, res, next) {
   req.url = req.url + '.gz';
   res.set('Content-Encoding', 'gzip');
+  res.set('Content-Type', 'text/javascript');
   next();
 });
 
@@ -31,6 +32,6 @@ app.use('/*', function(req, res) {
   })
 })
 
-mongoose.connect('mongodb://localhost/myapp');
+mongoose.connect('mongodb://localhost/aruac');
 
 module.exports=app;

@@ -1,0 +1,186 @@
+<h1>process/browser.js</h1>
+<pre><code class="lang-js"><span class="comment">// shim for using process in browser</span>
+<span class="keyword">var</span> process = module.exports = {};
+
+<span class="comment">// cached from whatever global is present so that test runners that stub it</span>
+<span class="comment">// don't break things.  But we need to wrap it in a try catch in case it is</span>
+<span class="comment">// wrapped in strict mode code which doesn't define any globals.  It's inside a</span>
+<span class="comment">// function because try/catches deoptimize in certain engines.</span>
+
+<span class="keyword">var</span> cachedSetTimeout;
+<span class="keyword">var</span> cachedClearTimeout;
+
+<span class="function"><span class="keyword">function</span> <span class="title">defaultSetTimout</span><span class="params">()</span> {</span>
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'setTimeout has not been defined'</span>);
+}
+<span class="function"><span class="keyword">function</span> <span class="title">defaultClearTimeout</span> <span class="params">()</span> {</span>
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'clearTimeout has not been defined'</span>);
+}
+(<span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">try</span> {
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> setTimeout === <span class="string">'function'</span>) {
+            cachedSetTimeout = setTimeout;
+        } <span class="keyword">else</span> {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } <span class="keyword">catch</span> (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    <span class="keyword">try</span> {
+        <span class="keyword">if</span> (<span class="keyword">typeof</span> clearTimeout === <span class="string">'function'</span>) {
+            cachedClearTimeout = clearTimeout;
+        } <span class="keyword">else</span> {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } <span class="keyword">catch</span> (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+<span class="function"><span class="keyword">function</span> <span class="title">runTimeout</span><span class="params">(fun)</span> {</span>
+    <span class="keyword">if</span> (cachedSetTimeout === setTimeout) {
+        <span class="comment">//normal enviroments in sane situations</span>
+        <span class="keyword">return</span> setTimeout(fun, <span class="number">0</span>);
+    }
+    <span class="comment">// if setTimeout wasn't available but was latter defined</span>
+    <span class="keyword">if</span> ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) &amp;&amp; setTimeout) {
+        cachedSetTimeout = setTimeout;
+        <span class="keyword">return</span> setTimeout(fun, <span class="number">0</span>);
+    }
+    <span class="keyword">try</span> {
+        <span class="comment">// when when somebody has screwed with setTimeout but no I.E. maddness</span>
+        <span class="keyword">return</span> cachedSetTimeout(fun, <span class="number">0</span>);
+    } <span class="keyword">catch</span>(e){
+        <span class="keyword">try</span> {
+            <span class="comment">// When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally</span>
+            <span class="keyword">return</span> cachedSetTimeout.call(<span class="literal">null</span>, fun, <span class="number">0</span>);
+        } <span class="keyword">catch</span>(e){
+            <span class="comment">// same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error</span>
+            <span class="keyword">return</span> cachedSetTimeout.call(<span class="keyword">this</span>, fun, <span class="number">0</span>);
+        }
+    }
+
+
+}
+<span class="function"><span class="keyword">function</span> <span class="title">runClearTimeout</span><span class="params">(marker)</span> {</span>
+    <span class="keyword">if</span> (cachedClearTimeout === clearTimeout) {
+        <span class="comment">//normal enviroments in sane situations</span>
+        <span class="keyword">return</span> clearTimeout(marker);
+    }
+    <span class="comment">// if clearTimeout wasn't available but was latter defined</span>
+    <span class="keyword">if</span> ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) &amp;&amp; clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        <span class="keyword">return</span> clearTimeout(marker);
+    }
+    <span class="keyword">try</span> {
+        <span class="comment">// when when somebody has screwed with setTimeout but no I.E. maddness</span>
+        <span class="keyword">return</span> cachedClearTimeout(marker);
+    } <span class="keyword">catch</span> (e){
+        <span class="keyword">try</span> {
+            <span class="comment">// When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally</span>
+            <span class="keyword">return</span> cachedClearTimeout.call(<span class="literal">null</span>, marker);
+        } <span class="keyword">catch</span> (e){
+            <span class="comment">// same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.</span>
+            <span class="comment">// Some versions of I.E. have different rules for clearTimeout vs setTimeout</span>
+            <span class="keyword">return</span> cachedClearTimeout.call(<span class="keyword">this</span>, marker);
+        }
+    }
+
+
+
+}
+<span class="keyword">var</span> queue = [];
+<span class="keyword">var</span> draining = <span class="literal">false</span>;
+<span class="keyword">var</span> currentQueue;
+<span class="keyword">var</span> queueIndex = -<span class="number">1</span>;
+
+<span class="function"><span class="keyword">function</span> <span class="title">cleanUpNextTick</span><span class="params">()</span> {</span>
+    <span class="keyword">if</span> (!draining || !currentQueue) {
+        <span class="keyword">return</span>;
+    }
+    draining = <span class="literal">false</span>;
+    <span class="keyword">if</span> (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } <span class="keyword">else</span> {
+        queueIndex = -<span class="number">1</span>;
+    }
+    <span class="keyword">if</span> (queue.length) {
+        drainQueue();
+    }
+}
+
+<span class="function"><span class="keyword">function</span> <span class="title">drainQueue</span><span class="params">()</span> {</span>
+    <span class="keyword">if</span> (draining) {
+        <span class="keyword">return</span>;
+    }
+    <span class="keyword">var</span> timeout = runTimeout(cleanUpNextTick);
+    draining = <span class="literal">true</span>;
+
+    <span class="keyword">var</span> len = queue.length;
+    <span class="keyword">while</span>(len) {
+        currentQueue = queue;
+        queue = [];
+        <span class="keyword">while</span> (++queueIndex &lt; len) {
+            <span class="keyword">if</span> (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -<span class="number">1</span>;
+        len = queue.length;
+    }
+    currentQueue = <span class="literal">null</span>;
+    draining = <span class="literal">false</span>;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = <span class="function"><span class="keyword">function</span> <span class="params">(fun)</span> {</span>
+    <span class="keyword">var</span> args = <span class="keyword">new</span> Array(arguments.length - <span class="number">1</span>);
+    <span class="keyword">if</span> (arguments.length > <span class="number">1</span>) {
+        <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">1</span>; i &lt; arguments.length; i++) {
+            args[i - <span class="number">1</span>] = arguments[i];
+        }
+    }
+    queue.push(<span class="keyword">new</span> Item(fun, args));
+    <span class="keyword">if</span> (queue.length === <span class="number">1</span> &amp;&amp; !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+<span class="comment">// v8 likes predictible objects</span>
+<span class="function"><span class="keyword">function</span> <span class="title">Item</span><span class="params">(fun, array)</span> {</span>
+    <span class="keyword">this</span>.fun = fun;
+    <span class="keyword">this</span>.array = array;
+}
+Item.prototype.run = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+    <span class="keyword">this</span>.fun.apply(<span class="literal">null</span>, <span class="keyword">this</span>.array);
+};
+process.title = <span class="string">'browser'</span>;
+process.browser = <span class="literal">true</span>;
+process.env = {};
+process.argv = [];
+process.version = <span class="string">''</span>; <span class="comment">// empty string to avoid regexp issues</span>
+process.versions = {};
+
+<span class="function"><span class="keyword">function</span> <span class="title">noop</span><span class="params">()</span> {</span>}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = <span class="function"><span class="keyword">function</span> <span class="params">(name)</span> {</span> <span class="keyword">return</span> [] }
+
+process.binding = <span class="function"><span class="keyword">function</span> <span class="params">(name)</span> {</span>
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'process.binding is not supported'</span>);
+};
+
+process.cwd = <span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span> <span class="keyword">return</span> <span class="string">'/'</span> };
+process.chdir = <span class="function"><span class="keyword">function</span> <span class="params">(dir)</span> {</span>
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'process.chdir is not supported'</span>);
+};
+process.umask = <span class="keyword">function</span>() { <span class="keyword">return</span> <span class="number">0</span>; };
+</code></pre>

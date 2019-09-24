@@ -307,10 +307,10 @@ class Update extends React.Component {
                                 <div className="row">
                                   <div className="col-sm-11">
                                     <select id="category" name="category" value={this.state.category} onChange={this.handleTextChange}>
+                                        <option value="producao">Em Produção</option>
                                         <option value="cinema">Cinema</option>
-                                        <option value="tv">TV</option>
-                                        <option value="teatro">Teatro</option>
-                                        <option value="etc">Outros</option>
+                                        <option value="tv">Televisão</option>
+                                        <option value="teatro">Espetáculos</option>
                                     </select>
                                   </div>
                                 </div>

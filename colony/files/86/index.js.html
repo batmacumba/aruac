@@ -1,0 +1,16 @@
+<h1>index.js</h1>
+<pre><code class="lang-js"><span class="comment">// Top level file is just a mixin of submodules &amp; constants</span>
+<span class="string">'use strict'</span>;
+
+<span class="keyword">var</span> assign    = require(<span class="string">'./lib/utils/common'</span>).assign;
+
+<span class="keyword">var</span> deflate   = require(<span class="string">'./lib/deflate'</span>);
+<span class="keyword">var</span> inflate   = require(<span class="string">'./lib/inflate'</span>);
+<span class="keyword">var</span> constants = require(<span class="string">'./lib/zlib/constants'</span>);
+
+<span class="keyword">var</span> pako = {};
+
+assign(pako, deflate, inflate, constants);
+
+module.exports = pako;
+</code></pre>

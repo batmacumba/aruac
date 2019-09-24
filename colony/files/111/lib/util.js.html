@@ -1,0 +1,419 @@
+<h1>util.js</h1>
+<pre><code class="lang-js"><span class="comment">/* -*- Mode: js; js-indent-level: 2; -*- */</span>
+<span class="comment">/*
+ * Copyright 2011 Mozilla Foundation and contributors
+ * Licensed under the New BSD license. See LICENSE or:
+ * http://opensource.org/licenses/BSD-3-Clause
+ */</span>
+
+<span class="comment">/**
+ * This is a helper function for getting values from parameter/options
+ * objects.
+ *
+ * @param args The object we are extracting values from
+ * @param name The name of the property we are getting.
+ * @param defaultValue An optional value to return if the property is missing
+ * from the object. If this is not specified and the property is missing, an
+ * error will be thrown.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">getArg</span><span class="params">(aArgs, aName, aDefaultValue)</span> {</span>
+  <span class="keyword">if</span> (aName <span class="keyword">in</span> aArgs) {
+    <span class="keyword">return</span> aArgs[aName];
+  } <span class="keyword">else</span> <span class="keyword">if</span> (arguments.length === <span class="number">3</span>) {
+    <span class="keyword">return</span> aDefaultValue;
+  } <span class="keyword">else</span> {
+    <span class="keyword">throw</span> <span class="keyword">new</span> Error(<span class="string">'"'</span> + aName + <span class="string">'" is a required argument.'</span>);
+  }
+}
+exports.getArg = getArg;
+
+<span class="keyword">var</span> urlRegexp = <span class="regexp">/^(?:([\w+\-.]+):)?\/\/(?:(\w+:\w+)@)?([\w.]*)(?::(\d+))?(\S*)$/</span>;
+<span class="keyword">var</span> dataUrlRegexp = <span class="regexp">/^data:.+\,.+$/</span>;
+
+<span class="function"><span class="keyword">function</span> <span class="title">urlParse</span><span class="params">(aUrl)</span> {</span>
+  <span class="keyword">var</span> match = aUrl.match(urlRegexp);
+  <span class="keyword">if</span> (!match) {
+    <span class="keyword">return</span> <span class="literal">null</span>;
+  }
+  <span class="keyword">return</span> {
+    scheme: match[<span class="number">1</span>],
+    auth: match[<span class="number">2</span>],
+    host: match[<span class="number">3</span>],
+    port: match[<span class="number">4</span>],
+    path: match[<span class="number">5</span>]
+  };
+}
+exports.urlParse = urlParse;
+
+<span class="function"><span class="keyword">function</span> <span class="title">urlGenerate</span><span class="params">(aParsedUrl)</span> {</span>
+  <span class="keyword">var</span> url = <span class="string">''</span>;
+  <span class="keyword">if</span> (aParsedUrl.scheme) {
+    url += aParsedUrl.scheme + <span class="string">':'</span>;
+  }
+  url += <span class="string">'//'</span>;
+  <span class="keyword">if</span> (aParsedUrl.auth) {
+    url += aParsedUrl.auth + <span class="string">'@'</span>;
+  }
+  <span class="keyword">if</span> (aParsedUrl.host) {
+    url += aParsedUrl.host;
+  }
+  <span class="keyword">if</span> (aParsedUrl.port) {
+    url += <span class="string">":"</span> + aParsedUrl.port
+  }
+  <span class="keyword">if</span> (aParsedUrl.path) {
+    url += aParsedUrl.path;
+  }
+  <span class="keyword">return</span> url;
+}
+exports.urlGenerate = urlGenerate;
+
+<span class="comment">/**
+ * Normalizes a path, or the path portion of a URL:
+ *
+ * - Replaces consecutive slashes with one slash.
+ * - Removes unnecessary '.' parts.
+ * - Removes unnecessary '&lt;dir>/..' parts.
+ *
+ * Based on code in the Node.js 'path' core module.
+ *
+ * @param aPath The path or url to normalize.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">normalize</span><span class="params">(aPath)</span> {</span>
+  <span class="keyword">var</span> path = aPath;
+  <span class="keyword">var</span> url = urlParse(aPath);
+  <span class="keyword">if</span> (url) {
+    <span class="keyword">if</span> (!url.path) {
+      <span class="keyword">return</span> aPath;
+    }
+    path = url.path;
+  }
+  <span class="keyword">var</span> isAbsolute = exports.isAbsolute(path);
+
+  <span class="keyword">var</span> parts = path.split(<span class="regexp">/\/+/</span>);
+  <span class="keyword">for</span> (<span class="keyword">var</span> part, up = <span class="number">0</span>, i = parts.length - <span class="number">1</span>; i >= <span class="number">0</span>; i--) {
+    part = parts[i];
+    <span class="keyword">if</span> (part === <span class="string">'.'</span>) {
+      parts.splice(i, <span class="number">1</span>);
+    } <span class="keyword">else</span> <span class="keyword">if</span> (part === <span class="string">'..'</span>) {
+      up++;
+    } <span class="keyword">else</span> <span class="keyword">if</span> (up > <span class="number">0</span>) {
+      <span class="keyword">if</span> (part === <span class="string">''</span>) {
+        <span class="comment">// The first part is blank if the path is absolute. Trying to go</span>
+        <span class="comment">// above the root is a no-op. Therefore we can remove all '..' parts</span>
+        <span class="comment">// directly after the root.</span>
+        parts.splice(i + <span class="number">1</span>, up);
+        up = <span class="number">0</span>;
+      } <span class="keyword">else</span> {
+        parts.splice(i, <span class="number">2</span>);
+        up--;
+      }
+    }
+  }
+  path = parts.join(<span class="string">'/'</span>);
+
+  <span class="keyword">if</span> (path === <span class="string">''</span>) {
+    path = isAbsolute ? <span class="string">'/'</span> : <span class="string">'.'</span>;
+  }
+
+  <span class="keyword">if</span> (url) {
+    url.path = path;
+    <span class="keyword">return</span> urlGenerate(url);
+  }
+  <span class="keyword">return</span> path;
+}
+exports.normalize = normalize;
+
+<span class="comment">/**
+ * Joins two paths/URLs.
+ *
+ * @param aRoot The root path or URL.
+ * @param aPath The path or URL to be joined with the root.
+ *
+ * - If aPath is a URL or a data URI, aPath is returned, unless aPath is a
+ *   scheme-relative URL: Then the scheme of aRoot, if any, is prepended
+ *   first.
+ * - Otherwise aPath is a path. If aRoot is a URL, then its path portion
+ *   is updated with the result and aRoot is returned. Otherwise the result
+ *   is returned.
+ *   - If aPath is absolute, the result is aPath.
+ *   - Otherwise the two paths are joined with a slash.
+ * - Joining for example 'http://' and 'www.example.com' is also supported.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">join</span><span class="params">(aRoot, aPath)</span> {</span>
+  <span class="keyword">if</span> (aRoot === <span class="string">""</span>) {
+    aRoot = <span class="string">"."</span>;
+  }
+  <span class="keyword">if</span> (aPath === <span class="string">""</span>) {
+    aPath = <span class="string">"."</span>;
+  }
+  <span class="keyword">var</span> aPathUrl = urlParse(aPath);
+  <span class="keyword">var</span> aRootUrl = urlParse(aRoot);
+  <span class="keyword">if</span> (aRootUrl) {
+    aRoot = aRootUrl.path || <span class="string">'/'</span>;
+  }
+
+  <span class="comment">// `join(foo, '//www.example.org')`</span>
+  <span class="keyword">if</span> (aPathUrl &amp;&amp; !aPathUrl.scheme) {
+    <span class="keyword">if</span> (aRootUrl) {
+      aPathUrl.scheme = aRootUrl.scheme;
+    }
+    <span class="keyword">return</span> urlGenerate(aPathUrl);
+  }
+
+  <span class="keyword">if</span> (aPathUrl || aPath.match(dataUrlRegexp)) {
+    <span class="keyword">return</span> aPath;
+  }
+
+  <span class="comment">// `join('http://', 'www.example.com')`</span>
+  <span class="keyword">if</span> (aRootUrl &amp;&amp; !aRootUrl.host &amp;&amp; !aRootUrl.path) {
+    aRootUrl.host = aPath;
+    <span class="keyword">return</span> urlGenerate(aRootUrl);
+  }
+
+  <span class="keyword">var</span> joined = aPath.charAt(<span class="number">0</span>) === <span class="string">'/'</span>
+    ? aPath
+    : normalize(aRoot.replace(<span class="regexp">/\/+$/</span>, <span class="string">''</span>) + <span class="string">'/'</span> + aPath);
+
+  <span class="keyword">if</span> (aRootUrl) {
+    aRootUrl.path = joined;
+    <span class="keyword">return</span> urlGenerate(aRootUrl);
+  }
+  <span class="keyword">return</span> joined;
+}
+exports.join = join;
+
+exports.isAbsolute = <span class="function"><span class="keyword">function</span> <span class="params">(aPath)</span> {</span>
+  <span class="keyword">return</span> aPath.charAt(<span class="number">0</span>) === <span class="string">'/'</span> || !!aPath.match(urlRegexp);
+};
+
+<span class="comment">/**
+ * Make a path relative to a URL or another path.
+ *
+ * @param aRoot The root path or URL.
+ * @param aPath The path or URL to be made relative to aRoot.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">relative</span><span class="params">(aRoot, aPath)</span> {</span>
+  <span class="keyword">if</span> (aRoot === <span class="string">""</span>) {
+    aRoot = <span class="string">"."</span>;
+  }
+
+  aRoot = aRoot.replace(<span class="regexp">/\/$/</span>, <span class="string">''</span>);
+
+  <span class="comment">// It is possible for the path to be above the root. In this case, simply</span>
+  <span class="comment">// checking whether the root is a prefix of the path won't work. Instead, we</span>
+  <span class="comment">// need to remove components from the root one by one, until either we find</span>
+  <span class="comment">// a prefix that fits, or we run out of components to remove.</span>
+  <span class="keyword">var</span> level = <span class="number">0</span>;
+  <span class="keyword">while</span> (aPath.indexOf(aRoot + <span class="string">'/'</span>) !== <span class="number">0</span>) {
+    <span class="keyword">var</span> index = aRoot.lastIndexOf(<span class="string">"/"</span>);
+    <span class="keyword">if</span> (index &lt; <span class="number">0</span>) {
+      <span class="keyword">return</span> aPath;
+    }
+
+    <span class="comment">// If the only part of the root that is left is the scheme (i.e. http://,</span>
+    <span class="comment">// file:///, etc.), one or more slashes (/), or simply nothing at all, we</span>
+    <span class="comment">// have exhausted all components, so the path is not relative to the root.</span>
+    aRoot = aRoot.slice(<span class="number">0</span>, index);
+    <span class="keyword">if</span> (aRoot.match(<span class="regexp">/^([^\/]+:\/)?\/*$/</span>)) {
+      <span class="keyword">return</span> aPath;
+    }
+
+    ++level;
+  }
+
+  <span class="comment">// Make sure we add a "../" for each component we removed from the root.</span>
+  <span class="keyword">return</span> Array(level + <span class="number">1</span>).join(<span class="string">"../"</span>) + aPath.substr(aRoot.length + <span class="number">1</span>);
+}
+exports.relative = relative;
+
+<span class="keyword">var</span> supportsNullProto = (<span class="function"><span class="keyword">function</span> <span class="params">()</span> {</span>
+  <span class="keyword">var</span> obj = Object.create(<span class="literal">null</span>);
+  <span class="keyword">return</span> !(<span class="string">'__proto__'</span> <span class="keyword">in</span> obj);
+}());
+
+<span class="function"><span class="keyword">function</span> <span class="title">identity</span> <span class="params">(s)</span> {</span>
+  <span class="keyword">return</span> s;
+}
+
+<span class="comment">/**
+ * Because behavior goes wacky when you set `__proto__` on objects, we
+ * have to prefix all the strings in our set with an arbitrary character.
+ *
+ * See https://github.com/mozilla/source-map/pull/31 and
+ * https://github.com/mozilla/source-map/issues/30
+ *
+ * @param String aStr
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">toSetString</span><span class="params">(aStr)</span> {</span>
+  <span class="keyword">if</span> (isProtoString(aStr)) {
+    <span class="keyword">return</span> <span class="string">'$'</span> + aStr;
+  }
+
+  <span class="keyword">return</span> aStr;
+}
+exports.toSetString = supportsNullProto ? identity : toSetString;
+
+<span class="function"><span class="keyword">function</span> <span class="title">fromSetString</span><span class="params">(aStr)</span> {</span>
+  <span class="keyword">if</span> (isProtoString(aStr)) {
+    <span class="keyword">return</span> aStr.slice(<span class="number">1</span>);
+  }
+
+  <span class="keyword">return</span> aStr;
+}
+exports.fromSetString = supportsNullProto ? identity : fromSetString;
+
+<span class="function"><span class="keyword">function</span> <span class="title">isProtoString</span><span class="params">(s)</span> {</span>
+  <span class="keyword">if</span> (!s) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  <span class="keyword">var</span> length = s.length;
+
+  <span class="keyword">if</span> (length &lt; <span class="number">9</span> <span class="comment">/* "__proto__".length */</span>) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  <span class="keyword">if</span> (s.charCodeAt(length - <span class="number">1</span>) !== <span class="number">95</span>  <span class="comment">/* '_' */</span> ||
+      s.charCodeAt(length - <span class="number">2</span>) !== <span class="number">95</span>  <span class="comment">/* '_' */</span> ||
+      s.charCodeAt(length - <span class="number">3</span>) !== <span class="number">111</span> <span class="comment">/* 'o' */</span> ||
+      s.charCodeAt(length - <span class="number">4</span>) !== <span class="number">116</span> <span class="comment">/* 't' */</span> ||
+      s.charCodeAt(length - <span class="number">5</span>) !== <span class="number">111</span> <span class="comment">/* 'o' */</span> ||
+      s.charCodeAt(length - <span class="number">6</span>) !== <span class="number">114</span> <span class="comment">/* 'r' */</span> ||
+      s.charCodeAt(length - <span class="number">7</span>) !== <span class="number">112</span> <span class="comment">/* 'p' */</span> ||
+      s.charCodeAt(length - <span class="number">8</span>) !== <span class="number">95</span>  <span class="comment">/* '_' */</span> ||
+      s.charCodeAt(length - <span class="number">9</span>) !== <span class="number">95</span>  <span class="comment">/* '_' */</span>) {
+    <span class="keyword">return</span> <span class="literal">false</span>;
+  }
+
+  <span class="keyword">for</span> (<span class="keyword">var</span> i = length - <span class="number">10</span>; i >= <span class="number">0</span>; i--) {
+    <span class="keyword">if</span> (s.charCodeAt(i) !== <span class="number">36</span> <span class="comment">/* '$' */</span>) {
+      <span class="keyword">return</span> <span class="literal">false</span>;
+    }
+  }
+
+  <span class="keyword">return</span> <span class="literal">true</span>;
+}
+
+<span class="comment">/**
+ * Comparator between two mappings where the original positions are compared.
+ *
+ * Optionally pass in `true` as `onlyCompareGenerated` to consider two
+ * mappings with the same original source/line/column, but different generated
+ * line and column the same. Useful when searching for a mapping with a
+ * stubbed out mapping.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">compareByOriginalPositions</span><span class="params">(mappingA, mappingB, onlyCompareOriginal)</span> {</span>
+  <span class="keyword">var</span> cmp = mappingA.source - mappingB.source;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.originalLine - mappingB.originalLine;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.originalColumn - mappingB.originalColumn;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span> || onlyCompareOriginal) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.generatedColumn - mappingB.generatedColumn;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.generatedLine - mappingB.generatedLine;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  <span class="keyword">return</span> mappingA.name - mappingB.name;
+}
+exports.compareByOriginalPositions = compareByOriginalPositions;
+
+<span class="comment">/**
+ * Comparator between two mappings with deflated source and name indices where
+ * the generated positions are compared.
+ *
+ * Optionally pass in `true` as `onlyCompareGenerated` to consider two
+ * mappings with the same generated line and column, but different
+ * source/name/original line and column the same. Useful when searching for a
+ * mapping with a stubbed out mapping.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">compareByGeneratedPositionsDeflated</span><span class="params">(mappingA, mappingB, onlyCompareGenerated)</span> {</span>
+  <span class="keyword">var</span> cmp = mappingA.generatedLine - mappingB.generatedLine;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.generatedColumn - mappingB.generatedColumn;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span> || onlyCompareGenerated) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.source - mappingB.source;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.originalLine - mappingB.originalLine;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.originalColumn - mappingB.originalColumn;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  <span class="keyword">return</span> mappingA.name - mappingB.name;
+}
+exports.compareByGeneratedPositionsDeflated = compareByGeneratedPositionsDeflated;
+
+<span class="function"><span class="keyword">function</span> <span class="title">strcmp</span><span class="params">(aStr1, aStr2)</span> {</span>
+  <span class="keyword">if</span> (aStr1 === aStr2) {
+    <span class="keyword">return</span> <span class="number">0</span>;
+  }
+
+  <span class="keyword">if</span> (aStr1 > aStr2) {
+    <span class="keyword">return</span> <span class="number">1</span>;
+  }
+
+  <span class="keyword">return</span> -<span class="number">1</span>;
+}
+
+<span class="comment">/**
+ * Comparator between two mappings with inflated source and name strings where
+ * the generated positions are compared.
+ */</span>
+<span class="function"><span class="keyword">function</span> <span class="title">compareByGeneratedPositionsInflated</span><span class="params">(mappingA, mappingB)</span> {</span>
+  <span class="keyword">var</span> cmp = mappingA.generatedLine - mappingB.generatedLine;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.generatedColumn - mappingB.generatedColumn;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = strcmp(mappingA.source, mappingB.source);
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.originalLine - mappingB.originalLine;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  cmp = mappingA.originalColumn - mappingB.originalColumn;
+  <span class="keyword">if</span> (cmp !== <span class="number">0</span>) {
+    <span class="keyword">return</span> cmp;
+  }
+
+  <span class="keyword">return</span> strcmp(mappingA.name, mappingB.name);
+}
+exports.compareByGeneratedPositionsInflated = compareByGeneratedPositionsInflated;
+</code></pre>
