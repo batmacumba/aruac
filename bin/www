@@ -1,5 +1,22 @@
+const https = require('https');
+const path = require('path');
+const fs = require('fs');
+
+/**
+ * HTTPS
+ */
+const key = fs.readFileSync('/etc/letsencrypt/live/aruacfilmes.com.br/privkey.pem');
+const cert = fs.readFileSync('/etc/letsencrypt/live/aruacfilmes.com.br/cert.pem');
+
+var options = {
+    key: key,
+    cert: cert,
+};
+
 var app = require('../server/server');
-var port = 8000
-app.listen(port, function() {
-    console.log('node running at localhost: ' + port);
+
+const port = process.env.PORT || 443;
+const server = https.createServer( options, app );
+server.listen( port, function () {
+    console.log( 'App escutando a porta ' + server.address().port );
 });

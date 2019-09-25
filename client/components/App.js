@@ -5,8 +5,8 @@ import Home from './Home';
 import Produtora from './Produtora';
 import Diretores from './Diretores';
 import Contato from './Contato';
-import SignUp from './Signup';
-import LogIn from './Login';
+import SignUp from './SignUp';
+import LogIn from './LogIn';
 import Admin from './Admin';
 
 class App extends React.Component {
