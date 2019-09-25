@@ -307,11 +307,11 @@ p {
     font-family: 'Quicksand', sans-serif;
     font-size: 16px;
 }
-.whatsapp-box{padding:20px;background:#128c7e; height: 150px;}
-.facebook-box{padding:30px; background:#3b5998; height: 150px;}
-.email-box{padding:20px;background:#222222; color: #E5E5E5!important;height: 150px;}
-.youtube-box{padding:30px;background:#b31217; height: 150px;}
-.instagram-box{padding:30px;background:#8a3ab9; height: 150px;}
+.whatsapp-box{padding:50px;background:#128c7e; height: 150px;}
+.facebook-box{padding:50px; background:#3b5998; height: 150px;}
+.email-box{padding:50px;background:#222222; color: #E5E5E5!important;height: 150px;}
+.youtube-box{padding:50px;background:#b31217; height: 150px;}
+.instagram-box{padding:50px;background:#8a3ab9; height: 150px;}
 
 iframe {
     align-content: center;

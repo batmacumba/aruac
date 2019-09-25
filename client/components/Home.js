@@ -79,7 +79,7 @@ export default class Home extends React.Component {
                                     <input id="tudo" name="view" type="radio"/>
                                     <label for="tudo" onClick={this.filterGrid.bind(this, 'tudo')}>tudo</label>
                                     <input id="producao" name="view" type="radio"/>
-                                    <label for="producao" onClick={this.filterGrid.bind(this, 'producao')}>produção</label>
+                                    <label for="producao" onClick={this.filterGrid.bind(this, 'producao')}>em produção</label>
                                     <input id="cinema" name="view" type="radio"/>
                                     <label for="cinema" onClick={this.filterGrid.bind(this, 'cinema')}>cinema</label>
                                     <input id="tv" name="view" type="radio"/>
