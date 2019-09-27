@@ -1,6 +1,7 @@
 const https = require('https');
 const path = require('path');
 const fs = require('fs');
+const express = require('express');
 
 /**
  * HTTPS
@@ -20,3 +21,15 @@ const server = https.createServer( options, app );
 server.listen( port, function () {
     console.log( 'App escutando a porta ' + server.address().port );
 });
+
+
+/**
+ * HTTP: redireciona para HTTPS
+ */
+var http = express();
+
+http.get('*', function(req, res) {
+    res.redirect('https://' + req.headers.host + req.url);
+})
+
+http.listen(80);
